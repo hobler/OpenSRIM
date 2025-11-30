@@ -12,11 +12,8 @@ def setup(zmin, zmax):
     """Define the geometry of the target.
     
     Parameters:
-        zmin (int): minimum z coordinate of the target (A)
-        zmax (int): maximum z coordinate of the target (A)
-
-    Returns:
-        None
+        zmin (float): minimum z coordinate of the target (A)
+        zmax (float): maximum z coordinate of the target (A)
     """
     global ZMIN, ZMAX
 
@@ -28,10 +25,10 @@ def is_inside_target(pos):
     """Check if a given position is inside the target.
 
     Parameters:
-        pos (ndarray): position to check (size 3)
+        pos (NDArray, Shape(3)): position to check
 
     Returns:
-        bool: True if position is inside the target, False otherwise
+        (bool): whether the position is inside the target
     """
     if ZMIN <= pos[2] <= ZMAX:
         return True

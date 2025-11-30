@@ -15,14 +15,15 @@ simulation parameters. Also, recoils are not yet followed, and only the
 mean and the straggling of the penetration depth of the primary ions are
 recorded.
 """
-from math import sqrt
 import time
 import numpy as np
 import select_recoil
 import scatter
 import estop
 import geometry
-import trajectory
+import cascade
+import statistics
+import mytypes
 
 
 start_time = time.time()
@@ -38,33 +39,31 @@ m2 = 28.086             # mass of target atom (amu)
 density = 0.04994       # target density (atoms/A^3)
 corr_lindhard = 1.5     # Correction factor to Lindhard stopping power
 
+# Setup modules
 select_recoil.setup(density)
 scatter.setup(z1, m1, z2, m2)
 estop.setup(corr_lindhard, z1, m1, z2, density)
 geometry.setup(zmin, zmax)
-trajectory.setup()
+cascade.setup()
+statistics.setup(nspec=1, nbin=40, limits=(0.0, 4000.0))
 
 # Initial conditions of the projectile
-e_init = 50000.0                         # energy (eV)
-pos_init = np.array([0.0, 0.0, 0.0])     # position (A)
-dir_init = np.array([0.0, 0.0, 1.0])     # direction (unit vector)
+proj_init = mytypes.Projectile(
+    e = 50000.0,                         # energy (eV)
+    pos = np.array([0.0, 0.0, 0.0]),     # position (A)
+    dir = np.array([0.0, 0.0, 1.0]),     # direction (unit vector)
+)
 
-count_inside = 0
-mean_z = 0.0
-std_z = 0.0
+# Simulate the trajectories
 for _ in range(nion):
-    pos, dir, e, is_inside = trajectory.trajectory(pos_init, dir_init, e_init)
+    proj = proj_init.copy()
+    proj_lst, is_inside = cascade.trajectory(proj)
     if is_inside:
-        count_inside += 1
-        mean_z += pos[2]
-        std_z += pos[2]**2
-
-mean_z /= count_inside
-std_z = sqrt(std_z/count_inside - mean_z**2)
-print(f"Number of ions stopped inside the target: {count_inside} / {nion}")
-print(f"Mean penetration depth of ions stopped inside the target: "
-      f"{mean_z:.2f} A")
-print(f"Standard deviation of penetration depth: {std_z:.2f} A")
+        statistics.score(proj_lst[-1])
 
 end_time = time.time()
 print(f"Simulation time: {end_time - start_time:.2f} seconds")
+
+# Output the results
+statistics.print_results()
+statistics.plot_results()

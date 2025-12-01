@@ -37,15 +37,16 @@ m1 = 11.009             # mass of projectile (amu)
 z2 = 14                 # atomic number of target
 m2 = 28.086             # mass of target atom (amu)
 density = 0.04994       # target density (atoms/A^3)
-corr_lindhard = 1.5     # Correction factor to Lindhard stopping power
+corr_lindhard1 = 1.5    # Correction factor to Lindhard stopping power (B->Si)
+corr_lindhard2 = 1.0    # Correction factor to Lindhard stopping power (Si->Si)
 
 # Setup modules
 select_recoil.setup(density)
 scatter.setup(z1, m1, z2, m2)
-estop.setup(corr_lindhard, z1, m1, z2, density)
+estop.setup(corr_lindhard1, z1, m1, corr_lindhard1, z2, m2, density)
 geometry.setup(zmin, zmax)
 cascade.setup()
-statistics.setup(nspec=1, nbin=40, limits=(0.0, 4000.0))
+statistics.setup(nspec=2, nbin=40, limits=(0.0, 4000.0))
 
 # Initial conditions of the projectile
 proj_init = mytypes.Projectile(
@@ -57,13 +58,13 @@ proj_init = mytypes.Projectile(
 # Simulate the trajectories
 for _ in range(nion):
     proj = proj_init.copy()
-    proj_lst, is_inside = cascade.trajectory(proj)
-    if is_inside:
-        statistics.score(proj_lst[-1])
+    proj_lst = cascade.trajectory(proj, follow_recoils=True)
+    for proj in proj_lst:
+        statistics.score(proj)
 
 end_time = time.time()
 print(f"Simulation time: {end_time - start_time:.2f} seconds")
 
 # Output the results
 statistics.print_results()
-statistics.plot_results()
+statistics.plot_results(log=True)

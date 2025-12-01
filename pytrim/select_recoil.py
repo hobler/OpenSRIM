@@ -35,14 +35,14 @@ def get_recoil_position(pos, dir):
         dir (ndarray): direction vector of the projectile (size 3)
 
     Returns:
-        float: free path length to the next collision (A)
-        float: impact parameter = distance between collision point and 
+        (float): free path length to the next collision (A)
+        (float): impact parameter = distance between collision point and 
             recoil (A)
-        ndarray: direction vector from collision point to recoil (size 3)
-        ndarray: position of the recoil (size 3)
+        (ndarray): direction vector from collision point to recoil (size 3)
+        (ndarray): position of the recoil (A, size 3)
     """
     free_path = MEAN_FREE_PATH
-    pos_collision = pos[:] + free_path * dir[:]
+    collision_pos = pos[:] + free_path * dir[:]
 
     p = PMAX * sqrt(np.random.rand())
     # Azimuthal angle fi
@@ -51,7 +51,8 @@ def get_recoil_position(pos, dir):
     sin_fi = sin(fi)
 
     # Convert direction vector to polar angles
-    k = np.argmin( np.abs(dir[:]) )   # make k point to the smallest dir(:) so sinalf > sqrt(2/3)
+    # make k point to the smallest dir(:) so sinalf > sqrt(2/3)
+    k = np.argmin(np.abs(dir[:]))
     i = (k + 1) % 3
     j = (i + 1) % 3
     cos_alpha = dir[k]
@@ -68,6 +69,6 @@ def get_recoil_position(pos, dir):
     dirp /= norm
 
     # position of the recoil
-    pos_recoil = pos_collision[:] + p * dirp[:]
+    recoil_pos = collision_pos[:] + p * dirp[:]
 
-    return free_path, p, dirp, pos_recoil
+    return free_path, p, dirp[:], recoil_pos[:]

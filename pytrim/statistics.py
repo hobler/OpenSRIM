@@ -26,22 +26,28 @@ class Moment_1d:
     moment methods (mean(), std(), skewness(), kurtosis()) to retrieve the
     moments and their standard errors. 
 
+    Note that the standard errors are derived assuming independent data points.
+    If they are correlated such as when recoil positions stem from the same
+    collision cascade, the standard errors will be underestimated.
+
     Attributes:
-        nvar (int): number variables for which moments are desired
+        nvar (int): number of variables for which moments are desired
         nmax (int): maximum order of moments
-        count (NDArray(int), Shape(nvar)): number of scored data points per 
-            variable
-        _mom (NDArray(float), Shape(nvar, 2*nmax+1)): sum of values raised to 
-            the order of the moment to be calculated
-        _cenmom (NDArray(float), Shape(nvar, 2*nmax+1)): central moments
+        count (ndarray[int]): number of scored data points per variable (size 
+            nvar)
+        _orders (ndarray[int]): orders of all moments to be calculated (size 
+            2*nmax+1)
+        _mom (ndarray[float]): sum of values raised to the order of the moment 
+            to be calculated (shape (nvar, 2*nmax+1))
+        _cenmom (ndarray[float]): central moments (shape (nvar, 2*nmax+1))
     """
     def __init__(self, nvar, nmax):
         self.nvar = nvar
         if nmax < 1 or nmax > 4:
             raise ValueError("nmax must be between 1 and 4.")
         self.nmax = nmax
-        self._mom = np.zeros((nvar, 2*nmax + 1), dtype=float)
         self._orders = np.arange(0, 2*nmax + 1, dtype=int)
+        self._mom = np.zeros((nvar, 2*nmax + 1), dtype=float)
 
     def score(self, ivar, value):
         """Score a new data point for variable ivar."""
@@ -104,9 +110,9 @@ class Histogram_1d:
     Attributes:
         nvar (int): number variables for which histograms are desired
         nbin (int): number of bins
-        limits (Tuple[float], Shape(2)): (min, max) limits of the histogram
-        counts (NDArray[int], Shape(nvar,nbin+2)): counts per bin including 
-            underflow and overflow bins
+        limits (tuple[float]): (min, max) limits of the histogram (size 2)
+        counts (ndarray[int]): counts per bin including 
+            underflow and overflow bins (shape (nvar,nbin+2))
         bin_width (float): width of each bin
     """
     def __init__(self, nvar, nbin, limits):
@@ -119,13 +125,13 @@ class Histogram_1d:
     def score(self, ivar, value):
         """Score a new data point to the histogram of variable ivar."""
         if value < self.limits[0]:
-            bin_index = 0                # underflow bin
+            ibin = 0                # underflow bin
         elif value >= self.limits[1]:
-            bin_index = -1               # overflow bin
+            ibin = -1               # overflow bin
         else:
-            bin_index = int((value - self.limits[0]) / self.bin_width) + 1
+            ibin = int((value - self.limits[0]) / self.bin_width) + 1
         
-        self.counts[ivar,bin_index] += 1
+        self.counts[ivar,ibin] += 1
 
 
 def setup(nspec, nbin, limits):
@@ -134,7 +140,7 @@ def setup(nspec, nbin, limits):
     Parameters:
         nspec(int): number of atom species
         nbin (int): number of bins
-        limits (Tuple[float], Shape(2)): (min, max) limits of the histogram
+        limits (tuple[float]): (min, max) limits of the histogram (size 2)
     """
     global mom, hist
 
@@ -143,15 +149,16 @@ def setup(nspec, nbin, limits):
 
 
 def score(proj):
-    """Score the final position of the projectile into the histogram.
+    """Score the final projectile position into moments sum and histogram.
 
     Parameters:
         proj (Projectile): the state of the projectile to be scored
     """
     global mom, hist
 
-    mom.score(proj.ispec, proj.pos[2])
-    hist.score(proj.ispec, proj.pos[2])
+    if proj.is_inside:
+        mom.score(proj.ispec, proj.pos[2])
+        hist.score(proj.ispec, proj.pos[2])
 
 
 def print_results():
@@ -183,7 +190,7 @@ def print_results():
               f"{kurtosis[ivar]:.2f} +/- {kurtosis_err[ivar]:.2f}")
 
 
-def plot_results():
+def plot_results(log=False):
     """Plot the histogram using matplotlib."""
     import matplotlib.pyplot as plt
 
@@ -192,6 +199,8 @@ def plot_results():
                    edges=np.linspace(hist.limits[0], hist.limits[1], 
                                      hist.nbin+1),
                    label=f'Species {ivar}')
+    if log:
+        plt.yscale('log')
     plt.xlabel('Penetration depth (A)')
     plt.ylabel('Counts')
     plt.title(f'Histogram of Penetration Depths')

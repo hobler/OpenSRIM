@@ -25,12 +25,9 @@ def is_inside_target(pos):
     """Check if a given position is inside the target.
 
     Parameters:
-        pos (NDArray, Shape(3)): position to check
+        pos (ndarray): position to check (size 3)
 
     Returns:
         (bool): whether the position is inside the target
     """
-    if ZMIN <= pos[2] <= ZMAX:
-        return True
-    else:
-        return False
+    return ZMIN <= pos[2] <= ZMAX

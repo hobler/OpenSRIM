@@ -5,16 +5,23 @@ class Projectile:
     """Data class holding projectile properties.
     
     Attributes:
-        ispec (int): atom species index
         e (float): energy (eV)
-        pos (NDAarray, Shape(3)): position (A)
-        dir (NDAarray, Shape(3)): direction (unit vector)
-    """
-    def __init__(self, e, pos, dir, ispec=0):
-         self.e = e
-         self.pos = pos
-         self.dir = dir
-         self.ispec = ispec
+        pos (ndarray): position (A, size 3)
+        dir (ndarray): direction (unit vector, size 3)
+        ispec (int): atom species index
+        is_inside (bool): whether the projectile is inside the target"""
+    def __init__(self, e, pos, dir, ispec=0, is_inside=True):
+        self.e = e
+        self.pos = pos
+        self.dir = dir
+        self.ispec = ispec
+        self.is_inside = is_inside
     
     def copy(self):
-        return Projectile(self.e, self.pos.copy(), self.dir.copy(), self.ispec)
+        return Projectile(
+            self.e, 
+            self.pos.copy(), 
+            self.dir.copy(), 
+            self.ispec,
+            self.is_inside
+        )

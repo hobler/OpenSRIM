@@ -1,11 +1,11 @@
 """PyTRIM aims to be a Python implementation of TRIM.
 
-TRIM (Transport of Ions in Matter) is a widely used software package 
-for simulating the interaction of ions with matter, particularly for 
+TRIM (Transport of Ions in Matter) is a widely used software package
+for simulating the interaction of ions with matter, particularly for
 ion implantation in semiconductors. It comes as part of SRIM, see
 www.srim.org.
 
-PyTRIM seeks to replicate the core functionalities of TRIM using 
+PyTRIM seeks to replicate the core functionalities of TRIM using
 Python, making it more accessible and easier to integrate with other
 Python-based tools and workflows.
 
@@ -26,9 +26,8 @@ import statistics
 import mytypes
 
 
-start_time = time.time()
 
-nion = 1000             # number of projectiles to simulate
+nion = 100             # number of projectiles to simulate
 
 zmin = 0.0              # minimum z coordinate of the target (A)
 zmax = 4000.0           # maximum z coordinate of the target (A)
@@ -56,6 +55,7 @@ proj_init = mytypes.Projectile(
 )
 
 # Simulate the trajectories
+start_time = time.time()
 for _ in range(nion):
     proj = proj_init.copy()
     proj_lst = cascade.trajectory(proj, follow_recoils=True)

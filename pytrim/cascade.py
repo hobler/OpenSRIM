@@ -24,11 +24,11 @@ def setup():
 
 def trajectory(proj, follow_recoils=False):
     """Simulate one projectile trajectory.
-    
+
     Parameters:
         proj: (Projectile) the initial state of the projectile
         follow_recoils: (bool) whether to follow recoil trajectories
-        
+
     Returns:
         (list[Projectile]) list of final projectile states
         (bool) whether the projectile stopped inside the target
@@ -36,7 +36,7 @@ def trajectory(proj, follow_recoils=False):
     proj_lst = []
 
     while proj.e > EMIN:
-        free_path, p, dirp, recoil_pos = get_recoil_position(proj.pos[:], 
+        free_path, p, dirp, recoil_pos = get_recoil_position(proj.pos[:],
                                                              proj.dir[:])
         dee = eloss(proj, free_path)
         proj.e -= dee
@@ -52,7 +52,7 @@ def trajectory(proj, follow_recoils=False):
                 dir = recoil_dir[:],
                 ispec = 1               # assuming recoil is of type 1
             )
-            recoil_lst = trajectory(recoil)
+            recoil_lst = trajectory(recoil, True)
             proj_lst.extend(recoil_lst)
 
     proj_lst.append(proj)

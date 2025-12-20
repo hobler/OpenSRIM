@@ -9,6 +9,7 @@ There are two module-level attributes:
     hist: Histogram_1d instance for calculating histograms.
 """
 import math
+from numba.core.types import UniTuple
 import numpy as np
 from numba.experimental import jitclass
 from numba.extending import overload, register_jitable
@@ -78,16 +79,12 @@ class Moment_1d:
 
     def score(self, ivar, value):
         """Score a new data point for variable ivar."""
-        # Original line causing the error:
+        # Original line causing __powidf2 missing error:
         # self._mom[ivar,:] += value**self._orders[:]
 
-        # Create a temporary array to store powers of 'value'
+        # Workaround
         powers_of_value = np.empty_like(self._orders, dtype=np.float64)
-
-        # Handle power 0 explicitly: x^0 = 1.0 (for non-zero x)
         powers_of_value[0] = 1.0
-
-        # Handle power 1 explicitly if the orders array has more than one element
         if len(self._orders) > 1:
             powers_of_value[1] = value
 
@@ -96,7 +93,6 @@ class Moment_1d:
         for i in range(2, len(self._orders)):
             powers_of_value[i] = powers_of_value[i-1] * value
 
-        # Add the computed powers to the moments array
         self._mom[ivar,:] += powers_of_value
 
 
@@ -150,7 +146,7 @@ class Moment_1d:
 @jitclass(spec = [
     ("nvar", int32),
     ("nbin", int32),
-    ("limits", float64[:]),
+    ("limits", UniTuple(float64, 2)),
     ("counts", int32[:,:]),
     ("bin_width", float64)
 ])

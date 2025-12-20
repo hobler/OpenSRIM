@@ -26,7 +26,7 @@ import estop
 import geometry
 import cascade
 import pytrim_stats as statistics
-from numpy_projectile import Projectile
+from mytypes import Projectile, SimParams
 from numba import jit, prange
 
 nion = 1000             # number of projectiles to simulate
@@ -47,10 +47,13 @@ scatter.setup(z1, m1, z2, m2)
 estop.setup(corr_lindhard1, z1, m1, corr_lindhard1, z2, m2, density)
 geometry.setup(zmin, zmax)
 cascade.setup()
-statistics.setup(nspec=2, nbin=40, limits=np.array([0.0, 4000.0]))
+sim_params = SimParams( nspec = 2, 
+                        nbin = 40, 
+                        limits = (0.0, 4000.0))
+statistics.setup(nspec=sim_params.nspec, nbin=sim_params.nbin, limits=sim_params.limits)
 
 @jit(fastmath=True, cache=False, parallel=True, nogil=True)
-def simulate(nion, nspec, nbin, limits, follow_recoils=False):
+def simulate(nion, sim_params_tup, follow_recoils=False):
     # Initial conditions of the projectile
     proj_init = Projectile(
         50000.0,                         # energy (eV)
@@ -70,8 +73,9 @@ def simulate(nion, nspec, nbin, limits, follow_recoils=False):
     
     # TODO alternatives???
     proj_count = 0
-    hist = statistics.Histogram_1d(nspec, nbin, limits)
-    mom = statistics.Moment_1d(nspec, 4)
+    sim_params = SimParams(*sim_params_tup)
+    hist = statistics.Histogram_1d(sim_params.nspec, sim_params.nbin, sim_params.limits)
+    mom = statistics.Moment_1d(sim_params.nspec, 4)
     for proj_lst in proj_sim:
         proj_count += proj_lst.size
         for proj in proj_lst:
@@ -80,20 +84,21 @@ def simulate(nion, nspec, nbin, limits, follow_recoils=False):
                 mom.score(proj.ispec, proj.pos[2])
     return proj_count, hist.counts, mom._mom
 
-times = []
-proj_counts = []
-counts = [1000, 10000]
-simulate(10, nspec=2, nbin=40, limits=np.array([0.0, 4000.0]), follow_recoils=True)
-for c in counts:
-    start_time = time.time()
-    proj_count, hist_buf, mom_buf = simulate(c, nspec=2, nbin=40, limits=np.array([0.0, 4000.0]), follow_recoils=True)
-    times.append(time.time() - start_time)
-    proj_counts.append(proj_count)
+if __name__ == "__main__":
+    times = []
+    proj_counts = []
+    counts = [1000, 10000]
+    simulate(10, sim_params.to_tuple(), follow_recoils=True)
+    for c in counts:
+        start_time = time.time()
+        proj_count, hist_buf, mom_buf = simulate(c, sim_params.to_tuple(), follow_recoils=True)
+        times.append(time.time() - start_time)
+        proj_counts.append(proj_count)
+        
+        statistics.hist.counts = hist_buf
+        statistics.mom._mom = mom_buf
+    print(times, proj_counts)
     
-    statistics.hist.counts = hist_buf
-    statistics.mom._mom = mom_buf
-print(times, proj_counts)
-
-# Output the results
-statistics.print_results()
-statistics.plot_results(log=True)
+    # Output the results
+    statistics.print_results()
+    statistics.plot_results(log=True)

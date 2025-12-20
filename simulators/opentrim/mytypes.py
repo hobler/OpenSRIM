@@ -1,36 +1,36 @@
-import numpy as np
+from numba.core.types import UniTuple
 from numba.experimental import jitclass
-from numba import float64, int32, bool
+import numpy as np
+from numba import jit, float64
 
-@jitclass(spec = [
-    ("e", float64),
-    ("pos", float64[:]),
-    ("dir", float64[:]),
-    ("ispec", int32),
-    ("is_inside", bool)
-])
-class Projectile:
-    """Data class holding projectile properties.
+proj_dtype = np.dtype([
+    ("e", np.float64),
+    ("pos", np.float64, (3,)),
+    ("dir", np.float64, (3,)),
+    ("ispec", np.int32),
+    ("is_inside", np.bool_)
+], align=True)
+
+@jit(inline = 'always')
+def Projectile(e, pos, dir, ispec, is_inside):
+    rec = np.empty(1, dtype=proj_dtype)[0]
+    rec['e'] = e
+    rec['pos'] = pos    # copied
+    rec['dir'] = dir    # copied
+    rec['ispec'] = ispec
+    rec['is_inside'] = is_inside
+    return rec
     
-    Attributes:
-        e (float): energy (eV)
-        pos (ndarray): position (A, size 3)
-        dir (ndarray): direction (unit vector, size 3)
-        ispec (int): atom species index
-        is_inside (bool): whether the projectile is inside the target"""
-    # TODO find out how to include default values (overload? None check?)
-    def __init__(self, e, pos, dir, ispec, is_inside):
-        self.e = e
-        self.pos = pos
-        self.dir = dir
-        self.ispec = ispec
-        self.is_inside = is_inside
+@jitclass([("limits", UniTuple(float64, 2))])
+class SimParams:
+    nspec: int
+    nbin: int
+    limits: tuple[float, float]
     
-    def copy(self):
-        return Projectile(
-            self.e, 
-            self.pos.copy(), 
-            self.dir.copy(), 
-            self.ispec,
-            self.is_inside
-        )
+    def __init__(self, nspec, nbin, limits):
+        self.nspec = nspec
+        self.nbin = nbin
+        self.limits = limits
+        
+    def to_tuple(self):
+        return (self.nspec, self.nbin, self.limits)

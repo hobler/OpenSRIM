@@ -29,7 +29,7 @@ def impl(n: int, k: int):
     return inner
     
 
-@jitclass(spec = [
+@jitclass(spec = [  # pyright: ignore[reportCallIssue]
     ("nvar", int32),
     ("nmax", int32),
     ("count", float64[:]),
@@ -151,7 +151,7 @@ class Moment_1d:
         return cenmom_err[:]
 
 
-@jitclass(spec = [
+@jitclass(spec = [  # pyright: ignore[reportCallIssue]
     ("nvar", int32),
     ("nbin", int32),
     ("limits", UniTuple(float64, 2)),
@@ -270,7 +270,7 @@ def plot_results(log=False):
         plt.yscale('log')
     plt.xlabel('Penetration depth (A)')
     plt.ylabel('Counts')
-    plt.title(f'Histogram of Penetration Depths')
+    plt.title('Histogram of Penetration Depths')
     plt.legend()
     plt.show()
 

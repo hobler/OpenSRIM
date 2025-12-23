@@ -64,6 +64,7 @@ class Moment_1d:
             2*nmax+1)
         _mom (ndarray[float]): sum of values raised to the order of the moment 
             to be calculated (shape (nvar, 2*nmax+1))
+        results: (ndarray[float]) A public getter / setter for `_mom`
         _cenmom (ndarray[float]): central moments (shape (nvar, 2*nmax+1))
     """
     def __init__(self, nvar, nmax):
@@ -172,6 +173,7 @@ class Histogram_1d:
         limits (tuple[float]): (min, max) limits of the histogram (size 2)
         counts (ndarray[int]): counts per bin including 
             underflow and overflow bins (shape (nvar,nbin+2))
+        results: (ndarray[float]) A public getter / setter for `counts`
         bin_width (float): width of each bin
     """
     def __init__(self, nvar, nbin, limits):

@@ -28,7 +28,7 @@ def trajectory(initial_proj, follow_recoils=False, prealloc=100):
     """Simulate one projectile trajectory.
     
     Parameters:
-        proj: (Projectile) the initial state of the projectile
+        initial_proj: (Projectile) the initial state of the first projectile
         follow_recoils: (bool) whether to follow recoil trajectories
         prealloc: (int) number of recoil projectiles to pre-allocate space for (for better performance)
         

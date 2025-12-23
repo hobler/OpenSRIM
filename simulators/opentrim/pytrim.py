@@ -52,7 +52,7 @@ sim_params = SimParams( nspec = 2,
                         limits = (0.0, 4000.0))
 statistics.setup(nspec=sim_params.nspec, nbin=sim_params.nbin, limits=sim_params.limits)
 
-@jit(fastmath=True, cache=False, parallel=True, nogil=True)
+@jit(fastmath=True, cache=True, parallel=True, nogil=True)
 def simulate(nion, sim_params_tup, follow_recoils=False):
     # Initial conditions of the projectile
     proj_init = Projectile(
@@ -82,21 +82,28 @@ def simulate(nion, sim_params_tup, follow_recoils=False):
             if proj.is_inside:
                 hist.score(proj.ispec, proj.pos[2])
                 mom.score(proj.ispec, proj.pos[2])
-    return proj_count, hist.counts, mom._mom
+    return proj_count, hist.results, mom.results
 
 if __name__ == "__main__":
+    from tqdm import tqdm
+    
     times = []
     proj_counts = []
     counts = [1000, 10000]
-    simulate(10, sim_params.to_tuple(), follow_recoils=True)
-    for c in counts:
-        start_time = time.time()
-        proj_count, hist_buf, mom_buf = simulate(c, sim_params.to_tuple(), follow_recoils=True)
-        times.append(time.time() - start_time)
-        proj_counts.append(proj_count)
-        
-        statistics.hist.counts = hist_buf
-        statistics.mom._mom = mom_buf
+    save_every = 100
+    simulate(10, sim_params.to_tuple(), follow_recoils=True)    # pre-compile
+    for i, c in enumerate(counts):
+        # empty stats for each nion count
+        statistics.setup(nspec=sim_params.nspec, nbin=sim_params.nbin, limits=sim_params.limits)
+        times.append(0)
+        proj_counts.append(0)
+        for proj_done in tqdm(range(0, c, save_every), leave=False):
+            start_time = time.time()
+            proj_count, hist_buf, mom_buf = simulate(save_every, sim_params.to_tuple(), follow_recoils=True)
+            statistics.hist.results += hist_buf
+            statistics.mom.results += mom_buf
+            times[i] += time.time() - start_time
+            proj_counts[i] += proj_count
     print(times, proj_counts)
     
     # Output the results

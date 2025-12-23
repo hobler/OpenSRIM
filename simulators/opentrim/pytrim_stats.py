@@ -94,6 +94,14 @@ class Moment_1d:
             powers_of_value[i] = powers_of_value[i-1] * value
 
         self._mom[ivar,:] += powers_of_value
+        
+    @property
+    def results(self):
+        return self._mom
+        
+    @results.setter
+    def results(self, new):
+        self._mom = new
 
 
 
@@ -183,6 +191,14 @@ class Histogram_1d:
             ibin = int((value - self.limits[0]) / self.bin_width) + 1
         
         self.counts[ivar,ibin] += 1
+    
+    @property
+    def results(self):
+        return self.counts
+        
+    @results.setter
+    def results(self, new):
+        self.counts = new
 
 
 def setup(nspec, nbin, limits):

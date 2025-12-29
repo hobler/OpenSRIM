@@ -3,7 +3,7 @@ from numba.experimental import jitclass
 import numpy as np
 from numba import jit, float64
 
-proj_dtype = np.dtype([
+PROJ_DTYPE = np.dtype([
     ("e", np.float64),
     ("pos", np.float64, (3,)),
     ("dir", np.float64, (3,)),
@@ -13,7 +13,7 @@ proj_dtype = np.dtype([
 
 @jit(inline = 'always')
 def Projectile(e, pos, dir, ispec, is_inside):
-    rec = np.empty(1, dtype=proj_dtype)[0]
+    rec = np.empty(1, dtype=PROJ_DTYPE)[0]
     rec['e'] = e
     rec['pos'] = pos    # copied
     rec['dir'] = dir    # copied
@@ -21,7 +21,7 @@ def Projectile(e, pos, dir, ispec, is_inside):
     rec['is_inside'] = is_inside
     return rec
     
-@jitclass([("limits", UniTuple(float64, 2))])
+@jitclass([("limits", UniTuple(float64, 2))])  # pyright: ignore[reportCallIssue]
 class SimParams:
     nspec: int
     nbin: int
@@ -33,4 +33,4 @@ class SimParams:
         self.limits = limits
         
     def to_tuple(self):
-        return (self.nspec, self.nbin, self.limits)
+        return self.nspec, self.nbin, self.limits

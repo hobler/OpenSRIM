@@ -47,6 +47,7 @@ scatter.setup(z1, m1, z2, m2)
 estop.setup(corr_lindhard1, z1, m1, corr_lindhard1, z2, m2, density)
 geometry.setup(zmin, zmax)
 cascade.setup()
+# NOTE: Class can be extended to support additional fields
 sim_params = SimParams( nspec = 2, 
                         nbin = 40, 
                         limits = (0.0, 4000.0))
@@ -84,7 +85,6 @@ def simulate(nion, sim_params_tup, follow_recoils=False):
     for i in prange(nion):
         proj_sim[i] = cascade.trajectory(proj_dummy[0], follow_recoils)
     
-    # TODO alternatives???
     proj_count = 0
     sim_params = SimParams(*sim_params_tup)
     hist = statistics.Histogram_1d(sim_params.nspec, sim_params.nbin, sim_params.limits)
@@ -124,7 +124,7 @@ def simulate_adaptive(avg_chunk_time, nion, *args, **kwargs):
         
         start_time = time.time()
         proj_count, hist_buf, mom_buf = simulate(current_batch, *args, **kwargs)
-        # NOTE: Saving can be performed here
+        # NOTE: Saving or adding data to queue can be performed here
         
         total_proj_count += proj_count
         if total_hist_buf is None:
@@ -178,16 +178,16 @@ if __name__ == "__main__":
     times = []
     proj_counts = []
     counts = [1000, 10000]
-    # chunk_size = 100
-    avg_chunk_time = 0.1    # seconds
+    chunk_size = 100
+    # avg_chunk_time = 0.1    # seconds
     simulate(10, sim_params.to_tuple(), follow_recoils=True)    # pre-compile
     for i, c in enumerate(counts):
         # empty stats for each nion count
         statistics.setup(nspec=sim_params.nspec, nbin=sim_params.nbin, limits=sim_params.limits)
         
         start_time = time.time()
-        proj_count, hist_buf, mom_buf = simulate_adaptive(avg_chunk_time, c, sim_params.to_tuple(), follow_recoils=True)
-        # proj_count, hist_buf, mom_buf = simulate_chunked(chunk_size, c, sim_params.to_tuple(), follow_recoils=True)
+        # proj_count, hist_buf, mom_buf = simulate_adaptive(avg_chunk_time, c, sim_params.to_tuple(), follow_recoils=True)
+        proj_count, hist_buf, mom_buf = simulate_chunked(chunk_size, c, sim_params.to_tuple(), follow_recoils=True)
         statistics.hist.results = hist_buf
         statistics.mom.results = mom_buf
         times.append(time.time() - start_time)

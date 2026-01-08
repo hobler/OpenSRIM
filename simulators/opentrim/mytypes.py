@@ -1,3 +1,4 @@
+import os
 from numba.core.types import UniTuple
 from numba.experimental import jitclass
 import numpy as np
@@ -11,15 +12,26 @@ PROJ_DTYPE = np.dtype([
     ("is_inside", np.bool_)
 ], align=True)
 
-@jit(inline = 'always')
-def Projectile(e, pos, dir, ispec, is_inside):
-    rec = np.empty(1, dtype=PROJ_DTYPE)[0]
-    rec['e'] = e
-    rec['pos'] = pos    # copied
-    rec['dir'] = dir    # copied
-    rec['ispec'] = ispec
-    rec['is_inside'] = is_inside
-    return rec
+# Preserve compatibility with vanilla NumPy (with numba disabled)
+if os.environ.get("NUMBA_DISABLE_JIT", "") == "1":
+    def Projectile(e, pos, dir, ispec=0, is_inside=True):
+        rec = np.recarray(1, dtype=PROJ_DTYPE)[0]
+        rec['e'] = e
+        rec['pos'] = pos    # copied
+        rec['dir'] = dir    # copied
+        rec['ispec'] = ispec
+        rec['is_inside'] = is_inside
+        return rec
+else:
+    @jit(inline = 'always')
+    def Projectile(e, pos, dir, ispec=0, is_inside=True):
+        rec = np.empty(1, dtype=PROJ_DTYPE)[0]
+        rec['e'] = e
+        rec['pos'] = pos    # copied
+        rec['dir'] = dir    # copied
+        rec['ispec'] = ispec
+        rec['is_inside'] = is_inside
+        return rec
     
 @jitclass([("limits", UniTuple(float64, 2))])  # pyright: ignore[reportCallIssue]
 class SimParams:

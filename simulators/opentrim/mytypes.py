@@ -35,116 +35,89 @@ else:
         return rec
 
 @jitclass
-class ScatterParams:
+class SimParams:
+    # StatParams
+    nspec: int
+    nbin: int
+    limits: UniTuple(float64, 2)  # pyright: ignore[reportInvalidTypeForm]
+    
+    # CascadeParams
+    emin: float
+    ed: float
+    
+    # RecoilParams
+    pmax: float
+    mean_free_path: float
+    
+    # GeometryParams
+    zmin: float
+    zmax: float
+    
+    # EstopParams
+    fac_linhard: UniTuple(float64, 2)  # pyright: ignore[reportInvalidTypeForm]
+    density: float
+    
+    # ScatterParams
     enorm: UniTuple(float64, 2)  # pyright: ignore[reportInvalidTypeForm]
     rnorm: UniTuple(float64, 2)  # pyright: ignore[reportInvalidTypeForm]
     dirfrac: UniTuple(float64, 2)  # pyright: ignore[reportInvalidTypeForm]
     denfrac: UniTuple(float64, 2)  # pyright: ignore[reportInvalidTypeForm]
     
-    def __init__(self, enorm, rnorm, dirfrac, denfrac):
-        self.enorm = (enorm[0], enorm[1])
-        self.rnorm = (rnorm[0], rnorm[1])
-        self.dirfrac = (dirfrac[0], dirfrac[1])
-        self.denfrac = (denfrac[0], denfrac[1])
-        
-    def to_tuple(self):
-        return self.enorm, self.rnorm, self.dirfrac, self.denfrac
-
-@jitclass
-class RecoilParams:
-    pmax: float
-    mean_free_path: float
-    
-    def __init__(self, pmax, mean_free_path):
-        self.pmax = pmax
-        self.mean_free_path = mean_free_path
-        
-    def to_tuple(self):
-        return self.pmax, self.mean_free_path
-
-@jitclass
-class EstopParams:
-    fac_linhard: UniTuple(float64, 2)    # pyright: ignore[reportInvalidTypeForm]
-    density: float
-    
-    def __init__(self, fac_linhard, density):
-        self.fac_linhard = fac_linhard
-        self.density = density
-        
-    def to_tuple(self):
-        return self.fac_linhard, self.density
-
-@jitclass
-class GeometryParams:
-    zmin: float
-    zmax: float
-    
-    def __init__(self, zmin, zmax):
-        self.zmin = zmin
-        self.zmax = zmax
-        
-    def to_tuple(self):
-        return self.zmin, self.zmax
-
-@jitclass
-class CascadeParams:
-    emin: float
-    ed: float
-    
-    def __init__(self, emin, ed):
-        self.emin = emin
-        self.ed = ed
-        
-    def to_tuple(self):
-        return self.emin, self.ed
-
-@jitclass
-class StatParams:
-    nspec: int
-    nbin: int
-    limits: UniTuple(float64, 2)  # pyright: ignore[reportInvalidTypeForm]
-    
-    def __init__(self, nspec, nbin, limits):
-        self.nspec = nspec
-        self.nbin = nbin
-        self.limits = limits
-        
-    def to_tuple(self):
-        return self.nspec, self.nbin, self.limits
-
-@jitclass
-class SimParams:
-    stat_params: Optional[StatParams]
-    cascade_params: Optional[CascadeParams]
-    recoil_params: Optional[RecoilParams]
-    geometry_params: Optional[GeometryParams]
-    estop_params: Optional[EstopParams]
-    scatter_params: Optional[ScatterParams]
-    
     def __init__(self, stat_params_tup=None, cascade_params_tup=None, recoil_params_tup=None, geometry_params_tup=None, estop_params_tup=None, scatter_params_tup=None):
-        self.stat_params = None
-        self.cascade_params = None
-        self.recoil_params = None
-        self.geometry_params = None
-        self.estop_params = None
-        self.scatter_params = None
         if stat_params_tup is not None:
-            self.stat_params = StatParams(*stat_params_tup)
+            self.nspec = stat_params_tup[0]
+            self.nbin = stat_params_tup[1]
+            self.limits = stat_params_tup[2]
+        else:
+            self.nspec = 0
+            self.nbin = 0
+            self.limits = (0.0, 0.0)
+            
         if cascade_params_tup is not None:
-            self.cascade_params = CascadeParams(*cascade_params_tup)
+            self.emin = cascade_params_tup[0]
+            self.ed = cascade_params_tup[1]
+        else:
+            self.emin = 0.0
+            self.ed = 0.0
+            
         if recoil_params_tup is not None:
-            self.recoil_params = RecoilParams(*recoil_params_tup)
+            self.pmax = recoil_params_tup[0]
+            self.mean_free_path = recoil_params_tup[1]
+        else:
+            self.pmax = 0.0
+            self.mean_free_path = 0.0
+            
         if geometry_params_tup is not None:
-            self.geometry_params = GeometryParams(*geometry_params_tup)
+            self.zmin = geometry_params_tup[0]
+            self.zmax = geometry_params_tup[1]
+        else:
+            self.zmin = 0.0
+            self.zmax = 0.0
+            
         if estop_params_tup is not None:
-            self.estop_params = EstopParams(*estop_params_tup)
+            self.fac_linhard = estop_params_tup[0]
+            self.density = estop_params_tup[1]
+        else:
+            self.fac_linhard = (0.0, 0.0)
+            self.density = 0.0
+            
         if scatter_params_tup is not None:
-            self.scatter_params = ScatterParams(*scatter_params_tup)
+            self.enorm = scatter_params_tup[0]
+            self.rnorm = scatter_params_tup[1]
+            self.dirfrac = scatter_params_tup[2]
+            self.denfrac = scatter_params_tup[3]
+        else:
+            self.enorm = (0.0, 0.0)
+            self.rnorm = (0.0, 0.0)
+            self.dirfrac = (0.0, 0.0)
+            self.denfrac = (0.0, 0.0)
         
     def to_tuple(self):
-        return self.stat_params.to_tuple() if self.stat_params is not None else None, \
-               self.cascade_params.to_tuple() if self.cascade_params is not None else None, \
-               self.recoil_params.to_tuple() if self.recoil_params is not None else None,   \
-               self.geometry_params.to_tuple() if self.geometry_params is not None else None, \
-               self.estop_params.to_tuple() if self.estop_params is not None else None, \
-               self.scatter_params.to_tuple() if self.scatter_params is not None else None
+        stat_params = (self.nspec, self.nbin, self.limits)
+        cascade_params = (self.emin, self.ed)
+        recoil_params = (self.pmax, self.mean_free_path)
+        geometry_params = (self.zmin, self.zmax)
+        estop_params = (self.fac_linhard, self.density)
+        scatter_params = (self.enorm, self.rnorm, self.dirfrac, self.denfrac)
+        
+        return stat_params, cascade_params, recoil_params, geometry_params, estop_params, scatter_params

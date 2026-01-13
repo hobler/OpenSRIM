@@ -30,13 +30,13 @@ def setup(density):
 
 
 @jit(fastmath=True)
-def get_recoil_position(pos, dir, recoil_params):
+def get_recoil_position(pos, dir, sim_params):
     """Get the recoil position based on the projectile position and direction.
 
     Parameters:
         pos (ndarray): position of the projectile (size 3)
         dir (ndarray): direction vector of the projectile (size 3)
-        recoil_params (RecoilParams): Recoil parameters
+        sim_params (SimParams): Simulation parameters
 
     Returns:
         (float): free path length to the next collision (A)
@@ -45,10 +45,10 @@ def get_recoil_position(pos, dir, recoil_params):
         (ndarray): direction vector from collision point to recoil (size 3)
         (ndarray): position of the recoil (A, size 3)
     """
-    free_path = recoil_params.mean_free_path
+    free_path = sim_params.mean_free_path
     collision_pos = pos[:] + free_path * dir[:]
 
-    p = recoil_params.pmax * sqrt(np.random.rand())
+    p = sim_params.pmax * sqrt(np.random.rand())
     # Azimuthal angle fi
     fi = 2 * np.pi * np.random.rand()
     cos_fi = cos(fi)

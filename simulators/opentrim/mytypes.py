@@ -13,6 +13,24 @@ PROJ_DTYPE = np.dtype([
     ("is_inside", np.bool_)
 ], align=True)
 
+SIM_PARAMS_DTYPE = np.dtype([
+    ("nspec", np.int32),
+    ("nbin", np.int32),
+    ("limits", np.float64, (2,)),
+    ("emin", np.float64),
+    ("ed", np.float64),
+    ("pmax", np.float64),
+    ("mean_free_path", np.float64),
+    ("zmin", np.float64),
+    ("zmax", np.float64),
+    ("fac_linhard", np.float64, (2,)),
+    ("density", np.float64),
+    ("enorm", np.float64, (2,)),
+    ("rnorm", np.float64, (2,)),
+    ("dirfrac", np.float64, (2,)),
+    ("denfrac", np.float64, (2,)),
+], align=True)
+
 # Preserve compatibility with vanilla NumPy (with numba disabled)
 if os.environ.get("NUMBA_DISABLE_JIT", "") == "1":
     def Projectile(e, pos, dir, ispec=0, is_inside=True):
@@ -121,3 +139,23 @@ class SimParams:
         scatter_params = (self.enorm, self.rnorm, self.dirfrac, self.denfrac)
         
         return stat_params, cascade_params, recoil_params, geometry_params, estop_params, scatter_params
+
+    def to_record(self):
+        # TODO Vanilla numpy compatabilit
+        rec = np.empty(1, dtype=SIM_PARAMS_DTYPE)[0]
+        rec['nspec'] = self.nspec
+        rec['nbin'] = self.nbin
+        rec['limits'] = np.array(self.limits)
+        rec['emin'] = self.emin
+        rec['ed'] = self.ed
+        rec['pmax'] = self.pmax
+        rec['mean_free_path'] = self.mean_free_path
+        rec['zmin'] = self.zmin
+        rec['zmax'] = self.zmax
+        rec['fac_linhard'] = np.array(self.fac_linhard)
+        rec['density'] = self.density
+        rec['enorm'] = np.array(self.enorm)
+        rec['rnorm'] = np.array(self.rnorm)
+        rec['dirfrac'] = np.array(self.dirfrac)
+        rec['denfrac'] = np.array(self.denfrac)
+        return rec

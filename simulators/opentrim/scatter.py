@@ -132,7 +132,7 @@ def magic(e, p):
     return cos_half_theta
 
 
-def scatter(proj, p, dirp, enorm, rnorm, dirfrac, denfrac):
+def scatter(proj, p, dirp, sim_params):
     """Treat a scattering event.
 
     The atomic numbers and masses of the ion and the target atom enter the
@@ -147,7 +147,7 @@ def scatter(proj, p, dirp, enorm, rnorm, dirfrac, denfrac):
         dirp (ndarray): direction vector of the impact parameter
             (= from the collision point to the recoil position before 
             the collision) (unit vector, size 3)
-        scatter_params (ScatterParams): Scattering parameters
+        sim_params (SimParams): Simulation parameters
     
     Returns:
         (Projectile): state of the projectile after the collision 
@@ -156,12 +156,12 @@ def scatter(proj, p, dirp, enorm, rnorm, dirfrac, denfrac):
         (float): energy of the projectile after the collision
     """
     # scattering angle theta in the center-of-mass system
-    cos_half_theta = magic(proj.e/enorm, p/rnorm)
+    cos_half_theta = magic(proj.e/sim_params.enorm[proj.ispec], p/sim_params.rnorm[proj.ispec])
 
     # directions of the recoil and the projectile after the collision
     sin_psi = cos_half_theta
     cos_psi = sqrt(1 - sin_psi**2)
-    recoil_dir = dirfrac * cos_psi * (cos_psi*proj.dir[:] 
+    recoil_dir = sim_params.dirfrac[proj.ispec] * cos_psi * (cos_psi*proj.dir[:] 
                                                  + sin_psi*dirp[:])
     dir_new = proj.dir[:] - recoil_dir[:]
     norm = np.linalg.norm(dir_new[:])
@@ -179,7 +179,7 @@ def scatter(proj, p, dirp, enorm, rnorm, dirfrac, denfrac):
     proj.dir[:] = dir_new
 
     # energy after scattering
-    recoil_e = denfrac * proj.e * (1 - cos_half_theta**2)
+    recoil_e = sim_params.denfrac[proj.ispec] * proj.e * (1 - cos_half_theta**2)
     proj.e -= recoil_e
 
     return recoil_dir[:], recoil_e

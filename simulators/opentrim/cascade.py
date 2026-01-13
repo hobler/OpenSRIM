@@ -28,7 +28,7 @@ def setup():
 
 
 @jit(fastmath=True)
-def trajectory(initial_proj, sim_params, follow_recoils=False, prealloc=100):
+def trajectory(initial_proj, sim_params_arr, follow_recoils=False, prealloc=100):
     """Simulate one projectile trajectory.
     
     Parameters:
@@ -40,6 +40,7 @@ def trajectory(initial_proj, sim_params, follow_recoils=False, prealloc=100):
     Returns:
         (numpy.ndarray[Projectile]) list of final projectile states
     """
+    sim_params = sim_params_arr[0]
     proj_lst = np.full(1 if not follow_recoils else prealloc, initial_proj)
     tail = 0
     head = 1
@@ -47,10 +48,6 @@ def trajectory(initial_proj, sim_params, follow_recoils=False, prealloc=100):
     while tail < head:
         proj = proj_lst[tail]
         # scatter_params = sim_params.scatter_params # SimParams is now flattened
-        enorm = sim_params.enorm[proj.ispec]
-        rnorm = sim_params.rnorm[proj.ispec]
-        dirfrac = sim_params.dirfrac[proj.ispec]
-        denfrac = sim_params.denfrac[proj.ispec]
         while proj.e > sim_params.emin:
             free_path, p, dirp, recoil_pos = get_recoil_position(proj.pos[:], proj.dir[:], sim_params)
             
@@ -62,7 +59,7 @@ def trajectory(initial_proj, sim_params, follow_recoils=False, prealloc=100):
                 proj.is_inside = False
                 break
             
-            recoil_dir, recoil_e = scatter(proj, p, dirp[:], enorm, rnorm, dirfrac, denfrac)        
+            recoil_dir, recoil_e = scatter(proj, p, dirp[:], sim_params)        
             if follow_recoils and recoil_e > sim_params.ed:
                 if head == proj_lst.size:
                     proj_lst = np.append(proj_lst, np.full(int(1.5 * proj_lst.size), initial_proj))

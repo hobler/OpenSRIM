@@ -54,11 +54,10 @@ sim_params = SimParams( stat_params_tup = (2, 40, (0.0, 4000.0)),
                         geometry_params_tup = geometry_params_tup,
                         estop_params_tup = estop_params_tup,
                         scatter_params_tup = scatter_params_tup)
-print(typeof(cascade_params_tup), typeof(scatter_params_tup), typeof(sim_params.to_tuple()))
 statistics.setup(nspec=sim_params.nspec, nbin=sim_params.nbin, limits=sim_params.limits)
 
 @jit(fastmath=True, cache=False, parallel=True, nogil=True)
-def simulate(nion, sim_params_tup, follow_recoils=False):
+def simulate(nion, sim_params, follow_recoils=False):
     """Perform simulation on given number of projectiles
     
     Parameters:
@@ -85,14 +84,14 @@ def simulate(nion, sim_params_tup, follow_recoils=False):
     # Pointers will be overwritten during simulation
     proj_sim = [proj_dummy for _ in range(nion)]
 
-    sim_params = SimParams(*sim_params_tup)
+    sim_params_arr = np.full(1, sim_params)
     
     # Simulate the trajectories
     for i in prange(nion):
-        proj_sim[i] = cascade.trajectory(proj_dummy[0], sim_params, follow_recoils)
+        proj_sim[i] = cascade.trajectory(proj_dummy[0], sim_params_arr, follow_recoils)
     
     proj_count = 0
-    hist = statistics.Histogram_1d(sim_params.nspec, sim_params.nbin, sim_params.limits)
+    hist = statistics.Histogram_1d(sim_params.nspec, sim_params.nbin, (sim_params.limits[0], sim_params.limits[1]))
     mom = statistics.Moment_1d(sim_params.nspec, 4)
     for proj_lst in proj_sim:
         proj_count += proj_lst.size
@@ -185,7 +184,7 @@ if __name__ == "__main__":
     counts = [1000]
     chunk_size = 100
     # avg_chunk_time = 0.1    # seconds
-    simulate(10, sim_params.to_tuple(), follow_recoils=True)    # pre-compile
+    simulate(10, sim_params.to_record(), follow_recoils=True)    # pre-compile
     for i, c in enumerate(counts):
         # empty stats for each nion count
         statistics.setup(nspec=sim_params.nspec, nbin=sim_params.nbin, limits=sim_params.limits)
@@ -193,7 +192,7 @@ if __name__ == "__main__":
         start_time = time.time()
         # proj_count, hist_buf, mom_buf = simulate_adaptive(avg_chunk_time, c, sim_params.to_tuple(), follow_recoils=True)
         # proj_count, hist_buf, mom_buf = simulate_chunked(chunk_size, c, sim_params.to_tuple(), follow_recoils=True)
-        proj_count, hist_buf, mom_buf = simulate(c, sim_params.to_tuple(), follow_recoils=True)
+        proj_count, hist_buf, mom_buf = simulate(c, sim_params.to_record(), follow_recoils=True)
         statistics.hist.results = hist_buf
         statistics.mom.results = mom_buf
         times.append(time.time() - start_time)

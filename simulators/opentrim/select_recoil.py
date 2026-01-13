@@ -20,21 +20,23 @@ def setup(density):
         density (float): target density (atoms/A^3)
 
     Returns:
-        None    
+        (float): PMAX parameter
+        (float): MEAN_FREE_PATH parameter
     """
-    global PMAX, MEAN_FREE_PATH
-
-    MEAN_FREE_PATH = density**(-1/3)
-    PMAX = MEAN_FREE_PATH / sqrt(np.pi)
+    mean_free_path = density**(-1/3)
+    pmax = mean_free_path / sqrt(np.pi)
+    
+    return pmax, mean_free_path
 
 
 @jit(fastmath=True)
-def get_recoil_position(pos, dir):
+def get_recoil_position(pos, dir, recoil_params):
     """Get the recoil position based on the projectile position and direction.
 
     Parameters:
         pos (ndarray): position of the projectile (size 3)
         dir (ndarray): direction vector of the projectile (size 3)
+        recoil_params (RecoilParams): Recoil parameters
 
     Returns:
         (float): free path length to the next collision (A)
@@ -43,10 +45,10 @@ def get_recoil_position(pos, dir):
         (ndarray): direction vector from collision point to recoil (size 3)
         (ndarray): position of the recoil (A, size 3)
     """
-    free_path = MEAN_FREE_PATH
+    free_path = recoil_params.mean_free_path
     collision_pos = pos[:] + free_path * dir[:]
 
-    p = PMAX * sqrt(np.random.rand())
+    p = recoil_params.pmax * sqrt(np.random.rand())
     # Azimuthal angle fi
     fi = 2 * np.pi * np.random.rand()
     cos_fi = cos(fi)

@@ -15,20 +15,21 @@ def setup(zmin, zmax):
     Parameters:
         zmin (float): minimum z coordinate of the target (A)
         zmax (float): maximum z coordinate of the target (A)
+    Returns:
+        (float): zmin
+        (float): zmax
     """
-    global ZMIN, ZMAX
-
-    ZMIN = zmin
-    ZMAX = zmax
+    return zmin, zmax
 
 @jit(inline = 'always')
-def is_inside_target(pos):
+def is_inside_target(pos, geometry_params):
     """Check if a given position is inside the target.
 
     Parameters:
         pos (ndarray): position to check (size 3)
+        geometry_params (GeometryParams): Geometry parameters
 
     Returns:
         (bool): whether the position is inside the target
     """
-    return ZMIN <= pos[2] <= ZMAX
+    return geometry_params.zmin <= pos[2] <= geometry_params.zmax

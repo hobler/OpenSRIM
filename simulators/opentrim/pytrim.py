@@ -55,7 +55,7 @@ sim_params = SimParams( stat_params_tup = (2, 40, (0.0, 4000.0)),
                         estop_params_tup = estop_params_tup,
                         scatter_params_tup = scatter_params_tup)
 print(typeof(cascade_params_tup), typeof(scatter_params_tup), typeof(sim_params.to_tuple()))
-statistics.setup(nspec=sim_params.stat_params.nspec, nbin=sim_params.stat_params.nbin, limits=sim_params.stat_params.limits)
+statistics.setup(nspec=sim_params.nspec, nbin=sim_params.nbin, limits=sim_params.limits)
 
 @jit(fastmath=True, cache=False, parallel=True, nogil=True)
 def simulate(nion, sim_params_tup, follow_recoils=False):
@@ -92,8 +92,8 @@ def simulate(nion, sim_params_tup, follow_recoils=False):
         proj_sim[i] = cascade.trajectory(proj_dummy[0], sim_params, follow_recoils)
     
     proj_count = 0
-    hist = statistics.Histogram_1d(sim_params.stat_params.nspec, sim_params.stat_params.nbin, sim_params.stat_params.limits)
-    mom = statistics.Moment_1d(sim_params.stat_params.nspec, 4)
+    hist = statistics.Histogram_1d(sim_params.nspec, sim_params.nbin, sim_params.limits)
+    mom = statistics.Moment_1d(sim_params.nspec, 4)
     for proj_lst in proj_sim:
         proj_count += proj_lst.size
         for proj in proj_lst:
@@ -188,7 +188,7 @@ if __name__ == "__main__":
     simulate(10, sim_params.to_tuple(), follow_recoils=True)    # pre-compile
     for i, c in enumerate(counts):
         # empty stats for each nion count
-        statistics.setup(nspec=sim_params.stat_params.nspec, nbin=sim_params.stat_params.nbin, limits=sim_params.stat_params.limits)
+        statistics.setup(nspec=sim_params.nspec, nbin=sim_params.nbin, limits=sim_params.limits)
         
         start_time = time.time()
         # proj_count, hist_buf, mom_buf = simulate_adaptive(avg_chunk_time, c, sim_params.to_tuple(), follow_recoils=True)

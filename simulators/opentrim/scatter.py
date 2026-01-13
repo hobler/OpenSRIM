@@ -132,7 +132,7 @@ def magic(e, p):
     return cos_half_theta
 
 
-def scatter(proj, p, dirp):
+def scatter(proj, p, dirp, enorm, rnorm, dirfrac, denfrac):
     """Treat a scattering event.
 
     The atomic numbers and masses of the ion and the target atom enter the
@@ -147,6 +147,7 @@ def scatter(proj, p, dirp):
         dirp (ndarray): direction vector of the impact parameter
             (= from the collision point to the recoil position before 
             the collision) (unit vector, size 3)
+        scatter_params (ScatterParams): Scattering parameters
     
     Returns:
         (Projectile): state of the projectile after the collision 
@@ -155,12 +156,12 @@ def scatter(proj, p, dirp):
         (float): energy of the projectile after the collision
     """
     # scattering angle theta in the center-of-mass system
-    cos_half_theta = magic(proj.e/ENORM[proj.ispec], p/RNORM[proj.ispec])
+    cos_half_theta = magic(proj.e/enorm, p/rnorm)
 
     # directions of the recoil and the projectile after the collision
     sin_psi = cos_half_theta
     cos_psi = sqrt(1 - sin_psi**2)
-    recoil_dir = DIRFAC[proj.ispec] * cos_psi * (cos_psi*proj.dir[:] 
+    recoil_dir = dirfrac * cos_psi * (cos_psi*proj.dir[:] 
                                                  + sin_psi*dirp[:])
     dir_new = proj.dir[:] - recoil_dir[:]
     norm = np.linalg.norm(dir_new[:])
@@ -178,7 +179,7 @@ def scatter(proj, p, dirp):
     proj.dir[:] = dir_new
 
     # energy after scattering
-    recoil_e = DENFAC[proj.ispec] * proj.e * (1 - cos_half_theta**2)
+    recoil_e = denfrac * proj.e * (1 - cos_half_theta**2)
     proj.e -= recoil_e
 
     return recoil_dir[:], recoil_e
@@ -198,15 +199,21 @@ def setup(z1, m1, z2, m2):
         m1 (float): mass of projectile (amu)
         z2 (int): atomic number of target
         m2 (float): mass of target (amu)
+        
+    Returns:
+        (tuple): ENORM
+        (tuple): RNORM
+        (tuple): DIRFAC
+        (tuple): DENFAC
     """
-    global ENORM, RNORM, DIRFAC, DENFAC
-
     m1_m2 = m1 / m2
-    RNORM = np.array(((0.4685 / (z1**0.23 + z2**0.23)),
-             0.4685 / (z2**0.23 + z2**0.23)))                  # A
-    ENORM = np.array((14.39979 * z1 * z2 / RNORM[0] * (1 + m1_m2),
-             14.39979 * z2 * z2 / RNORM[1] * (1 + 1)))            # eV
-    DIRFAC = np.array((2 / (1 + m1_m2),
-              1))
-    DENFAC = np.array((4 * m1_m2 / (1 + m1_m2)**2,
-              1))
+    rnorm = ((0.4685 / (z1**0.23 + z2**0.23)),
+             0.4685 / (z2**0.23 + z2**0.23))                  # A
+    enorm = (14.39979 * z1 * z2 / rnorm[0] * (1 + m1_m2),
+             14.39979 * z2 * z2 / rnorm[1] * (1 + 1))            # eV
+    dirfac = (2 / (1 + m1_m2),
+              1.0)
+    denfac = (4 * m1_m2 / (1 + m1_m2)**2,
+              1.0)
+              
+    return enorm, rnorm, dirfac, denfac

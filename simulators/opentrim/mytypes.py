@@ -1,8 +1,6 @@
 import os
-from typing import Optional
 import numpy as np
 from numba import jit
-from numba.experimental import jitclass
 from numba.core.types import float64, UniTuple
 
 PROJ_DTYPE = np.dtype([
@@ -52,7 +50,6 @@ else:
         rec['is_inside'] = is_inside
         return rec
 
-@jitclass
 class SimParams:
     # StatParams
     nspec: int
@@ -82,63 +79,34 @@ class SimParams:
     denfrac: UniTuple(float64, 2)  # pyright: ignore[reportInvalidTypeForm]
     
     def __init__(self, stat_params_tup=None, cascade_params_tup=None, recoil_params_tup=None, geometry_params_tup=None, estop_params_tup=None, scatter_params_tup=None):
+        self.nspec = 0
+        self.nbin = 0
+        self.limits = (0.0, 0.0)
+        self.emin = 0.0
+        self.ed = 0.0
+        self.pmax = 0.0
+        self.mean_free_path = 0.0
+        self.zmin = 0.0
+        self.zmax = 0.0
+        self.fac_linhard = (0.0, 0.0)
+        self.density = 0.0
+        self.enorm = (0.0, 0.0)
+        self.rnorm = (0.0, 0.0)
+        self.dirfrac = (0.0, 0.0)
+        self.denfrac = (0.0, 0.0)
+        
         if stat_params_tup is not None:
-            self.nspec = stat_params_tup[0]
-            self.nbin = stat_params_tup[1]
-            self.limits = stat_params_tup[2]
-        else:
-            self.nspec = 0
-            self.nbin = 0
-            self.limits = (0.0, 0.0)
-            
+            self.nspec, self.nbin, self.limits = stat_params_tup
         if cascade_params_tup is not None:
-            self.emin = cascade_params_tup[0]
-            self.ed = cascade_params_tup[1]
-        else:
-            self.emin = 0.0
-            self.ed = 0.0
-            
+            self.emin, self.ed = cascade_params_tup 
         if recoil_params_tup is not None:
-            self.pmax = recoil_params_tup[0]
-            self.mean_free_path = recoil_params_tup[1]
-        else:
-            self.pmax = 0.0
-            self.mean_free_path = 0.0
-            
+            self.pmax, self.mean_free_path = recoil_params_tup
         if geometry_params_tup is not None:
-            self.zmin = geometry_params_tup[0]
-            self.zmax = geometry_params_tup[1]
-        else:
-            self.zmin = 0.0
-            self.zmax = 0.0
-            
+            self.zmin, self.zmax = geometry_params_tup     
         if estop_params_tup is not None:
-            self.fac_linhard = estop_params_tup[0]
-            self.density = estop_params_tup[1]
-        else:
-            self.fac_linhard = (0.0, 0.0)
-            self.density = 0.0
-            
+            self.fac_linhard, self.density = estop_params_tup
         if scatter_params_tup is not None:
-            self.enorm = scatter_params_tup[0]
-            self.rnorm = scatter_params_tup[1]
-            self.dirfrac = scatter_params_tup[2]
-            self.denfrac = scatter_params_tup[3]
-        else:
-            self.enorm = (0.0, 0.0)
-            self.rnorm = (0.0, 0.0)
-            self.dirfrac = (0.0, 0.0)
-            self.denfrac = (0.0, 0.0)
-        
-    def to_tuple(self):
-        stat_params = (self.nspec, self.nbin, self.limits)
-        cascade_params = (self.emin, self.ed)
-        recoil_params = (self.pmax, self.mean_free_path)
-        geometry_params = (self.zmin, self.zmax)
-        estop_params = (self.fac_linhard, self.density)
-        scatter_params = (self.enorm, self.rnorm, self.dirfrac, self.denfrac)
-        
-        return stat_params, cascade_params, recoil_params, geometry_params, estop_params, scatter_params
+            self.enorm, self.rnorm, self.dirfrac, self.denfrac = scatter_params_tup
 
     def to_record(self):
         # TODO Vanilla numpy compatabilit
@@ -152,10 +120,10 @@ class SimParams:
         rec['mean_free_path'] = self.mean_free_path
         rec['zmin'] = self.zmin
         rec['zmax'] = self.zmax
-        rec['fac_linhard'] = np.array(self.fac_linhard)
+        rec['fac_linhard'] = self.fac_linhard
         rec['density'] = self.density
-        rec['enorm'] = np.array(self.enorm)
-        rec['rnorm'] = np.array(self.rnorm)
-        rec['dirfrac'] = np.array(self.dirfrac)
-        rec['denfrac'] = np.array(self.denfrac)
+        rec['enorm'] = self.enorm
+        rec['rnorm'] = self.rnorm
+        rec['dirfrac'] = self.dirfrac
+        rec['denfrac'] = self.denfrac
         return rec

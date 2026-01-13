@@ -201,19 +201,19 @@ def setup(z1, m1, z2, m2):
         m2 (float): mass of target (amu)
         
     Returns:
-        (tuple): ENORM
-        (tuple): RNORM
-        (tuple): DIRFAC
-        (tuple): DENFAC
+        (np.ndarray): ENORM
+        (np.ndarray): RNORM
+        (np.ndarray): DIRFAC
+        (np.ndarray): DENFAC
     """
     m1_m2 = m1 / m2
-    rnorm = ((0.4685 / (z1**0.23 + z2**0.23)),
-             0.4685 / (z2**0.23 + z2**0.23))                  # A
-    enorm = (14.39979 * z1 * z2 / rnorm[0] * (1 + m1_m2),
-             14.39979 * z2 * z2 / rnorm[1] * (1 + 1))            # eV
-    dirfac = (2 / (1 + m1_m2),
-              1.0)
-    denfac = (4 * m1_m2 / (1 + m1_m2)**2,
-              1.0)
+    rnorm = np.array(((0.4685 / (z1**0.23 + z2**0.23)),
+                 0.4685 / (z2**0.23 + z2**0.23)))                  # A
+    enorm = np.array((14.39979 * z1 * z2 / rnorm[0] * (1 + m1_m2),
+                14.39979 * z2 * z2 / rnorm[1] * (1 + 1)))            # eV
+    dirfac = np.array((2 / (1 + m1_m2),
+                1))
+    denfac = np.array((4 * m1_m2 / (1 + m1_m2)**2,
+                1))
               
     return enorm, rnorm, dirfac, denfac

@@ -1,7 +1,6 @@
 import os
 import numpy as np
 from numba import jit
-from numba.core.types import float64, UniTuple
 
 PROJ_DTYPE = np.dtype([
     ("e", np.float64),
@@ -51,33 +50,6 @@ else:
         return rec
 
 class SimParams:
-    # StatParams
-    nspec: int
-    nbin: int
-    limits: UniTuple(float64, 2)  # pyright: ignore[reportInvalidTypeForm]
-    
-    # CascadeParams
-    emin: float
-    ed: float
-    
-    # RecoilParams
-    pmax: float
-    mean_free_path: float
-    
-    # GeometryParams
-    zmin: float
-    zmax: float
-    
-    # EstopParams
-    fac_linhard: UniTuple(float64, 2)  # pyright: ignore[reportInvalidTypeForm]
-    density: float
-    
-    # ScatterParams
-    enorm: UniTuple(float64, 2)  # pyright: ignore[reportInvalidTypeForm]
-    rnorm: UniTuple(float64, 2)  # pyright: ignore[reportInvalidTypeForm]
-    dirfrac: UniTuple(float64, 2)  # pyright: ignore[reportInvalidTypeForm]
-    denfrac: UniTuple(float64, 2)  # pyright: ignore[reportInvalidTypeForm]
-    
     def __init__(self, stat_params_tup=None, cascade_params_tup=None, recoil_params_tup=None, geometry_params_tup=None, estop_params_tup=None, scatter_params_tup=None):
         self.nspec = 0
         self.nbin = 0
@@ -88,12 +60,12 @@ class SimParams:
         self.mean_free_path = 0.0
         self.zmin = 0.0
         self.zmax = 0.0
-        self.fac_linhard = (0.0, 0.0)
+        self.fac_linhard = np.zeros(2)
         self.density = 0.0
-        self.enorm = (0.0, 0.0)
-        self.rnorm = (0.0, 0.0)
-        self.dirfrac = (0.0, 0.0)
-        self.denfrac = (0.0, 0.0)
+        self.enorm = np.zeros(2)
+        self.rnorm = np.zeros(2)
+        self.dirfrac = np.zeros(2)
+        self.denfrac = np.zeros(2)
         
         if stat_params_tup is not None:
             self.nspec, self.nbin, self.limits = stat_params_tup
@@ -109,8 +81,7 @@ class SimParams:
             self.enorm, self.rnorm, self.dirfrac, self.denfrac = scatter_params_tup
 
     def to_record(self):
-        # TODO Vanilla numpy compatabilit
-        rec = np.empty(1, dtype=SIM_PARAMS_DTYPE)[0]
+        rec = np.recarray(1, dtype=SIM_PARAMS_DTYPE)[0]
         rec['nspec'] = self.nspec
         rec['nbin'] = self.nbin
         rec['limits'] = np.array(self.limits)

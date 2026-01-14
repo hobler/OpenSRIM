@@ -204,7 +204,7 @@ class Histogram_1d:
 
 
 def setup(nspec, nbin, limits):
-    """Setup module variables.
+    """Setup module variables and pre-compile functions
 
     Parameters:
         nspec(int): number of atom species
@@ -215,6 +215,12 @@ def setup(nspec, nbin, limits):
 
     mom = Moment_1d(nvar=nspec, nmax=4)
     hist = Histogram_1d(nspec, nbin, limits)
+    
+    mom.central_moments()
+    mom.mean()
+    mom.std()
+    mom.skewness()
+    mom.kurtosis()
 
 @jit(fastmath=True)
 def score(proj):

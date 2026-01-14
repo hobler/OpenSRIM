@@ -29,7 +29,7 @@ import pytrim_stats as statistics
 from mytypes import Projectile, SimParams
 from numba import jit, prange
 
-ENABLE_CACHING = True
+ENABLE_CACHING = False
 
 zmin = 0.0              # minimum z coordinate of the target (A)
 zmax = 4000.0           # maximum z coordinate of the target (A)
@@ -41,13 +41,13 @@ density = 0.04994       # target density (atoms/A^3)
 corr_lindhard1 = 1.5    # Correction factor to Lindhard stopping power (B->Si)
 corr_lindhard2 = 1.0    # Correction factor to Lindhard stopping power (Si->Si)
 
+start = time.time()
 # Setup modules
 recoil_params_tup = select_recoil.setup(density)
 scatter_params_tup = scatter.setup(z1, m1, z2, m2)
 estop_params_tup = estop.setup(corr_lindhard1, z1, m1, corr_lindhard2, z2, m2, density)
 geometry_params_tup = geometry.setup(zmin, zmax)
 cascade_params_tup = cascade.setup()
-# NOTE: Class can be extended to support additional fields
 sim_params = SimParams( stat_params_tup = (2, 40, (0.0, 4000.0)),
                         cascade_params_tup = cascade_params_tup,
                         recoil_params_tup = recoil_params_tup,
@@ -82,6 +82,7 @@ def simulate(nion, sim_params, follow_recoils=False):
     proj_dummy = np.full(1, proj_init)
     proj_sim = [proj_dummy for _ in range(nion)]
 
+    # Fixes weird Numba error by passing array instead of single record
     sim_params_arr = np.full(1, sim_params)
     
     # Simulate the trajectories
@@ -177,26 +178,34 @@ def simulate_chunked(chunk_size, nion, *args, **kwargs):
     return total_proj_count, total_hist_buf, total_mom_buf
 
 if __name__ == "__main__":
-    times = []
-    proj_counts = []
+    print("Startup time:", time.time() - start)
+    iter_cnt = 3
+    
     counts = [1000, 10000]
+    proj_counts = [[] for _ in range(len(counts))]
+    times = [[] for _ in range(len(counts))]
     chunk_size = 100
     # avg_chunk_time = 0.1    # seconds
     simulate(10, sim_params.to_record(), follow_recoils=True)    # pre-compile
-    for i, c in enumerate(counts):
-        # empty stats for each nion count
-        statistics.setup(nspec=sim_params.nspec, nbin=sim_params.nbin, limits=sim_params.limits)
-        
-        start_time = time.time()
-        # proj_count, hist_buf, mom_buf = simulate_adaptive(avg_chunk_time, c, sim_params.to_tuple(), follow_recoils=True)
-        proj_count, hist_buf, mom_buf = simulate_chunked(chunk_size, c, sim_params.to_record(), follow_recoils=True)
-        # proj_count, hist_buf, mom_buf = simulate(c, sim_params.to_record(), follow_recoils=True)
-        statistics.hist.results = hist_buf
-        statistics.mom.results = mom_buf
-        times.append(time.time() - start_time)
-        proj_counts.append(proj_count)
+    for _ in range(iter_cnt):
+        for i, c in enumerate(counts):
+            # empty stats for each nion count
+            statistics.setup(nspec=sim_params.nspec, nbin=sim_params.nbin, limits=sim_params.limits)
+            
+            start_time = time.time()
+            # proj_count, hist_buf, mom_buf = simulate_adaptive(avg_chunk_time, c, sim_params.to_tuple(), follow_recoils=True)
+            proj_count, hist_buf, mom_buf = simulate_chunked(chunk_size, c, sim_params.to_record(), follow_recoils=True)
+            # proj_count, hist_buf, mom_buf = simulate(c, sim_params.to_record(), follow_recoils=True)
+            statistics.hist.results = hist_buf
+            statistics.mom.results = mom_buf
+            times[i].append(time.time() - start_time)
+            proj_counts[i].append(proj_count)
+    print([sum(t)/iter_cnt for t in times], [sum(t)/iter_cnt for t in proj_counts])
     print(times, proj_counts)
+    print("--------------------")
     
     # Output the results
-    # statistics.print_results()
+    start = time.time()
+    statistics.print_results()
+    print("Stats time:", time.time() - start)
     # statistics.plot_results(log=True)

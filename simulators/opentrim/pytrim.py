@@ -90,8 +90,9 @@ def simulate(nion, sim_params, follow_recoils=False):
         proj_sim[i] = cascade.trajectory(proj_dummy[0], sim_params_arr, follow_recoils)
     
     proj_count = 0
-    hist = statistics.Histogram_1d(sim_params.nspec, sim_params.nbin, (sim_params.limits[0], sim_params.limits[1]))
-    mom = statistics.Moment_1d(sim_params.nspec, 4)
+    stat_params = sim_params.stat_params
+    hist = statistics.Histogram_1d(stat_params.nspec, stat_params.nbin, (stat_params.limits[0], stat_params.limits[1]))
+    mom = statistics.Moment_1d(stat_params.nspec, 4)
     for proj_lst in proj_sim:
         proj_count += proj_lst.size
         for proj in proj_lst:

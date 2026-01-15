@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PyQt6.QtWidgets import QWidget, QVBoxLayout
 
-from app.simulation.simulation_page import MCResultsWidget
+from simulation.simulation_page import MCResultsWidget
 
 
 class MCResultsPage(QWidget):

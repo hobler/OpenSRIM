@@ -48,19 +48,19 @@ def trajectory(initial_proj, sim_params_arr, follow_recoils=False, prealloc=100)
     while tail < head:
         proj = proj_lst[tail]
         # scatter_params = sim_params.scatter_params # SimParams is now flattened
-        while proj.e > sim_params.emin:
-            free_path, p, dirp, recoil_pos = get_recoil_position(proj.pos[:], proj.dir[:], sim_params)
+        while proj.e > sim_params.cascade_params.emin:
+            free_path, p, dirp, recoil_pos = get_recoil_position(proj.pos[:], proj.dir[:], sim_params.recoil_params)
             
-            dee = eloss(proj, free_path, sim_params)
+            dee = eloss(proj, free_path, sim_params.estop_params)
             proj.e -= dee
             proj.pos += free_path * proj.dir[:]
             
-            if not is_inside_target(proj.pos[:], sim_params):
+            if not is_inside_target(proj.pos[:], sim_params.geometry_params):
                 proj.is_inside = False
                 break
             
-            recoil_dir, recoil_e = scatter(proj, p, dirp[:], sim_params)        
-            if follow_recoils and recoil_e > sim_params.ed:
+            recoil_dir, recoil_e = scatter(proj, p, dirp[:], sim_params.scatter_params)        
+            if follow_recoils and recoil_e > sim_params.cascade_params.ed:
                 if head == proj_lst.size:
                     proj_lst = np.append(proj_lst, np.full(int(1.5 * proj_lst.size), initial_proj))
                 

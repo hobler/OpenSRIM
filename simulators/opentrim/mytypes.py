@@ -10,22 +10,47 @@ PROJ_DTYPE = np.dtype([
     ("is_inside", np.bool_)
 ], align=True)
 
-SIM_PARAMS_DTYPE = np.dtype([
+STAT_PARAMS_DTYPE = np.dtype([
     ("nspec", np.int32),
     ("nbin", np.int32),
     ("limits", np.float64, (2,)),
+], align=True)
+
+CASCADE_PARAMS_DTYPE = np.dtype([
     ("emin", np.float64),
     ("ed", np.float64),
+], align=True)
+
+RECOIL_PARAMS_DTYPE = np.dtype([
     ("pmax", np.float64),
     ("mean_free_path", np.float64),
+], align=True)
+
+GEOMETRY_PARAMS_DTYPE = np.dtype([
     ("zmin", np.float64),
     ("zmax", np.float64),
+], align=True)
+
+ESTOP_PARAMS_DTYPE = np.dtype([
     ("fac_linhard", np.float64, (2,)),
     ("density", np.float64),
+], align=True)
+
+SCATTER_PARAMS_DTYPE = np.dtype([
     ("enorm", np.float64, (2,)),
     ("rnorm", np.float64, (2,)),
     ("dirfrac", np.float64, (2,)),
     ("denfrac", np.float64, (2,)),
+], align=True)
+
+# Main simulation parameters with nested data types
+SIM_PARAMS_DTYPE = np.dtype([
+    ("stat_params", STAT_PARAMS_DTYPE),
+    ("cascade_params", CASCADE_PARAMS_DTYPE),
+    ("recoil_params", RECOIL_PARAMS_DTYPE),
+    ("geometry_params", GEOMETRY_PARAMS_DTYPE),
+    ("estop_params", ESTOP_PARAMS_DTYPE),
+    ("scatter_params", SCATTER_PARAMS_DTYPE),
 ], align=True)
 
 # Preserve compatibility with vanilla NumPy (with numba disabled)
@@ -82,19 +107,19 @@ class SimParams:
 
     def to_record(self):
         rec = np.recarray(1, dtype=SIM_PARAMS_DTYPE)[0]
-        rec['nspec'] = self.nspec
-        rec['nbin'] = self.nbin
-        rec['limits'] = np.array(self.limits)
-        rec['emin'] = self.emin
-        rec['ed'] = self.ed
-        rec['pmax'] = self.pmax
-        rec['mean_free_path'] = self.mean_free_path
-        rec['zmin'] = self.zmin
-        rec['zmax'] = self.zmax
-        rec['fac_linhard'] = self.fac_linhard
-        rec['density'] = self.density
-        rec['enorm'] = self.enorm
-        rec['rnorm'] = self.rnorm
-        rec['dirfrac'] = self.dirfrac
-        rec['denfrac'] = self.denfrac
+        rec['stat_params']['nspec'] = self.nspec
+        rec['stat_params']['nbin'] = self.nbin
+        rec['stat_params']['limits'] = np.array(self.limits)
+        rec['cascade_params']['emin'] = self.emin
+        rec['cascade_params']['ed'] = self.ed
+        rec['recoil_params']['pmax'] = self.pmax
+        rec['recoil_params']['mean_free_path'] = self.mean_free_path
+        rec['geometry_params']['zmin'] = self.zmin
+        rec['geometry_params']['zmax'] = self.zmax
+        rec['estop_params']['fac_linhard'] = self.fac_linhard
+        rec['estop_params']['density'] = self.density
+        rec['scatter_params']['enorm'] = self.enorm
+        rec['scatter_params']['rnorm'] = self.rnorm
+        rec['scatter_params']['dirfrac'] = self.dirfrac
+        rec['scatter_params']['denfrac'] = self.denfrac
         return rec

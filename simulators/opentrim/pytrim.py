@@ -48,7 +48,9 @@ scatter_params_tup = scatter.setup(z1, m1, z2, m2)
 estop_params_tup = estop.setup(corr_lindhard1, z1, m1, corr_lindhard2, z2, m2, density)
 geometry_params_tup = geometry.setup(zmin, zmax)
 cascade_params_tup = cascade.setup()
-sim_params = SimParams( stat_params_tup = (2, 40, (0.0, 4000.0)),
+sim_params = SimParams( rng_seed = np.random.randint(2**31, dtype=np.uint32),
+                        # Seed can be specified manually or generated automatically (default)
+                        stat_params_tup = (2, 40, (0.0, 4000.0)),
                         cascade_params_tup = cascade_params_tup,
                         recoil_params_tup = recoil_params_tup,
                         geometry_params_tup = geometry_params_tup,
@@ -57,13 +59,14 @@ sim_params = SimParams( stat_params_tup = (2, 40, (0.0, 4000.0)),
 statistics.setup(nspec=sim_params.nspec, nbin=sim_params.nbin, limits=sim_params.limits)
 
 @jit(fastmath=True, cache=ENABLE_CACHING, parallel=True, nogil=True)
-def simulate(nion, sim_params, follow_recoils=False):
+def simulate(nion, sim_params, follow_recoils=False, sim_idx=0):
     """Perform simulation on given number of projectiles
     
     Parameters:
         nion: (int) Total number of projectiles to simulate
         sim_params_tup: (tuple) Simulation parameters (provided by `SimParams.to_tuple()`)
         follow_recoils: (bool) If the simulation should be performed for recoils aswell
+        sim_idx: (int) Simulation index (for chunked simulations)
         
     Returns:
         tuple[int, np.ndarray, np.ndarray]:
@@ -87,6 +90,7 @@ def simulate(nion, sim_params, follow_recoils=False):
     
     # Simulate the trajectories
     for i in prange(nion):
+        np.random.seed(sim_params_arr[0].rng_seed + sim_idx + i)    # fixed seed per thread
         proj_sim[i] = cascade.trajectory(proj_dummy[0], sim_params_arr, follow_recoils)
     
     proj_count = 0
@@ -127,7 +131,7 @@ def simulate_adaptive(avg_chunk_time, nion, *args, **kwargs):
         current_batch = min(chunk_size, nion - processed_count)
         
         start_time = time.time()
-        proj_count, hist_buf, mom_buf = simulate(current_batch, *args, **kwargs)
+        proj_count, hist_buf, mom_buf = simulate(current_batch, *args, sim_idx=processed_count, **kwargs)
         # NOTE: Saving or adding data to queue can be performed here
         
         total_proj_count += proj_count
@@ -165,8 +169,8 @@ def simulate_chunked(chunk_size, nion, *args, **kwargs):
     total_proj_count = 0
     total_hist_buf = None
     total_mom_buf = None
-    for _ in range(0, nion, chunk_size):
-        proj_count, hist_buf, mom_buf = simulate(chunk_size, *args, **kwargs)
+    for processed_count in range(0, nion, chunk_size):
+        proj_count, hist_buf, mom_buf = simulate(chunk_size, *args, sim_idx=processed_count, **kwargs)
         # NOTE: Saving can be performed here
         
         if total_hist_buf is None:
@@ -187,7 +191,8 @@ if __name__ == "__main__":
     times = [[] for _ in range(len(counts))]
     chunk_size = 100
     # avg_chunk_time = 0.1    # seconds
-    simulate(10, sim_params.to_record(), follow_recoils=True)    # pre-compile
+    # simulate(10, sim_params.to_record(), follow_recoils=True)    # pre-compile
+    simulate_chunked(10, 100, sim_params.to_record(), follow_recoils=True)
     for _ in range(iter_cnt):
         for i, c in enumerate(counts):
             # empty stats for each nion count

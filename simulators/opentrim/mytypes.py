@@ -51,6 +51,7 @@ SIM_PARAMS_DTYPE = np.dtype([
     ("geometry_params", GEOMETRY_PARAMS_DTYPE),
     ("estop_params", ESTOP_PARAMS_DTYPE),
     ("scatter_params", SCATTER_PARAMS_DTYPE),
+    ("rng_seed", np.uint32),
 ], align=True)
 
 # Preserve compatibility with vanilla NumPy (with numba disabled)
@@ -75,7 +76,7 @@ else:
         return rec
 
 class SimParams:
-    def __init__(self, stat_params_tup=None, cascade_params_tup=None, recoil_params_tup=None, geometry_params_tup=None, estop_params_tup=None, scatter_params_tup=None):
+    def __init__(self, stat_params_tup=None, cascade_params_tup=None, recoil_params_tup=None, geometry_params_tup=None, estop_params_tup=None, scatter_params_tup=None, rng_seed=None):
         self.nspec = 0
         self.nbin = 0
         self.limits = (0.0, 0.0)
@@ -91,6 +92,7 @@ class SimParams:
         self.rnorm = np.zeros(2)
         self.dirfrac = np.zeros(2)
         self.denfrac = np.zeros(2)
+        self.rng_seed = np.random.randint(2**31, dtype=np.uint32)
         
         if stat_params_tup is not None:
             self.nspec, self.nbin, self.limits = stat_params_tup
@@ -104,6 +106,8 @@ class SimParams:
             self.fac_linhard, self.density = estop_params_tup
         if scatter_params_tup is not None:
             self.enorm, self.rnorm, self.dirfrac, self.denfrac = scatter_params_tup
+        if rng_seed is not None:
+            self.rng_seed = np.uint32(rng_seed)
 
     def to_record(self):
         rec = np.recarray(1, dtype=SIM_PARAMS_DTYPE)[0]
@@ -122,4 +126,5 @@ class SimParams:
         rec['scatter_params']['rnorm'] = self.rnorm
         rec['scatter_params']['dirfrac'] = self.dirfrac
         rec['scatter_params']['denfrac'] = self.denfrac
+        rec['rng_seed'] = self.rng_seed
         return rec

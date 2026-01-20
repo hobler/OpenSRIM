@@ -29,7 +29,7 @@ def setup(density):
     return pmax, mean_free_path
 
 
-@jit(fastmath=True)
+@jit
 def get_recoil_position(pos, dir, recoil_params):
     """Get the recoil position based on the projectile position and direction.
 

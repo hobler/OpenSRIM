@@ -27,7 +27,7 @@ def setup():
     return emin, ed
 
 
-@jit(fastmath=True)
+@jit
 def trajectory(initial_proj, sim_params_arr, follow_recoils=False, prealloc=100):
     """Simulate one projectile trajectory.
     

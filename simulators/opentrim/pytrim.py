@@ -29,7 +29,7 @@ import pytrim_stats as statistics
 from mytypes import Projectile, SimParams
 from numba import jit, prange
 
-ENABLE_CACHING = False
+ENABLE_CACHING = False  # TODO Enable for production
 
 zmin = 0.0              # minimum z coordinate of the target (A)
 zmax = 4000.0           # maximum z coordinate of the target (A)
@@ -58,7 +58,7 @@ sim_params = SimParams( rng_seed = np.random.randint(2**31, dtype=np.uint32),
                         scatter_params_tup = scatter_params_tup)
 statistics.setup(nspec=sim_params.nspec, nbin=sim_params.nbin, limits=sim_params.limits)
 
-@jit(fastmath=True, cache=ENABLE_CACHING, parallel=True, nogil=True)
+@jit(cache=ENABLE_CACHING, parallel=True, nogil=True)
 def simulate(nion, sim_params, follow_recoils=False, sim_idx=0):
     """Perform simulation on given number of projectiles
     

@@ -222,7 +222,7 @@ def setup(nspec, nbin, limits):
     mom.skewness()
     mom.kurtosis()
 
-@jit(fastmath=True)
+@jit
 def score(proj):
     """Score the final projectile position into moments sum and histogram.
 

@@ -15,8 +15,11 @@ simulation parameters. Also, recoils are not yet followed, and only the
 mean and the straggling of the penetration depth of the primary ions are
 recorded.
 """
-# import os
+import sys
+import os
 # os.environ["NUMBA_DISABLE_JIT"] = "1"
+if getattr(sys, 'frozen', False):   # Different caching location when using PyInstaller
+    os.environ["NUMBA_CACHE_LOCATOR_CLASSES"] = "UserWideCacheLocator"
 
 import time
 import numpy as np
@@ -29,7 +32,7 @@ import pytrim_stats as statistics
 from mytypes import Projectile, SimParams
 from numba import jit, prange
 
-ENABLE_CACHING = False  # TODO Enable for production
+ENABLE_CACHING = getattr(sys, 'frozen', False)
 
 zmin = 0.0              # minimum z coordinate of the target (A)
 zmax = 4000.0           # maximum z coordinate of the target (A)
@@ -192,7 +195,7 @@ if __name__ == "__main__":
     chunk_size = 100
     # avg_chunk_time = 0.1    # seconds
     # simulate(10, sim_params.to_record(), follow_recoils=True)    # pre-compile
-    simulate_chunked(10, 100, sim_params.to_record(), follow_recoils=True)
+    simulate_chunked(10, 100, sim_params.to_record(), follow_recoils=True)  # TODO remove in production
     for _ in range(iter_cnt):
         for i, c in enumerate(counts):
             # empty stats for each nion count
@@ -214,4 +217,4 @@ if __name__ == "__main__":
     start = time.time()
     statistics.print_results()
     print("Stats time:", time.time() - start)
-    # statistics.plot_results(log=True)
+    statistics.plot_results(log=True)

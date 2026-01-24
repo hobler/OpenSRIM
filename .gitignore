@@ -36,6 +36,7 @@ MANIFEST
 *.manifest
 *.spec
 !build/pytrim.spec
+!build/README.md
 
 # Installer logs
 pip-log.txt

@@ -10,7 +10,9 @@ Available functions:
     scatter: treat a scattering event.
 """
 
-from zblpot import magic
+from sn_code.zbl import magic
+from sn_code.zbl import ZBL_screen
+from sn_code.nlhlin import NLHlin_screen
 import numpy as np
 
 
@@ -28,7 +30,7 @@ def setup(z1, m1, z2, m2, pot_model):
         m2 (float): mass of target (amu)
         pot_model (str): potential model for scattering
     """
-    global ENORM, RNORM, DIRFAC, DENFAC, POT_MODEL
+    global ENORM, RNORM, DIRFAC, DENFAC, POT_MODEL, SCREEN_FUN
 
     m1_m2 = m1 / m2
     POT_MODEL = pot_model
@@ -47,7 +49,15 @@ def setup(z1, m1, z2, m2, pot_model):
     DENFAC = (4 * m1_m2 / (1 + m1_m2)**2,
               1)
     
-        
+# Setup screening function object except for 'ZBL_magic' potential
+    if POT_MODEL == 'ZBL_magic':
+        SCREEN_FUN = None
+    elif POT_MODEL == 'ZBL':
+        SCREEN_FUN = ZBL_screen(z1, z2, RNORM[0])
+    elif POT_MODEL == 'NLHlin':
+        SCREEN_FUN = NLHlin_screen(z1, z2, RNORM[0])
+
+
 def scatter(proj, p, dirp):
     """Treat a scattering event.
 

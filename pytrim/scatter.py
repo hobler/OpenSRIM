@@ -10,12 +10,11 @@ Available functions:
     scatter: treat a scattering event.
 """
 
-from math import sqrt, exp
 from zblpot import magic
 import numpy as np
 
 
-def setup(z1, m1, z2, m2):
+def setup(z1, m1, z2, m2, pot_model):
     """Setup module variables depending on projectile and target species.
 
     Each of the module variables ENORM, RNORM, DIRFAC, and DENFAC is a tuple
@@ -27,19 +26,27 @@ def setup(z1, m1, z2, m2):
         m1 (float): mass of projectile (amu)
         z2 (int): atomic number of target
         m2 (float): mass of target (amu)
+        pot_model (str): potential model for scattering
     """
-    global ENORM, RNORM, DIRFAC, DENFAC
+    global ENORM, RNORM, DIRFAC, DENFAC, POT_MODEL
 
     m1_m2 = m1 / m2
-    RNORM = (0.4685 / (z1**0.23 + z2**0.23),
-             0.4685 / (z2**0.23 + z2**0.23))                  # A
+    POT_MODEL = pot_model
+
+    if POT_MODEL.startswith('ZBL'):
+        RNORM = (0.4685 / (z1**0.23 + z2**0.23),
+                 0.4685 / (z2**0.23 + z2**0.23))                  # A
+    else:
+        RNORM = (0.4685 / np.sqrt(np.sqrt(z1) + np.sqrt(z2)),
+                 0.4685 / np.sqrt(np.sqrt(z2) + np.sqrt(z2)))     # A
+
     ENORM = (14.39979 * z1 * z2 / RNORM[0] * (1 + m1_m2),
-             14.39979 * z2 * z2 / RNORM[1] * (1 + 1))            # eV
+             14.39979 * z2 * z2 / RNORM[1] * (1 + 1))             # eV
     DIRFAC = (2 / (1 + m1_m2),
               1)
     DENFAC = (4 * m1_m2 / (1 + m1_m2)**2,
               1)
-        
+    
         
 def scatter(proj, p, dirp):
     """Treat a scattering event.
@@ -64,8 +71,9 @@ def scatter(proj, p, dirp):
         (float): energy of the projectile after the collision
     """
     # scattering angle theta in the center-of-mass system
-    sin_half_theta, cos_half_theta = magic(proj.e/ENORM[proj.ispec], 
-                                           p/RNORM[proj.ispec])
+    if POT_MODEL == 'ZBL_magic':
+        sin_half_theta, cos_half_theta = magic(proj.e/ENORM[proj.ispec], 
+                                               p/RNORM[proj.ispec])
 
     # directions of the recoil and the projectile after the collision
     sin_psi = cos_half_theta

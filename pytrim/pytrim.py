@@ -30,7 +30,8 @@ nion = 100             # number of projectiles to simulate
 
 zmin = 0.0              # minimum z coordinate of the target (A)
 zmax = 4000.0           # maximum z coordinate of the target (A)
-pot_model = 'ZBL_magic'  # potential model for scattering
+pot_model = 'NLHlin'  # potential model for scattering
+                        # Possible values are 'ZBL', 'NLHlin', 'ZBL_magic'
 z1 = 5                  # atomic number of projectile
 m1 = 11.009             # mass of projectile (amu)
 z2 = 14                 # atomic number of target

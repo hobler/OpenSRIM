@@ -13,6 +13,7 @@ Available functions:
 from sn_code.zbl import magic
 from sn_code.zbl import ZBL_screen
 from sn_code.nlhlin import NLHlin_screen
+from sn_code.cm_scatter import calc_scatter
 import numpy as np
 
 
@@ -82,8 +83,13 @@ def scatter(proj, p, dirp):
     """
     # scattering angle theta in the center-of-mass system
     if POT_MODEL == 'ZBL_magic':
-        sin_half_theta, cos_half_theta = magic(proj.e/ENORM[proj.ispec], 
-                                               p/RNORM[proj.ispec])
+        cos_half_theta = magic(proj.e/ENORM[proj.ispec], p/RNORM[proj.ispec])
+        sin_half_theta = np.sqrt(1 - cos_half_theta**2)
+    else:
+        theta, _ = calc_scatter(proj.e/ENORM[proj.ispec], 
+                                p/RNORM[proj.ispec], SCREEN_FUN, 4)
+        sin_half_theta = np.sin(0.5 * theta)
+        cos_half_theta = np.cos(0.5 * theta)
 
     # directions of the recoil and the projectile after the collision
     sin_psi = cos_half_theta

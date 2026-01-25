@@ -26,11 +26,11 @@ import statistics
 import mytypes
 
 
-
 nion = 100             # number of projectiles to simulate
 
 zmin = 0.0              # minimum z coordinate of the target (A)
 zmax = 4000.0           # maximum z coordinate of the target (A)
+pot_model = 'ZBL_magic'  # potential model for scattering
 z1 = 5                  # atomic number of projectile
 m1 = 11.009             # mass of projectile (amu)
 z2 = 14                 # atomic number of target
@@ -41,7 +41,7 @@ corr_lindhard2 = 1.0    # Correction factor to Lindhard stopping power (Si->Si)
 
 # Setup modules
 select_recoil.setup(density)
-scatter.setup(z1, m1, z2, m2)
+scatter.setup(z1, m1, z2, m2, pot_model)
 estop.setup(corr_lindhard1, z1, m1, corr_lindhard1, z2, m2, density)
 geometry.setup(zmin, zmax)
 cascade.setup()

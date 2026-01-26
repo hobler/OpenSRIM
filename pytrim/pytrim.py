@@ -19,6 +19,7 @@ import time
 import numpy as np
 import select_recoil
 import scatter
+import sn_code.cm_scatter as cm_scatter
 import estop
 import geometry
 import cascade
@@ -43,6 +44,7 @@ corr_lindhard2 = 1.0    # Correction factor to Lindhard stopping power (Si->Si)
 # Setup modules
 select_recoil.setup(density)
 scatter.setup(z1, m1, z2, m2, pot_model)
+cm_scatter.setup(n_absc=4)
 estop.setup(corr_lindhard1, z1, m1, corr_lindhard1, z2, m2, density)
 geometry.setup(zmin, zmax)
 cascade.setup()

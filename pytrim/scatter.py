@@ -13,7 +13,7 @@ Available functions:
 from sn_code.zbl import magic
 from sn_code.zbl import ZBL_screen
 from sn_code.nlhlin import NLHlin_screen
-from sn_code.cm_scatter import calc_scatter
+from sn_code.cm_scatter import scatter_integrals
 import numpy as np
 
 
@@ -50,13 +50,16 @@ def setup(z1, m1, z2, m2, pot_model):
     DENFAC = (4 * m1_m2 / (1 + m1_m2)**2,
               1)
     
-# Setup screening function object except for 'ZBL_magic' potential
+# Setup screening function object
     if POT_MODEL == 'ZBL_magic':
-        SCREEN_FUN = None
+        SCREEN_FUN = (ZBL_screen(z1, z2, RNORM[0], magic=True),
+                      ZBL_screen(z2, z2, RNORM[1], magic=True))
     elif POT_MODEL == 'ZBL':
-        SCREEN_FUN = ZBL_screen(z1, z2, RNORM[0])
+        SCREEN_FUN = (ZBL_screen(z1, z2, RNORM[0]),
+                      ZBL_screen(z2, z2, RNORM[1]))
     elif POT_MODEL == 'NLHlin':
-        SCREEN_FUN = NLHlin_screen(z1, z2, RNORM[0])
+        SCREEN_FUN = (NLHlin_screen(z1, z2, RNORM[0]),
+                      NLHlin_screen(z2, z2, RNORM[1]))
 
 
 def scatter(proj, p, dirp):
@@ -83,11 +86,14 @@ def scatter(proj, p, dirp):
     """
     # scattering angle theta in the center-of-mass system
     if POT_MODEL == 'ZBL_magic':
-        cos_half_theta = magic(proj.e/ENORM[proj.ispec], p/RNORM[proj.ispec])
+        cos_half_theta = magic(proj.e/ENORM[proj.ispec], 
+                               p/RNORM[proj.ispec],
+                               SCREEN_FUN[proj.ispec])
         sin_half_theta = np.sqrt(1 - cos_half_theta**2)
     else:
-        theta, _ = calc_scatter(proj.e/ENORM[proj.ispec], 
-                                p/RNORM[proj.ispec], SCREEN_FUN, 4)
+        theta, _ = scatter_integrals(proj.e/ENORM[proj.ispec], 
+                                     p/RNORM[proj.ispec], 
+                                     SCREEN_FUN[proj.ispec])
         sin_half_theta = np.sin(0.5 * theta)
         cos_half_theta = np.cos(0.5 * theta)
 
@@ -110,7 +116,7 @@ def scatter(proj, p, dirp):
     proj.dir = dir_new[:]
 
     # energy after scattering
-    recoil_e = DENFAC[proj.ispec] * proj.e * (1 - cos_half_theta**2)
+    recoil_e = DENFAC[proj.ispec] * proj.e * sin_half_theta**2
     proj.e -= recoil_e
 
     return proj, recoil_dir[:], recoil_e

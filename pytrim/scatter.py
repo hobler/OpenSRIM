@@ -10,10 +10,10 @@ Available functions:
     scatter: treat a scattering event.
 """
 
-from sn_code.zbl import magic
-from sn_code.zbl import ZBL_screen
-from sn_code.nlhlin import NLHlin_screen
-from sn_code.cm_scatter import scatter_integrals
+from zbl import magic
+from zbl import ZBL_screen
+from nlhlin import NLHlin_screen
+from cm_scatter import scatter_integrals
 import numpy as np
 
 

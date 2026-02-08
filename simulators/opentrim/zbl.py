@@ -14,6 +14,10 @@ Available functions:
     magic: calculate scattering angle using Biersack's magic formula.
 """
 from math import sqrt
+from typing import Optional
+from numba import jit
+from numba.core.types import UniTuple, float64
+from numba.experimental import jitclass
 import numpy as np
 from apsis import Apsis
 
@@ -34,9 +38,19 @@ A1B1 = A1 * B1
 A2B2 = A2 * B2
 A3B3 = A3 * B3
 
+@jitclass
 class ZBL_screen:
     """Defines the ZBL screening function.
     """
+    Z1: Optional[int]
+    Z2: Optional[int]
+    a: UniTuple(float64, 4)
+    b: UniTuple(float64, 4)
+    ab: UniTuple(float64, 4)
+    c: float64
+    d: float64
+    rmax: float64
+    _apsis: Optional[Apsis]
     def __init__(self, Z1=None, Z2=None, rnorm=None, magic=False):
         """Setup ZBL screening function for given atomic numbers.
 
@@ -65,10 +79,18 @@ class ZBL_screen:
             self.ab = (A0B0*factor, A1B1*factor, A2B2*factor, A3B3*factor)
         
         self.rmax = np.inf  # ZBL screening function is defined for all r
+        self._apsis = None
         if not magic:       # not needed for magic formula
-            self.apsis = Apsis(self)
+            self._apsis = Apsis(self)
 
-    def __call__(self, r):
+    # TODO unify return type between screening functions
+    # TODO (should always return tuple)
+    def apsis(self, e, p):
+        if self._apsis is not None:
+            return self._apsis.call(e, p, self)
+        return None
+
+    def call(self, r):
         """Calculate the ZBL screening function and its derivative.
 
         Parameters:
@@ -78,7 +100,7 @@ class ZBL_screen:
             (float): ZBL screening function at distance r
             (float): derivative of ZBL screening function at distance r (1/RNORM)
         """
-        r = np.asarray(r, dtype=float)
+        # r = np.asarray([r])
 
         exp0 = np.exp(-self.b[0] * r)
         exp1 = np.exp(-self.b[1] * r)
@@ -101,14 +123,15 @@ R12sq = (2*K2)**2
 R23sq = K3 / K2
 NITER = 1           # number of Newton-Raphson iterations
 
+@jit
 def estimate_apsis(e, p, screen_fun):
     """Estimate the distance of closest approach (apsis) in a colllision.
 
     Parameters:
         e (float): energy of projectile before the collision (ENORM)
         p (float): impact parameter (RNORM)
-        screen_fun (callable): Function to calculate the screening function
-            for given distance r (RNORM).
+        screen_fun (object): Object (with a call() method) to 
+            calculate the screening function for given distance r (RNORM).
 
     Returns:
         (float): Estimated apsis of the collision (RNORM)
@@ -127,7 +150,7 @@ def estimate_apsis(e, p, screen_fun):
     
     # Do Newton-Raphson iterations to improve the estimate
     for _ in range(NITER):
-        screen, dscreen = screen_fun(r0)
+        screen, dscreen = screen_fun.call(r0)
         numerator = r0*(r0-screen/e) - p**2
         denominator = 2*r0 - (screen+r0*dscreen)/e
         r0 -= numerator/denominator
@@ -145,21 +168,22 @@ C3 = 0.007122
 C4 = 14.813
 C5 = 9.3066
 
+@jit
 def magic(e, p, screen_fun):
     """Calculate CM scattering angle using Biersack's magic formula.
 
     Parameters:
         e (float): energy of projectile before the collision (ENORM)
         p (float): impact parameter (RNORM)
-        screen_fun (callable): Function to calculate the screening function
-            for given distance r (RNORM).
+        screen_fun (object): Object (with a call() method) to 
+            calculate the screening function for given distance r (RNORM).
     
     Returns:
         (float): cosine of half the scattering angle in the center-of-mass 
             system
     """
     r0 = estimate_apsis(e, p, screen_fun)
-    screen, dscreen = screen_fun(r0)
+    screen, dscreen = screen_fun.call(r0)
 
     rho = 2*(e*r0-screen) / (screen/r0-dscreen)
     sqrte = sqrt(e)

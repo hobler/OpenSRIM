@@ -4,13 +4,18 @@ Available functions:
 - apsis_setup: Setup apsis table for head-on collisions.
 - calc_apsis: Calculate the distance of closest approach (apsis) in a collision.
 """
+import os
+# os.environ["NUMBA_DISABLE_JIT"] = "1"
+from numba import jit
+from numba.experimental import jitclass
 import numpy as np
 from table1d import Table1D
 
-
+@jitclass
 class Apsis:
     """Calculate apsis of collision for arbitrary screening function.
     """
+    apsis_headon_table: Table1D
     def __init__(self, screen_fun):
         """Initialize apsis calculation with given screening function.
 
@@ -19,10 +24,8 @@ class Apsis:
         (lowest energy/largest apsis first, highest energy/smallest apsis last).
 
         Parameters:
-            screen_fun (callable): Screening function
+            screen_fun (object): Screening function
         """
-        self.screen_fun = screen_fun
-
         emax = 1e4
         emin = 1e-8
 
@@ -38,12 +41,12 @@ class Apsis:
         # Iterating down the reduced energy by factors of 2
         while e >= emin/2:
             while abs(delta_r0) > 1e-6 * r0:
-                screen, dscreen = screen_fun(r0)
+                screen, dscreen = screen_fun.call(r0)
                 f = r0 - screen/e
                 df = 1 - dscreen/e
                 delta_r0 = - f / df
                 r0 += delta_r0
-            dr0_de = - r0**2 / (screen - r0 * dscreen)
+            dr0_de = - r0**2 / (screen - r0 * dscreen)  # pyright: ignore[reportPossiblyUnboundVariable]
             energies.append(e)
             apses.append(r0)
             dapses_de.append(dr0_de)
@@ -57,12 +60,13 @@ class Apsis:
         apses = np.ravel(np.array(apses))
         dapses_de = np.ravel(np.array(dapses_de))
 
-        self.apsis_headon_table = Table1D(energies[::-1],
-                                          apses[::-1],
-                                          dapses_de[::-1],
-                                          powerof2=True)
+        self.apsis_headon_table = Table1D(energies[::-1].copy(),
+                                          apses[::-1].copy(),
+                                          dapses_de[::-1].copy(),   # TODO faster contiguous view inverse?
+                                          False,
+                                          True)
 
-    def __call__(self, e, p):
+    def call(self, e, p, screen_fun):
         """Calculate the distance of closest approach (apsis) in a colllision.
 
         As initial condition, the larger of the apsis estimate from the table 
@@ -71,12 +75,13 @@ class Apsis:
         Parameters:
             e (float): energy of projectile before the collision (ENORM)
             p (float): impact parameter (RNORM)
+            screen_fun (object): Screening function
 
         Returns:
             (float): Estimated apsis of the collision (RNORM)
             (int): Number of iterations used to converge the apsis
         """
-        if p >= self.screen_fun.rmax:
+        if p >= screen_fun.rmax:    # TODO pass rmax as parameter?
             return p, 0
         
         if e < self.apsis_headon_table.x[0]:
@@ -84,13 +89,13 @@ class Apsis:
         elif e > self.apsis_headon_table.x[-1]:
             r0 = 1 / e
         else:
-            r0 = self.apsis_headon_table.interpolate(e)
+            _, r0 = self.apsis_headon_table.interpolate(e)
         
         r0 = max(r0, p)
         delta_r0 = np.inf
 
         def fun(r):
-            screen, dscreen = self.screen_fun(r)
+            screen, dscreen = screen_fun.call(r)
             return r - screen/e - p**2/r, 1 - dscreen/e + p**2/r**2
         
         count = 0
@@ -102,8 +107,7 @@ class Apsis:
 
         return r0, count
 
-
-def plot_iteration_counts(screen_fun, Z1=None, Z2=None):
+def plot_iteration_counts(screen_fun_type, n_iter, e_values, p_values, Z1=None, Z2=None):
     """Plot the number of iterations required for apsis calculation.
 
     The plot shows the number of iterations needed to converge the apsis
@@ -112,25 +116,18 @@ def plot_iteration_counts(screen_fun, Z1=None, Z2=None):
     actually is 1e-6).
 
     Parameters:
-        screen_fun (callable): Screening function taking distance r as argument
+        screen_fun_type (class): Screening function type as class
+        n_iter (ndarray): Iteration count for each (e, p) combination
+        e_values (ndarray): Energy values
+        p_values (ndarray): Impact parameters
         Z1 (int or None): atomic number of first atom, or None if not needed
         Z2 (int or None): atomic number of second atom, or None if not needed
     """
     import matplotlib.pyplot as plt
     import matplotlib as mpl
 
-    apsis = Apsis(screen_fun)
-
-    e_values = np.logspace(-6, 2, 9)
-    p_values = 10.0 * np.linspace(0, 2, 11)**2
     e_idx = np.arange(len(e_values)+1) - 0.5
     p_idx = np.arange(len(p_values)+1) - 0.5
-
-    n_iter = np.empty((len(p_values), len(e_values)), dtype=int)
-    for i, e in enumerate(e_values):
-        for j, p in enumerate(p_values):
-            r0, niter = apsis(e, p)
-            n_iter[j, i] = niter
 
     plt.rcParams.update({'font.size': 14})
     fig = plt.figure(figsize=(8,6))
@@ -152,25 +149,51 @@ def plot_iteration_counts(screen_fun, Z1=None, Z2=None):
     ax.set_yticklabels(0.1*np.asarray(10*p_values, dtype=int))
     ax.set_ylabel(r"impact parameter $P$")
 
-    if type(screen_fun) is ZBL_screen:
+    if screen_fun_type is ZBL_screen:
         ax.set_title("Universal ZBL potential", fontsize="small")
-    elif type(screen_fun) is NLHlin_screen:
+    elif screen_fun_type is NLHlin_screen:
         ax.set_title(fr"NLHlin potential, Z$_1$={Z1}, Z$_2$={Z2}", 
                      fontsize="small")
     plt.tight_layout()
     
     plt.show()
 
+@jit
+def calc_niter(Z1, Z2, e_values, p_values, coefs):
+    """Calculate the iteration count for each combination of (e, p)
+            using the specified screening function
+            
+    Parameters:
+        Z1 (int): atomic number of first atom
+        Z2 (int): atomic number of second atom
+        e_values (ndarray): Energy values
+        p_values (ndarray): Impact parameters
+        coefs (ndarray): Table of coefficients (for Z1 and Z2) [NLHlin_screen]
+        
+    Returns:
+        (ndarray): Iteration count for each (e, p) combination
+    """
+    rnorm = 0.4685 / (np.sqrt(np.sqrt(Z1)) + np.sqrt(np.sqrt(Z2)))
+    screen_fun = NLHlin_screen(Z1, Z2, rnorm, coefs)
+    # screen_fun = ZBL_screen(None, None, None, False)
+    
+    n_iter = np.empty((len(p_values), len(e_values)), dtype=np.uint32)
+    for i, e in enumerate(e_values):
+        for j, p in enumerate(p_values):
+            r0, niter = screen_fun.apsis(e, p)
+            n_iter[j, i] = niter
+    return n_iter
+
 if __name__ == "__main__":
     from zbl import ZBL_screen
-    from nlhlin import NLHlin_screen
-
-    #screen_fun = ZBL_screen()
-
+    from nlhlin import NLHlin_screen, read_coefs
+    
     Z1 = 33
     Z2 = 14
-    rnorm = 0.4685 / (np.sqrt(np.sqrt(Z1)) + np.sqrt(np.sqrt(Z2)))
-    screen_fun = NLHlin_screen(Z1, Z2, rnorm)
+    e_values = np.logspace(-6, 2, 9)
+    p_values = 10.0 * np.linspace(0, 2, 11)**2
     
-    plot_iteration_counts(screen_fun, Z1, Z2)
+    coefs = read_coefs()
+    n_iter = calc_niter(Z1, Z2, e_values, p_values, coefs)
+    plot_iteration_counts(NLHlin_screen, n_iter, e_values, p_values, Z1, Z2)
 

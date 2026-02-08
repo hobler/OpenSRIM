@@ -7,15 +7,27 @@ Moreover, there are plotting functions for testing and visualization:
     plot_screen: plot NLHlin screening function for various atomic numbers.
     plot_ZBLscreen: plot ZBL screening function for various atomic numbers.
 """
-import os, sys
+import os
+import sys
+from numba.core.types import UniTuple, float64
+from numba.experimental import jitclass
 import numpy as np
 from apsis import Apsis
 
-
+@jitclass
 class NLHlin_screen:
     """Defines the NLHlin screening function.
     """
-    def __init__(self, Z1, Z2, rnorm=None):
+    Z1: int
+    Z2: int
+    a: UniTuple(float64, 3)
+    b: UniTuple(float64, 3)
+    ab: UniTuple(float64, 3)
+    c: float64
+    d: float64
+    rmax: float64
+    _apsis: Apsis
+    def __init__(self, Z1, Z2, rnorm=None, coefs=None):
         """Setup NLHlin screening function for given atomic numbers.
 
         Parameters:
@@ -23,42 +35,50 @@ class NLHlin_screen:
             Z2: atomic number of atom 2
             rnorm: screening length (A), None for the default value of
                 0.4685 / sqrt(sqrt(Z1) + sqrt(Z2))
+            coefs: Table of coefficients (for Z1 and Z2)
         """
+        if coefs is None:
+            print("Required coefficients table missing for NLHlin_screen")
+            return
         self.Z1 = Z1
         self.Z2 = Z2
-        
-        fname = os.path.join(os.path.dirname(__file__), 'dmol_coeffs_rmax.dat')
-        if not os.path.exists(fname):
-            print(f'NLHlin_screen: Coefficients file {fname} not found')
-            sys.exit()
+        mask = ((coefs.z1 == Z1) & (coefs.z2 == Z2)) | \
+               ((coefs.z1 == Z2) & (coefs.z2 == Z1))
+        rec = coefs[mask][0]
 
-        with open(fname) as f:
-            for line in f:
-                if line[0] == '#':
-                    continue
-                z1, z2, a1, b1, a2, b2, a3, b3, rmax, error = line.split()
-                z1 = int(z1)
-                z2 = int(z2)
-                if min(z1,z2) == min(Z1, Z2) and max(z1, z2) == max(Z1, Z2):
-                    break
-
-        self.a = (float(a1), float(a2), float(a3))
+        self.a = (rec.a1, rec.a2, rec.a3)
         if rnorm is None:
             rnorm = 0.4685 / np.sqrt(np.sqrt(Z1) + np.sqrt(Z2))
-        self.b = (float(b1)*rnorm, float(b2)*rnorm, float(b3)*rnorm)
+        self.b = (rec.b1*rnorm, rec.b2*rnorm, rec.b3*rnorm)
         self.ab = (self.a[0]*self.b[0], self.a[1]*self.b[1], 
                    self.a[2]*self.b[2])
 
-        self.rmax = float(rmax) / rnorm
+        self.rmax = rec.rmax / rnorm
         self.c = 1 - self.a[0] - self.a[1] - self.a[2]
         self.d = (self.a[0]*np.exp(-self.b[0]*self.rmax) 
                   + self.a[1]*np.exp(-self.b[1]*self.rmax) 
                   + self.a[2]*np.exp(-self.b[2]*self.rmax)
                   + self.c)
-        self.apsis = Apsis(self)
+        self._apsis = Apsis(self)
 
+    def apsis(self, e, p):
+        """Calculate the distance of closest approach (apsis) in a colllision.
 
-    def __call__(self, r):
+        As initial condition, the larger of the apsis estimate from the table 
+        and the impact parameter is used.
+
+        Parameters:
+            e (float): energy of projectile before the collision (ENORM)
+            p (float): impact parameter (RNORM)
+            screen_fun (object): Screening function
+
+        Returns:
+            (float): Estimated apsis of the collision (RNORM)
+            (int): Number of iterations used to converge the apsis
+        """
+        return self._apsis.call(e, p, self)
+
+    def call(self, r):
         """Calculate the NLHlin screening function and its derivative.
 
         Parameters:
@@ -69,33 +89,50 @@ class NLHlin_screen:
             (ndarray): Derivative of NLHlin screening function at distance r
                 (1/RNORM)
         """
-        r = np.asarray(r, dtype=float)
+        exp0 = np.exp(-self.b[0]*r)
+        exp1 = np.exp(-self.b[1]*r)
+        exp2 = np.exp(-self.b[2]*r)
+
+        screen = (self.a[0]*exp0 + self.a[1]*exp1 
+                        + self.a[2]*exp2 + self.c - self.d*r/self.rmax)
+        dscreen = (- self.ab[0]*exp0 - self.ab[1]*exp1 
+                        - self.ab[2]*exp2 - self.d/self.rmax)
         
-        if np.all(r < self.rmax):   # should always be true except for testing
-            exp0 = np.exp(-self.b[0]*r)
-            exp1 = np.exp(-self.b[1]*r)
-            exp2 = np.exp(-self.b[2]*r)
-
-            screen = (self.a[0]*exp0 + self.a[1]*exp1 
-                            + self.a[2]*exp2 + self.c - self.d*r/self.rmax)
-            dscreen = (- self.ab[0]*exp0 - self.ab[1]*exp1 
-                            - self.ab[2]*exp2 - self.d/self.rmax)
-        else:
-            mask = np.asarray(r < self.rmax)
-
-            exp0 = np.exp(-self.b[0]*r[mask])
-            exp1 = np.exp(-self.b[1]*r[mask])
-            exp2 = np.exp(-self.b[2]*r[mask])
-
-            screen = np.zeros_like(r)
-            screen[mask] = (self.a[0]*exp0 + self.a[1]*exp1 
-                            + self.a[2]*exp2 + self.c 
-                            - self.d*r[mask]/self.rmax)
-            dscreen = np.zeros_like(r)
-            dscreen[mask] = (- self.ab[0]*exp0 - self.ab[1]*exp1 
-                            - self.ab[2]*exp2 - self.d/self.rmax)
-            
+        mask = r < self.rmax    # should always be true except for testing
+        screen = np.where(mask, screen, 0.0)
+        dscreen = np.where(mask, dscreen, 0.0)
         return screen, dscreen
+
+def read_coefs():
+    """Read NLHlin screening coefficients from the data file.
+
+    Returns:
+        (recarray): A record array containing the coefficients.
+    """
+    fname = os.path.join(os.path.dirname(__file__), 'dmol_coeffs_rmax.dat')
+    if not os.path.exists(fname):
+        print(f'NLHlin_screen: Coefficients file {fname} not found')
+        sys.exit()
+    
+    rec_dtype = np.dtype([
+        ("z1", np.uint32),
+        ("z2", np.uint32),
+        ("a1", np.float64),
+        ("b1", np.float64),
+        ("a2", np.float64),
+        ("b2", np.float64),
+        ("a3", np.float64),
+        ("b3", np.float64),
+        ("rmax", np.float64),
+    ], align=True)
+    coef_rows = []
+    with open(fname, "r") as f:
+        for line in f:
+            if line[0] == '#':
+                continue
+            coefs = line.split()[:-1]   # exclude "error" column
+            coef_rows.append(tuple([float(c) for c in coefs]))
+    return np.array(coef_rows, dtype=rec_dtype).view(np.recarray)
 
 def post_plot(p1, p2, Z2):
     """Do post-plot setup for NLHlin screening function plots.
@@ -114,6 +151,7 @@ def post_plot(p1, p2, Z2):
     norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
     plt.colorbar(mpl.cm.ScalarMappable(norm=norm, cmap=cmap), 
                 label=r'atomic number Z$_1$', 
+                ax=plt.gca(),
                 ticks=ticks)
     plt.yscale('log')
     if (p1, p2) == (0, 0):
@@ -166,6 +204,7 @@ def plot_screen(p1, p2, z2=None):
     plt.rcParams.update({'font.size': 14})
     #plt.gca().set_facecolor('darkgray')
 
+    coefs = read_coefs()
     for Z1 in range(1, 93):
         if z2 is None:
             Z2 = Z1
@@ -179,17 +218,18 @@ def plot_screen(p1, p2, z2=None):
 
 
         r = np.linspace(0.0, rmax, 101)
-        screen, _ = NLHlin_screen(Z1, Z2, rnorm)(r)
+        screen, _ = NLHlin_screen(Z1, Z2, coefs, rnorm).call(r)
         plt.plot(r, screen, color=cmap((Z1-1)/92), zorder=Z1)
 
     if (p1, p2) == (0.23, 1):
-        screen, _ = ZBL_screen()(r)
+        screen, _ = ZBL_screen().call(r)
         plt.plot(r, screen, 'k--', label='ZBL', zorder=100)
         plt.legend(loc='right')
-    elif (p1, p2) == (1/2, 2/3):
-        screen, _ = KrC_screen(r)
-        plt.plot(r, screen, 'k--', label='KrC', zorder=100)
-        plt.legend(loc='right')
+    # TODO uncomment
+    # elif (p1, p2) == (1/2, 2/3):
+    #     screen, _ = KrC_screen(r)
+    #     plt.plot(r, screen, 'k--', label='KrC', zorder=100)
+    #     plt.legend(loc='right')
 
     post_plot(p1, p2, Z2=z2)
 
@@ -227,7 +267,7 @@ def plot_ZBLscreen(p1, p2, z2=None):
             rnorm = 0.4685 / (Z1**p1 + Z2**p1)**p2
 
         r = np.linspace(0.0, rmax_A, 101)
-        screen, _ = ZBL_screen()(r/a_ZBL)
+        screen, _ = ZBL_screen().call(r/a_ZBL)
         plt.plot(r/rnorm, screen, color=cmap((Z1-1)/92), zorder=Z1)
 
     post_plot(p1, p2, Z2=r'Z$_1$')
@@ -238,7 +278,7 @@ def plot_ZBLscreen(p1, p2, z2=None):
 
 if __name__ == "__main__":
     from zbl import ZBL_screen
-    from krc import KrC_screen
+    # from krc import KrC_screen    # TODO uncomment
     Z2 = 29
     #plot_screen(p1=0, p2=0)      # unscaled
     #plot_screen(p1=1/2, p2=2/3)  # Firsov

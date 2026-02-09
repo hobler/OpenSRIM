@@ -8,7 +8,7 @@ from mytypes import Projectile
 from nlhlin import NLHlin_screen
 from zbl import ZBL_screen
 
-@jit(cache=config.ENABLE_CACHING, parallel=True, nogil=True)
+@jit(cache=config.ENABLE_CACHING, parallel=config.PARALLEL, nogil=config.PARALLEL)
 def simulate(nion, sim_params, coefs, follow_recoils=False, sim_idx=0):
     """Perform simulation on given number of projectiles
     

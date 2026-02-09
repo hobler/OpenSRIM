@@ -3,7 +3,7 @@
 Calculate scattering angle and time integral for given interatomic potential,
 energy, and impact parameter, using Gauss-Legendre quadrature.
 """
-import os
+# import os
 # os.environ["NUMBA_DISABLE_JIT"] = "1"
 from numba import jit
 import numpy as np

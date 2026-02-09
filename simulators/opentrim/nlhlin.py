@@ -20,12 +20,12 @@ class NLHlin_screen:
     """
     Z1: int
     Z2: int
-    a: UniTuple(float64, 3)
-    b: UniTuple(float64, 3)
-    ab: UniTuple(float64, 3)
-    c: float64
-    d: float64
-    rmax: float64
+    a: UniTuple(float64, 3) # pyright: ignore[reportInvalidTypeForm]
+    b: UniTuple(float64, 3) # pyright: ignore[reportInvalidTypeForm]
+    ab: UniTuple(float64, 3)    # pyright: ignore[reportInvalidTypeForm]
+    c: float
+    d: float
+    rmax: float
     _apsis: Apsis
     def __init__(self, Z1, Z2, rnorm=None, coefs=None):
         """Setup NLHlin screening function for given atomic numbers.

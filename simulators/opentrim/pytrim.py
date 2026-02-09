@@ -18,6 +18,7 @@ recorded.
 import sys
 import os
 # os.environ["NUMBA_DISABLE_JIT"] = "1"
+# print("##### NUMBA DISABLED #####")
 if getattr(sys, 'frozen', False):   # Different caching location when using PyInstaller
     os.environ["NUMBA_CACHE_LOCATOR_CLASSES"] = "UserWideCacheLocator"
 
@@ -25,17 +26,21 @@ import time
 import numpy as np
 import select_recoil
 import scatter
+import cm_scatter
 import estop
 import geometry
 import cascade
 import pytrim_stats as statistics
 from mytypes import Projectile, SimParams
+from nlhlin import NLHlin_screen, read_coefs
+from zbl import ZBL_screen
 from numba import jit, prange
 
 ENABLE_CACHING = getattr(sys, 'frozen', False)
 
 zmin = 0.0              # minimum z coordinate of the target (A)
 zmax = 4000.0           # maximum z coordinate of the target (A)
+pot_model = 'ZBL_magic'  # potential model for scattering
 z1 = 5                  # atomic number of projectile
 m1 = 11.009             # mass of projectile (amu)
 z2 = 14                 # atomic number of target
@@ -47,7 +52,8 @@ corr_lindhard2 = 1.0    # Correction factor to Lindhard stopping power (Si->Si)
 start = time.time()
 # Setup modules
 recoil_params_tup = select_recoil.setup(density)
-scatter_params_tup = scatter.setup(z1, m1, z2, m2)
+scatter_params_tup = scatter.setup(z1, m1, z2, m2, pot_model)
+cm_scatter.setup(n_absc=4)
 estop_params_tup = estop.setup(corr_lindhard1, z1, m1, corr_lindhard2, z2, m2, density)
 geometry_params_tup = geometry.setup(zmin, zmax)
 cascade_params_tup = cascade.setup()
@@ -62,7 +68,7 @@ sim_params = SimParams( rng_seed = np.random.randint(2**31, dtype=np.uint32),
 statistics.setup(nspec=sim_params.nspec, nbin=sim_params.nbin, limits=sim_params.limits)
 
 @jit(cache=ENABLE_CACHING, parallel=True, nogil=True)
-def simulate(nion, sim_params, follow_recoils=False, sim_idx=0):
+def simulate(nion, sim_params, coefs, follow_recoils=False, sim_idx=0):
     """Perform simulation on given number of projectiles
     
     Parameters:
@@ -92,9 +98,28 @@ def simulate(nion, sim_params, follow_recoils=False, sim_idx=0):
     sim_params_arr = np.full(1, sim_params)
     
     # Simulate the trajectories
-    for i in prange(nion):
-        np.random.seed(sim_params_arr[0].rng_seed + sim_idx + i)    # fixed seed per thread
-        proj_sim[i] = cascade.trajectory(proj_dummy[0], sim_params_arr, follow_recoils)
+    # TODO better-looking alternative?
+    # NOTE single conditional `screen_fun` variable can't be used due to different data types
+    if sim_params.scatter_params.pot_model == 'NLHlin':
+        screen_fun_nlh = (NLHlin_screen(z1, z2, sim_params.scatter_params.rnorm[0], coefs),
+                        NLHlin_screen(z2, z2, sim_params.scatter_params.rnorm[1], coefs))
+        for i in prange(nion):
+            np.random.seed(sim_params_arr[0].rng_seed + sim_idx + i)
+            proj_sim[i] = cascade.trajectory(proj_dummy[0], sim_params_arr, screen_fun_nlh, follow_recoils)
+
+    elif sim_params.scatter_params.pot_model == 'ZBL':
+        screen_fun_zbl = (ZBL_screen(z1, z2, sim_params.scatter_params.rnorm[0], False),
+                        ZBL_screen(z2, z2, sim_params.scatter_params.rnorm[1], False))
+        for i in prange(nion):
+            np.random.seed(sim_params_arr[0].rng_seed + sim_idx + i)
+            proj_sim[i] = cascade.trajectory(proj_dummy[0], sim_params_arr, screen_fun_zbl, follow_recoils)
+
+    else:   # Defaults to 'ZBL_magic'
+        screen_fun_magic = (ZBL_screen(z1, z2, sim_params.scatter_params.rnorm[0], True),
+                        ZBL_screen(z2, z2, sim_params.scatter_params.rnorm[1], True))
+        for i in prange(nion):
+            np.random.seed(sim_params_arr[0].rng_seed + sim_idx + i)
+            proj_sim[i] = cascade.trajectory(proj_dummy[0], sim_params_arr, screen_fun_magic, follow_recoils)
     
     proj_count = 0
     stat_params = sim_params.stat_params
@@ -193,9 +218,10 @@ if __name__ == "__main__":
     proj_counts = [[] for _ in range(len(counts))]
     times = [[] for _ in range(len(counts))]
     chunk_size = 100
+    coefs = read_coefs()
     # avg_chunk_time = 0.1    # seconds
     # simulate(10, sim_params.to_record(), follow_recoils=True)    # pre-compile
-    simulate_chunked(10, 100, sim_params.to_record(), follow_recoils=True)  # TODO remove in production
+    simulate_chunked(10, 100, sim_params.to_record(), coefs, follow_recoils=True)  # TODO remove in production
     for _ in range(iter_cnt):
         for i, c in enumerate(counts):
             # empty stats for each nion count
@@ -203,7 +229,7 @@ if __name__ == "__main__":
             
             start_time = time.time()
             # proj_count, hist_buf, mom_buf = simulate_adaptive(avg_chunk_time, c, sim_params.to_tuple(), follow_recoils=True)
-            proj_count, hist_buf, mom_buf = simulate_chunked(chunk_size, c, sim_params.to_record(), follow_recoils=True)
+            proj_count, hist_buf, mom_buf = simulate_chunked(chunk_size, c, sim_params.to_record(), coefs, follow_recoils=True)
             # proj_count, hist_buf, mom_buf = simulate(c, sim_params.to_record(), follow_recoils=True)
             statistics.hist.results = hist_buf
             statistics.mom.results = mom_buf

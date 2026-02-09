@@ -10,129 +10,23 @@ Available functions:
     scatter: treat a scattering event.
 """
 
-from math import sqrt, exp
+import math
+from zbl import magic
+from cm_scatter import scatter_integrals
 import numpy as np
-from numba import jit_module
+from numba import jit
 
+@jit(inline = 'always')
+def normalize_if_needed(vec, fallback):
+    """Fast normalization with fallback"""
+    norm_sq = vec[0]**2 + vec[1]**2 + vec[2]**2
+    if norm_sq == 0:
+        return fallback
+    norm = math.sqrt(norm_sq)
+    return vec / norm
 
-# Constants for ZBL screening function
-A1 = 0.18175
-A2 = 0.50986
-A3 = 0.28022
-A4 = 0.02817
-
-B1 = 3.1998
-B2 = 0.94229
-B3 = 0.4029
-B4 = 0.20162
-
-A1B1 = A1 * B1
-A2B2 = A2 * B2
-A3B3 = A3 * B3
-A4B4 = A4 * B4
-
-def ZBLscreen(r):
-    """Calculate the ZBL screening function and its derivative.
-
-    Parameters:
-        r (float): Distance (RNORM)
-
-    Returns:
-        (float): ZBL potential at distance r (ENORM)
-        (float): derivative of ZBL potential at distance r (ENORM/RNORM)
-    """
-    exp1 = exp(-B1 * r)
-    exp2 = exp(-B2 * r)
-    exp3 = exp(-B3 * r)
-    exp4 = exp(-B4 * r)
-    screen = A1*exp1 + A2*exp2 + A3*exp3 + A4*exp4
-    dscreen = - (A1B1*exp1 + A2B2*exp2 + A3B3*exp3 + A4B4*exp4)
-    
-    return screen, dscreen
-
-
-# Constants for apsis estimation for the ZBL potential
-K2 = 0.38           # factor of the 1/R part
-K3 = 7.2            # factor of the 1/R^3 part
-K1 = 1/(4*K2)
-R12sq = (2*K2)**2
-R23sq = K3 / K2
-NITER = 1           # number of Newton-Raphson iterations
-
-def estimate_apsis(e, p):
-    """Estimate the distance of closest approach (apsis) in a colllision.
-
-    Parameters:
-        e (float): energy of projectile before the collision (ENORM)
-        p (float): impact parameter (RNORM)
-
-    Returns:
-        (float): Estimated apsis of the collision (RNORM)
-    """
-    psq = p**2
-    r0sq = 0.5 * (psq + sqrt(psq**2 + 4*K3/e))
-
-    if r0sq < R23sq:
-        r0sq = psq + K2/e
-        if r0sq < R12sq:
-            r0 = (1 + sqrt(1 + 4*e*(e+K1)*psq)) / (2*(e+K1))
-        else:
-            r0 = sqrt(r0sq)
-    else:
-        r0 = sqrt(r0sq)
-    
-    # Do Newton-Raphson iterations to improve the estimate
-    for _ in range(NITER):
-        screen, dscreen = ZBLscreen(r0)
-        numerator = r0*(r0-screen/e) - p**2
-        denominator = 2*r0 - (screen+r0*dscreen)/e
-        r0 -= numerator/denominator
-
-        residuum = 1 - screen/(e*r0) - p**2/r0**2
-        if abs(residuum) < 1e-4:
-            break
-
-    return r0
-
-
-C1 = 0.99229
-C2 = 0.011615
-C3 = 0.007122
-C4 = 14.813
-C5 = 9.3066
-
-def magic(e, p):
-    """Calculate CM scattering angle using Biersack's magic formula.
-
-    Parameters:
-        e (float): energy of projectile before the collision (ENORM)
-        p (float): impact parameter (RNORM)
-    
-    Returns:
-        (float): cosine of half the scattering angle in the center-of-mass 
-            system
-    """
-    r0 = estimate_apsis(e, p)
-    screen, dscreen = ZBLscreen(r0)
-
-    rho = 2*(e*r0-screen) / (screen/r0-dscreen)
-    sqrte = sqrt(e)
-    alpha = 1 + C1/sqrte
-    beta = (C2+sqrte) / (C3+sqrte)
-    gamma = (C4+e) / (C5+e)
-    a = 2 * alpha * e * p**beta
-    g = gamma / (sqrt(1+a**2)-a)
-    delta = a * (r0-p) / (1+g)
-
-    cos_half_theta = (p + rho + delta) / (r0 + rho)
-    if cos_half_theta > 1:
-        print("Warning: cos_half_theta > 1:", cos_half_theta)
-        print("  e =", e, "p =", p, "r0 =", r0, "rho =", rho, "delta =", delta)
-
-    return cos_half_theta
-
-
-def scatter(proj, p, dirp, scatter_params):
+@jit
+def scatter(proj, p, dirp, screen_fun, scatter_params, is_magic):
     """Treat a scattering event.
 
     The atomic numbers and masses of the ion and the target atom enter the
@@ -147,6 +41,7 @@ def scatter(proj, p, dirp, scatter_params):
         dirp (ndarray): direction vector of the impact parameter
             (= from the collision point to the recoil position before 
             the collision) (unit vector, size 3)
+        screen_fun (object): Screening function
         scatter_params (np.recarray): Scatter parameters
     
     Returns:
@@ -156,38 +51,38 @@ def scatter(proj, p, dirp, scatter_params):
         (float): energy of the projectile after the collision
     """
     # scattering angle theta in the center-of-mass system
-    cos_half_theta = magic(proj.e/scatter_params.enorm[proj.ispec], p/scatter_params.rnorm[proj.ispec])
+    ispec = proj.ispec
+    proj_e = proj.e
+    if is_magic:
+        cos_half_theta = magic(proj_e/scatter_params.enorm[ispec], 
+                               p/scatter_params.rnorm[ispec],
+                               screen_fun[ispec])
+        sin_half_theta = math.sqrt(1 - cos_half_theta**2)
+    else:
+        theta, _ = scatter_integrals(proj_e/scatter_params.enorm[ispec], 
+                                     p/scatter_params.rnorm[ispec], 
+                                     screen_fun[ispec])
+        sin_half_theta = math.sin(0.5 * theta)
+        cos_half_theta = math.cos(0.5 * theta)
 
     # directions of the recoil and the projectile after the collision
-    sin_psi = cos_half_theta
-    cos_psi = sqrt(1 - sin_psi**2)
-    recoil_dir = scatter_params.dirfrac[proj.ispec] * cos_psi * (cos_psi*proj.dir[:] 
-                                                 + sin_psi*dirp[:])
+    recoil_dir = scatter_params.dirfrac[ispec] * sin_half_theta * (sin_half_theta*proj.dir[:] 
+                                                 + cos_half_theta*dirp[:])
     dir_new = proj.dir[:] - recoil_dir[:]
-    norm = np.linalg.norm(dir_new[:])
-    if norm == 0:
-        dir_new = proj.dir[:]
-    else:
-        dir_new /= norm
-    norm = np.linalg.norm(recoil_dir[:])
-    if norm == 0:
-        recoil_dir = proj.dir[:]
-    else:
-        recoil_dir /= norm
+    dir_new = normalize_if_needed(dir_new, proj['dir'][:])
+    recoil_dir = normalize_if_needed(recoil_dir, proj['dir'][:])
 
     # Copy dir_new buffer content into proj.dir buffer
     proj.dir[:] = dir_new
 
     # energy after scattering
-    recoil_e = scatter_params.denfrac[proj.ispec] * proj.e * (1 - cos_half_theta**2)
+    recoil_e = scatter_params.denfrac[ispec] * proj_e * sin_half_theta**2
     proj.e -= recoil_e
 
     return recoil_dir[:], recoil_e
-    
-jit_module(fastmath = True)
 
 # Excluded from being JIT-Compiled
-def setup(z1, m1, z2, m2):
+def setup(z1, m1, z2, m2, pot_model):
     """Setup module variables depending on projectile and target species.
 
     Each of the module variables ENORM, RNORM, DIRFAC, and DENFAC is a tuple
@@ -199,16 +94,24 @@ def setup(z1, m1, z2, m2):
         m1 (float): mass of projectile (amu)
         z2 (int): atomic number of target
         m2 (float): mass of target (amu)
+        pot_model (str): potential model for scattering
         
     Returns:
+        (str): Model identifier (name)
+        (int): Z1
+        (int): Z2
         (np.ndarray): ENORM
         (np.ndarray): RNORM
         (np.ndarray): DIRFAC
         (np.ndarray): DENFAC
     """
     m1_m2 = m1 / m2
-    rnorm = np.array(((0.4685 / (z1**0.23 + z2**0.23)),
-                 0.4685 / (z2**0.23 + z2**0.23)))                  # A
+    if pot_model.startswith('ZBL'):
+        rnorm = (0.4685 / (z1**0.23 + z2**0.23),
+                 0.4685 / (z2**0.23 + z2**0.23))                  # A
+    else:
+        rnorm = (0.4685 / math.sqrt(math.sqrt(z1) + math.sqrt(z2)),
+                 0.4685 / math.sqrt(math.sqrt(z2) + math.sqrt(z2)))     # A
     enorm = np.array((14.39979 * z1 * z2 / rnorm[0] * (1 + m1_m2),
                 14.39979 * z2 * z2 / rnorm[1] * (1 + 1)))            # eV
     dirfac = np.array((2 / (1 + m1_m2),
@@ -216,4 +119,4 @@ def setup(z1, m1, z2, m2):
     denfac = np.array((4 * m1_m2 / (1 + m1_m2)**2,
                 1))
               
-    return enorm, rnorm, dirfac, denfac
+    return pot_model, z1, z2, enorm, rnorm, dirfac, denfac

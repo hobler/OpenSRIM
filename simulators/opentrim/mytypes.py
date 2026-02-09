@@ -37,6 +37,9 @@ ESTOP_PARAMS_DTYPE = np.dtype([
 ], align=True)
 
 SCATTER_PARAMS_DTYPE = np.dtype([
+    ("pot_model", "<U16"),
+    ("z1", np.uint32),
+    ("z2", np.uint32),
     ("enorm", np.float64, (2,)),
     ("rnorm", np.float64, (2,)),
     ("dirfrac", np.float64, (2,)),
@@ -88,6 +91,9 @@ class SimParams:
         self.zmax = 0.0
         self.fac_linhard = np.zeros(2)
         self.density = 0.0
+        self.pot_model = ""
+        self.z1 = 0.0
+        self.z2 = 0.0
         self.enorm = np.zeros(2)
         self.rnorm = np.zeros(2)
         self.dirfrac = np.zeros(2)
@@ -105,7 +111,7 @@ class SimParams:
         if estop_params_tup is not None:
             self.fac_linhard, self.density = estop_params_tup
         if scatter_params_tup is not None:
-            self.enorm, self.rnorm, self.dirfrac, self.denfrac = scatter_params_tup
+            self.pot_model, self.z1, self.z2, self.enorm, self.rnorm, self.dirfrac, self.denfrac = scatter_params_tup
         if rng_seed is not None:
             self.rng_seed = np.uint32(rng_seed)
 
@@ -122,6 +128,9 @@ class SimParams:
         rec['geometry_params']['zmax'] = self.zmax
         rec['estop_params']['fac_linhard'] = self.fac_linhard
         rec['estop_params']['density'] = self.density
+        rec['scatter_params']['pot_model'] = self.pot_model
+        rec['scatter_params']['z1'] = self.z1
+        rec['scatter_params']['z2'] = self.z2
         rec['scatter_params']['enorm'] = self.enorm
         rec['scatter_params']['rnorm'] = self.rnorm
         rec['scatter_params']['dirfrac'] = self.dirfrac

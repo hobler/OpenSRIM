@@ -28,12 +28,13 @@ def setup():
 
 
 @jit
-def trajectory(initial_proj, sim_params_arr, follow_recoils=False, prealloc=100):
+def trajectory(initial_proj, sim_params_arr, screen_fun, follow_recoils=False, prealloc=100):
     """Simulate one projectile trajectory.
     
     Parameters:
         initial_proj: (Projectile) the initial state of the first projectile
         sim_params: (SimParams) Simulation parameters
+        screen_fun (object): Screening function
         follow_recoils: (bool) whether to follow recoil trajectories
         prealloc: (int) number of recoil projectiles to pre-allocate space for (for better performance)
         
@@ -41,14 +42,17 @@ def trajectory(initial_proj, sim_params_arr, follow_recoils=False, prealloc=100)
         (numpy.ndarray[Projectile]) list of final projectile states
     """
     sim_params = sim_params_arr[0]
+    emin = sim_params.cascade_params.emin
+    ed = sim_params.cascade_params.ed
+    is_magic = (sim_params.scatter_params.pot_model == 'ZBL_magic')
+    
     proj_lst = np.full(1 if not follow_recoils else prealloc, initial_proj)
     tail = 0
     head = 1
 
     while tail < head:
         proj = proj_lst[tail]
-        # scatter_params = sim_params.scatter_params # SimParams is now flattened
-        while proj.e > sim_params.cascade_params.emin:
+        while proj.e > emin:
             free_path, p, dirp, recoil_pos = get_recoil_position(proj.pos[:], proj.dir[:], sim_params.recoil_params)
             
             dee = eloss(proj, free_path, sim_params.estop_params)
@@ -59,17 +63,16 @@ def trajectory(initial_proj, sim_params_arr, follow_recoils=False, prealloc=100)
                 proj.is_inside = False
                 break
             
-            recoil_dir, recoil_e = scatter(proj, p, dirp[:], sim_params.scatter_params)        
-            if follow_recoils and recoil_e > sim_params.cascade_params.ed:
+            recoil_dir, recoil_e = scatter(proj, p, dirp[:], screen_fun, sim_params.scatter_params, is_magic)        
+            if follow_recoils and recoil_e > ed:
                 if head == proj_lst.size:
                     proj_lst = np.append(proj_lst, np.full(int(1.5 * proj_lst.size), initial_proj))
                 
-                proj_head = proj_lst[head]
-                proj_head.e = recoil_e
-                proj_head.pos[:] = recoil_pos
-                proj_head.dir[:] = recoil_dir
-                proj_head.ispec = 1
-                proj_head.is_inside = True
+                proj_lst[head].e = recoil_e
+                proj_lst[head].pos[:] = recoil_pos
+                proj_lst[head].dir[:] = recoil_dir
+                proj_lst[head].ispec = 1
+                proj_lst[head].is_inside = True
                 head += 1
         tail+=1
 

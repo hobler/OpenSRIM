@@ -22,7 +22,7 @@ def fct(n: int):
         fact *= num
     return fact
 
-@overload(math.comb)    # TODO optimize?
+@overload(math.comb)
 def impl(n: int, k: int):
     def inner(n: int, k: int):
         return 0 if k > n else fct(n) / (fct(k) * fct(n - k))

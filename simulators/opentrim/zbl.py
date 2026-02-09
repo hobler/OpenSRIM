@@ -83,8 +83,6 @@ class ZBL_screen:
         if not magic:       # not needed for magic formula
             self._apsis = Apsis(self)
 
-    # TODO unify return type between screening functions
-    # TODO (should always return tuple)
     def apsis(self, e, p):
         if self._apsis is not None:
             return self._apsis.call(e, p, self)

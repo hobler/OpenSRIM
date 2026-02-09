@@ -62,7 +62,7 @@ class Apsis:
 
         self.apsis_headon_table = Table1D(energies[::-1].copy(),
                                           apses[::-1].copy(),
-                                          dapses_de[::-1].copy(),   # TODO faster contiguous view inverse?
+                                          dapses_de[::-1].copy(),
                                           False,
                                           True)
 
@@ -81,7 +81,7 @@ class Apsis:
             (float): Estimated apsis of the collision (RNORM)
             (int): Number of iterations used to converge the apsis
         """
-        if p >= screen_fun.rmax:    # TODO pass rmax as parameter?
+        if p >= screen_fun.rmax:
             return p, 0
         
         if e < self.apsis_headon_table.x[0]:

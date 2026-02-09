@@ -28,7 +28,7 @@ import cascade
 import pytrim_stats as statistics
 from mytypes import SimParams
 from nlhlin import read_coefs
-from simulator import simulate, simulate_chunked, simulate_adaptive
+from simulator import simulate, simulate_chunked, simulate_adaptive  # noqa: F401
 
 zmin = 0.0              # minimum z coordinate of the target (A)
 zmax = 4000.0           # maximum z coordinate of the target (A)
@@ -62,8 +62,12 @@ statistics.setup(nspec=sim_params.nspec, nbin=sim_params.nbin, limits=sim_params
 if __name__ == "__main__":
     if not config.ENABLE_CACHING:
         print("##### CACHING DISABLED #####")
+    else:
+        print("----- CACHING ENABLED -----")
     if os.environ.get("NUMBA_DISABLE_JIT", '') == "1":
         print("##### NUMBA DISABLED #####")
+    else:
+        print("----- NUMBA ENABLED -----")
     
     print("Startup time:", time.time() - start)
     iter_cnt = 1

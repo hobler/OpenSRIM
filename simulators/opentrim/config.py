@@ -5,3 +5,4 @@ if getattr(sys, 'frozen', False):   # Different caching location when using PyIn
     os.environ["NUMBA_CACHE_LOCATOR_CLASSES"] = "UserWideCacheLocator"
 
 ENABLE_CACHING = getattr(sys, 'frozen', False)  # Caching disabled unless packed using PyInstaller
+PARALLEL = True # Parallel processing in Numba

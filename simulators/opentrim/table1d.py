@@ -1,5 +1,5 @@
 """Table class that allows 1D linear or cubic interpolation."""
-import os
+# import os
 # os.environ["NUMBA_DISABLE_JIT"] = "1"
 import math
 from typing import Optional
@@ -32,17 +32,15 @@ class Table1D:
             For linear interpolation c and d are not defined.
     """
     
-    linear: bool
     regular: bool
     powerof2: bool
-    x: float64[:]
-    y: float64[:]
-    a: float64[:]
-    b: float64[:]
-    c: Optional[float64[:]]
-    d: Optional[float64[:]]
+    x: float64[:]   # pyright: ignore[reportInvalidTypeForm, reportGeneralTypeIssues]
+    y: float64[:]   # pyright: ignore[reportInvalidTypeForm, reportGeneralTypeIssues]
+    a: float64[:]   # pyright: ignore[reportInvalidTypeForm, reportGeneralTypeIssues]
+    b: float64[:]   # pyright: ignore[reportInvalidTypeForm, reportGeneralTypeIssues]
+    c: Optional[float64[:]] # pyright: ignore[reportInvalidTypeForm, reportGeneralTypeIssues]
+    d: Optional[float64[:]] # pyright: ignore[reportInvalidTypeForm, reportGeneralTypeIssues]
     def __init__(self, x, y, dydx=None, regular=False, powerof2=False):
-        self.linear = dydx is None
         self.regular = regular
         self.powerof2 = powerof2
 
@@ -104,11 +102,11 @@ class Table1D:
         idx = self.get_index(x_val)
 
         t = (x_val - self.x[idx]) / (self.x[idx + 1] - self.x[idx])
-        if self.linear:
-            return True, self.a[idx] + self.b[idx] * t
-        else:
+        if self.c is not None and self.d is not None:
             return True, (self.a[idx] + t * (self.b[idx] + 
                     t * (self.c[idx] + t * self.d[idx])))
+        else:
+            return True, self.a[idx] + self.b[idx] * t
 
 @jit
 def test():

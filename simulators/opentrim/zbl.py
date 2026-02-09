@@ -44,12 +44,12 @@ class ZBL_screen:
     """
     Z1: Optional[int]
     Z2: Optional[int]
-    a: UniTuple(float64, 4)
-    b: UniTuple(float64, 4)
-    ab: UniTuple(float64, 4)
-    c: float64
-    d: float64
-    rmax: float64
+    a: UniTuple(float64, 4) # pyright: ignore[reportInvalidTypeForm]
+    b: UniTuple(float64, 4) # pyright: ignore[reportInvalidTypeForm]
+    ab: UniTuple(float64, 4)    # pyright: ignore[reportInvalidTypeForm]
+    c: float
+    d: float
+    rmax: float
     _apsis: Optional[Apsis]
     def __init__(self, Z1=None, Z2=None, rnorm=None, magic=False):
         """Setup ZBL screening function for given atomic numbers.

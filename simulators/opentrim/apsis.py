@@ -4,7 +4,7 @@ Available functions:
 - apsis_setup: Setup apsis table for head-on collisions.
 - calc_apsis: Calculate the distance of closest approach (apsis) in a collision.
 """
-import os
+# import os
 # os.environ["NUMBA_DISABLE_JIT"] = "1"
 from numba import jit
 from numba.experimental import jitclass

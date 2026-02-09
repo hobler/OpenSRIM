@@ -43,6 +43,7 @@ def scatter(proj, p, dirp, screen_fun, scatter_params, is_magic):
             the collision) (unit vector, size 3)
         screen_fun (object): Screening function
         scatter_params (np.recarray): Scatter parameters
+        is_magic (bool): If magic function should be used (otherwise scatter_integrals)
     
     Returns:
         (Projectile): state of the projectile after the collision 

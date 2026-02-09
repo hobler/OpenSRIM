@@ -18,12 +18,17 @@ from numba import jit
 
 @jit(inline = 'always')
 def normalize_if_needed(vec, fallback):
-    """Fast normalization with fallback"""
+    """Fast normalization with fallback – in‑place, no new array."""
     norm_sq = vec[0]**2 + vec[1]**2 + vec[2]**2
-    if norm_sq == 0:
-        return fallback
+    if norm_sq == 0.0:
+        # fallback is already a unit vector, just copy it
+        vec[0], vec[1], vec[2] = fallback[0], fallback[1], fallback[2]
+        return vec
     norm = math.sqrt(norm_sq)
-    return vec / norm
+    vec[0] /= norm
+    vec[1] /= norm
+    vec[2] /= norm
+    return vec
 
 @jit
 def scatter(proj, p, dirp, screen_fun, scatter_params, is_magic):
@@ -52,22 +57,27 @@ def scatter(proj, p, dirp, screen_fun, scatter_params, is_magic):
         (float): energy of the projectile after the collision
     """
     # scattering angle theta in the center-of-mass system
+    enorm = scatter_params.enorm
+    rnorm = scatter_params.rnorm
+    dirfrac = scatter_params.dirfrac
+    denfrac = scatter_params.denfrac
+    
     ispec = proj.ispec
     proj_e = proj.e
     if is_magic:
-        cos_half_theta = magic(proj_e/scatter_params.enorm[ispec], 
-                               p/scatter_params.rnorm[ispec],
+        cos_half_theta = magic(proj_e/enorm[ispec], 
+                               p/rnorm[ispec],
                                screen_fun[ispec])
         sin_half_theta = math.sqrt(1 - cos_half_theta**2)
     else:
-        theta, _ = scatter_integrals(proj_e/scatter_params.enorm[ispec], 
-                                     p/scatter_params.rnorm[ispec], 
+        theta, _ = scatter_integrals(proj_e/enorm[ispec], 
+                                     p/rnorm[ispec], 
                                      screen_fun[ispec])
         sin_half_theta = math.sin(0.5 * theta)
         cos_half_theta = math.cos(0.5 * theta)
 
     # directions of the recoil and the projectile after the collision
-    recoil_dir = scatter_params.dirfrac[ispec] * sin_half_theta * (sin_half_theta*proj.dir[:] 
+    recoil_dir = dirfrac[ispec] * sin_half_theta * (sin_half_theta*proj.dir[:] 
                                                  + cos_half_theta*dirp[:])
     dir_new = proj.dir[:] - recoil_dir[:]
     dir_new = normalize_if_needed(dir_new, proj['dir'][:])
@@ -77,7 +87,7 @@ def scatter(proj, p, dirp, screen_fun, scatter_params, is_magic):
     proj.dir[:] = dir_new
 
     # energy after scattering
-    recoil_e = scatter_params.denfrac[ispec] * proj_e * sin_half_theta**2
+    recoil_e = denfrac[ispec] * proj_e * sin_half_theta**2
     proj.e -= recoil_e
 
     return recoil_dir[:], recoil_e

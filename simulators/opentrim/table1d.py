@@ -96,7 +96,6 @@ class Table1D:
         Returns:
             (tuple[bool, float]): Success, Interpolated y value.
         """
-        # TODO exclude this check? (not used anywhere)
         if not extrapolate and (x_val <= self.x[0] or x_val >= self.x[-1]):
             return False, 0.0
         idx = self.get_index(x_val)

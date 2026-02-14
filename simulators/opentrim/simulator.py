@@ -8,6 +8,12 @@ from mytypes import Projectile
 from nlhlin import NLHlin_screen
 from zbl import ZBL_screen
 
+# @jit(parallel=config.PARALLEL, nogil=config.PARALLEL)
+# def parallel_exec(proj_sim, proj_dummy, sim_params_arr, screen_fun, follow_recoils):
+#     for i in prange(nion):
+#         np.random.seed(sim_params_arr[0].rng_seed + sim_idx + i)
+#         proj_sim[i] = cascade.trajectory(proj_dummy[0], sim_params_arr, screen_fun, follow_recoils)
+
 @jit(cache=config.ENABLE_CACHING, parallel=config.PARALLEL, nogil=config.PARALLEL)
 def simulate(nion, sim_params, coefs, follow_recoils=False, sim_idx=0):
     """Perform simulation on given number of projectiles
@@ -40,29 +46,26 @@ def simulate(nion, sim_params, coefs, follow_recoils=False, sim_idx=0):
     # Fixes weird Numba error by passing array instead of single record
     sim_params_arr = np.full(1, sim_params)
     
+    def parallel_exec(screen_fun):
+        for i in prange(nion):
+            np.random.seed(sim_params_arr[0].rng_seed + sim_idx + i)
+            proj_sim[i] = cascade.trajectory(proj_dummy[0], sim_params_arr, screen_fun, follow_recoils)
+    
     # Simulate the trajectories
-    # TODO better-looking alternative?
-    # NOTE single conditional `screen_fun` variable can't be used due to different data types
     if sim_params.scatter_params.pot_model == 'NLHlin':
         screen_fun_nlh = (NLHlin_screen(z1, z2, sim_params.scatter_params.rnorm[0], coefs),
                         NLHlin_screen(z2, z2, sim_params.scatter_params.rnorm[1], coefs))
-        for i in prange(nion):
-            np.random.seed(sim_params_arr[0].rng_seed + sim_idx + i)
-            proj_sim[i] = cascade.trajectory(proj_dummy[0], sim_params_arr, screen_fun_nlh, follow_recoils)
+        parallel_exec(screen_fun_nlh)
 
     elif sim_params.scatter_params.pot_model == 'ZBL':
         screen_fun_zbl = (ZBL_screen(z1, z2, sim_params.scatter_params.rnorm[0], False),
                         ZBL_screen(z2, z2, sim_params.scatter_params.rnorm[1], False))
-        for i in prange(nion):
-            np.random.seed(sim_params_arr[0].rng_seed + sim_idx + i)
-            proj_sim[i] = cascade.trajectory(proj_dummy[0], sim_params_arr, screen_fun_zbl, follow_recoils)
+        parallel_exec(screen_fun_zbl)
 
     else:   # Defaults to 'ZBL_magic'
         screen_fun_magic = (ZBL_screen(z1, z2, sim_params.scatter_params.rnorm[0], True),
                         ZBL_screen(z2, z2, sim_params.scatter_params.rnorm[1], True))
-        for i in prange(nion):
-            np.random.seed(sim_params_arr[0].rng_seed + sim_idx + i)
-            proj_sim[i] = cascade.trajectory(proj_dummy[0], sim_params_arr, screen_fun_magic, follow_recoils)
+        parallel_exec(screen_fun_magic)
     
     proj_count = 0
     stat_params = sim_params.stat_params

@@ -13,6 +13,7 @@ from estop import eloss
 from geometry import is_inside_target
 import numpy as np
 from numba import jit
+import pytrim_stats as statistics
 
 
 def setup():
@@ -39,7 +40,10 @@ def trajectory(initial_proj, sim_params_arr, screen_fun, follow_recoils=False, p
         prealloc: (int) number of recoil projectiles to pre-allocate space for (for better performance)
         
     Returns:
-        (numpy.ndarray[Projectile]) list of final projectile states
+        tuple[ndarray[Projectile], ndarray[int32], ndarray[float64]]:
+            list of final projectile states,
+            results buffer of Histogram_1d class,
+            results buffer of Moment_1d class
     """
     GROWTH_FACTOR = 1.5
     INITIAL_STACK_SIZE = 100
@@ -49,6 +53,9 @@ def trajectory(initial_proj, sim_params_arr, screen_fun, follow_recoils=False, p
     emin = sim_params.cascade_params.emin
     ed = sim_params.cascade_params.ed
     is_magic = (sim_params.scatter_params.pot_model == 'ZBL_magic')
+    stat_params = sim_params.stat_params
+    hist = statistics.Histogram_1d(stat_params.nspec, stat_params.nbin, (stat_params.limits[0], stat_params.limits[1]))
+    mom = statistics.Moment_1d(stat_params.nspec, 4)
     
     proj_lst = np.full(1 if not follow_recoils else prealloc, initial_proj)
     lst_tail = 0
@@ -91,10 +98,15 @@ def trajectory(initial_proj, sim_params_arr, screen_fun, follow_recoils=False, p
         proj_lst[lst_tail] = proj
         lst_tail+=1
         
+        if proj.is_inside:
+            hist.score(proj.ispec, proj.pos[2])
+            mom.score(proj.ispec, proj.pos[2])
+        
         for i in range(recoils_tail - 1, -1, -1):
             if stack_tail >= stack.size:
                 stack = np.append(stack, np.full(int(GROWTH_FACTOR * stack.size), initial_proj))
             stack[stack_tail] = recoils[i]
             stack_tail += 1
 
-    return proj_lst[:lst_tail][::-1].copy()
+    # Return continuous arrays
+    return proj_lst[:lst_tail][::-1].copy(), hist.results.copy(), mom.results.copy()

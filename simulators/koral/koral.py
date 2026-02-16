@@ -24,25 +24,28 @@ def KORAL(input_params: KORALInput, settings: KORALSettings) -> list[list[float]
     gamma = misc.gamma(mu)
     
     if input_params.method == 'ZBL':
-        def s_n(e: list[float]) -> list[list[float]]:
-            mu = misc.mu(input_params.m_ion, input_params.m_target)
-            a_u = misc.a_ZBL(input_params.z_ion, input_params.z_target)
-            E_u = misc.E_u(mu, input_params.z_ion, input_params.z_target, a_u)
+        a_u = misc.a_ZBL(input_params.z_ion, input_params.z_target)
+        E_u = misc.E_u(mu, input_params.z_ion, input_params.z_target, a_u)
+        s_u = stopping_powers.S_u(gamma, E_u, a_u, input_params.d_target)
+        q_u = stopping_powers.Q_u(s_u, gamma, E_u, input_params.d_target)
+        
+        def s_n(e: list[float]) -> list[float]:
             epsilon = misc.epsilon(e, E_u)
-            gamma = misc.gamma(mu)
-            s_u = stopping_powers.S_u(gamma, E_u, a_u, input_params.d_target)
             return(stopping_powers.S_n_ZBL(epsilon, s_u))
 
-        def q_n(e: list[float]) -> list[list[float]]:
-            mu = misc.mu(input_params.m_ion, input_params.m_target)
-            a_u = misc.a_ZBL(input_params.z_ion, input_params.z_target)
-            E_u = misc.E_u(mu, input_params.z_ion, input_params.z_target, a_u)
+        def q_n(e: list[float]) -> list[float]:
             epsilon = misc.epsilon(e, E_u)
-            gamma = misc.gamma(mu)
-            s_u = stopping_powers.S_u(gamma, E_u, a_u, input_params.d_target)
-            q_u = stopping_powers.Q_u(s_u, gamma, E_u, input_params.d_target)
             return(stopping_powers.Q_n_ZBL(epsilon, q_u))
-            
+        
+    def s_t(e: list[float]) -> list[float]:
+        return (
+            s_n(e) + s_e(e)
+        )
+    
+    def w(e: list[float]) -> list[float]:
+        return (
+            (1-2*mu)*q_n(e)
+        )
 
     return np.array([E,s_e(E),s_n(E),q_n(E)])
 

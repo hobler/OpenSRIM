@@ -103,12 +103,17 @@ if __name__ == "__main__":
             statistics.mom.results = mom_buf
             times[i].append(time.time() - start_time)
             proj_counts[i].append(proj_count)
-    print([sum(t)/iter_cnt for t in times], [sum(t)/iter_cnt for t in proj_counts])
-    print(times, proj_counts)
-    print("--------------------")
     
     # Output the results
     start = time.time()
     statistics.print_results()
-    print("Stats time:", time.time() - start)
+    end = time.time() - start
+    print("--------------------")
+    for in_count, times_per_count, out_counts in zip(counts, times, proj_counts):
+        print(f"Statistics for {in_count} initial projectiles:")
+        print(f"- Average time ({iter_cnt} iterations) [s]:", sum(times_per_count) / iter_cnt)
+        print(f"- All simulation times ({iter_cnt} iterations) [s]:", [round(t, 3) for t in times_per_count])
+        print("- Average interactions (output projectiles):", sum(out_counts) / iter_cnt)
+    print("Stats calculation time [s]:", end)
+    print("--------------------")
     statistics.plot_results(log=True)

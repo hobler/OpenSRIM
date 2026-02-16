@@ -17,6 +17,14 @@ from numba import int32, float64, jit
 
 @register_jitable
 def fct(n: int):
+    """Calculate the factorial of a number (Numba-compatible)
+    
+    Parameters:
+        n: (int) Number to calculate the factorial for
+        
+    Returns:
+        int: The factorial of the provided number
+    """
     fact = 1
     for num in range(2, n + 1):
         fact *= num
@@ -24,6 +32,15 @@ def fct(n: int):
 
 @overload(math.comb)
 def impl(n: int, k: int):
+    """Calculate k-of-n combinations (Numba-compatible) 
+    
+    Parameters:
+        k: (int) Number of items in the chosen set
+        n: (int) Total number of items to choose from
+        
+    Returns:
+        int: The number of possible combinations
+    """
     def inner(n: int, k: int):
         return 0 if k > n else fct(n) / (fct(k) * fct(n - k))
     return inner

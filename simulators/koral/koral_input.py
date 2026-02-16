@@ -37,3 +37,5 @@ class KORALInput():
         self.start_energy = start_energy
         self.stop_energy = stop_energy
         self.nr_values = nr_values
+        # TODO: Woher kommen die S_e Werte? Müssen die aus den Files geladen werden?
+        # TODO: Selbes gilt für die NLH Parameter für S_n, Q_n und V

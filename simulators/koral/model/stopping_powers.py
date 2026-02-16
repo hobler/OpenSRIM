@@ -23,14 +23,14 @@ def Q_u(s_u: list[float],
 def S_e_SRIM(z_ion: int,
             z_target: list[int],
             d_target: float,
-            s_e_f: list[float]) -> any: # TODO: define function as return type
+            s_e_f: list[float]) -> callable[[list[float]], list[float]]:
     # TODO: define file path globally
     srim_setab_dir = './data/SRIM_setab/'
     filename = f'SRIM2013-{z_ion:02d}.dat'
 
     se_vals = []
     e = None
-    for idx, z in enumerate(z_target):
+    for z in z_target:
         data = np.loadtxt(os.path.join(srim_setab_dir, filename), skiprows=6, dtype=float)
         if e is None:
             e = data[:, 0]

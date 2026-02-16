@@ -19,7 +19,7 @@ from numba import jit
 from numba.core.types import UniTuple, float64
 from numba.experimental import jitclass
 import numpy as np
-from apsis import Apsis
+from .apsis import Apsis
 
 
 # Constants for ZBL screening function

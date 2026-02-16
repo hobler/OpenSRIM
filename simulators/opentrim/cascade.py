@@ -7,13 +7,13 @@ Available functions:
     setup: setup module variables.
     trajectory: simulate one trajectory.
 """
-from select_recoil import get_recoil_position
-from scatter import scatter
-from estop import eloss
-from geometry import is_inside_target
+from .select_recoil import get_recoil_position
+from .scatter import scatter
+from .estop import eloss
+from .geometry import is_inside_target
 import numpy as np
 from numba import jit
-import pytrim_stats as statistics
+from . import pytrim_stats as statistics
 
 
 def setup():

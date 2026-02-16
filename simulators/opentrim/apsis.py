@@ -9,7 +9,7 @@ Available functions:
 from numba import jit
 from numba.experimental import jitclass
 import numpy as np
-from table1d import Table1D
+from .table1d import Table1D
 
 @jitclass
 class Apsis:
@@ -185,8 +185,8 @@ def calc_niter(Z1, Z2, e_values, p_values, coefs):
     return n_iter
 
 if __name__ == "__main__":
-    from zbl import ZBL_screen
-    from nlhlin import NLHlin_screen, read_coefs
+    from .zbl import ZBL_screen
+    from .nlhlin import NLHlin_screen, read_coefs
     
     Z1 = 33
     Z2 = 14

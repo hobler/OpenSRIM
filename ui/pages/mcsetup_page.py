@@ -20,6 +20,11 @@ from state import AppState
 from ui.widgets.periodic_table_picker import PeriodicTableButton, PeriodicTableDialog
 from ui.dialogs.compound_dictionary_dialog import CompoundDictionaryDialog
 
+try:
+    from ui.logging import log as emit_log
+except ModuleNotFoundError:  # pragma: no cover
+    from OpenSRIM.ui.logging import log as emit_log  # type: ignore
+
 
 # HintSystem import (support both possible module locations)
 try:
@@ -36,11 +41,13 @@ class MCSetupPage(QWidget):
     def __init__(self, state: AppState, on_log: Optional[Callable[[str], None]] = None, parent=None):
         super().__init__(parent)
         self.state = state
-        self._on_log = on_log
+        self._on_log = on_log or emit_log
 
         self.layer_elements = []
         self._updating_elements_table = False
         self.latest_log_button = None
+        self._logs_dialog = None
+        self._logs_list_widget = None
         self.mc_progress = None
         self.run_button = None
         self._progress_timer = None
@@ -127,6 +134,13 @@ class MCSetupPage(QWidget):
         if self.latest_log_button:
             self.latest_log_button.setText(entry)
             self.latest_log_button.setToolTip(entry)
+        if self._logs_list_widget:
+            if self._logs_list_widget.count() == 1 and self._logs_list_widget.item(0).text() == "No logs available.":
+                self._logs_list_widget.clear()
+            self._logs_list_widget.addItem(entry)
+            while self._logs_list_widget.count() > 1000:
+                self._logs_list_widget.takeItem(0)
+            self._logs_list_widget.scrollToBottom()
 
     def add_log_entry(self, message: str):
         if self._on_log:
@@ -1043,7 +1057,8 @@ class MCSetupPage(QWidget):
         list_widget = QListWidget()
 
         if self.state.log_entries:
-            list_widget.addItems(list(reversed(self.state.log_entries)))
+            list_widget.addItems(list(self.state.log_entries))
+            list_widget.scrollToBottom()
         else:
             list_widget.addItem("No logs available.")
 
@@ -1057,6 +1072,14 @@ class MCSetupPage(QWidget):
         button_box.rejected.connect(dialog.reject)
         layout.addWidget(button_box)
 
+        self._logs_dialog = dialog
+        self._logs_list_widget = list_widget
+
+        def _cleanup(_result: int) -> None:
+            self._logs_dialog = None
+            self._logs_list_widget = None
+
+        dialog.finished.connect(_cleanup)
         dialog.exec()
 
     def _clear_logs(self, list_widget: QListWidget):
@@ -1126,6 +1149,33 @@ class MCSetupPage(QWidget):
             ratio_value = float(ratio)
         except (TypeError, ValueError):
             ratio_value = 0.0
+        if ratio_value < 0:
+            ratio_value = 0.0
+
+        # If the element is already present in this layer, increment its stoichiometry instead of adding a new row.
+        try:
+            element_number = int(element.get("number"))
+        except Exception:
+            element_number = None
+
+        if element_number is not None:
+            for entry in entries:
+                try:
+                    existing_number = int(entry.get("element", {}).get("number"))
+                except Exception:
+                    continue
+                if existing_number != element_number:
+                    continue
+                try:
+                    current = float(entry.get("ratio", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    current = 0.0
+                entry["ratio"] = max(current + ratio_value, 0.0)
+                # Enforce gas/solid-state constraint immediately for gas layers.
+                self._enforce_gas_rule_for_layer(layer_idx, show_message=False)
+                if refresh:
+                    self._refresh_element_table()
+                return
         entries.append({
             "element": element,
             "ratio": ratio_value,

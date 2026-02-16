@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox, QLabel,
     QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QTableWidget, QTableWidgetItem,
     QHeaderView, QStackedWidget, QCheckBox, QPushButton, QMessageBox, QDialog,
+    QListWidget, QDialogButtonBox,
     QFileDialog,
     QSplitter, QScrollArea,
     QFrame,
@@ -28,11 +29,17 @@ from ui.widgets.periodic_table_picker import PeriodicTableButton, PeriodicTableD
 from ui.dialogs.compound_dictionary_dialog import CompoundDictionaryDialog
 
 try:
-    from koral_calculation.interface import discover_models, load_model, filter_outputs
+    from ui.logging import log as emit_log
+except ModuleNotFoundError:  # pragma: no cover
+    from OpenSRIM.ui.logging import log as emit_log  # type: ignore
+
+try:
+    from koral_calculation.interface import discover_models, load_model, filter_outputs, load_ui_parameters
 except Exception:  # pragma: no cover
     discover_models = None  # type: ignore
     load_model = None  # type: ignore
     filter_outputs = None  # type: ignore
+    load_ui_parameters = None  # type: ignore
 
 
 class _KoralWorker(QObject):
@@ -57,12 +64,14 @@ class _KoralWorker(QObject):
         results: list[dict] = []
         try:
             for mid in self._model_ids:
+                emit_log(f"KORAL: running model '{mid}'")
                 model = load_model(str(mid))
                 res = model.run(self._request)
                 if filter_outputs is not None:
                     res = filter_outputs(res, [str(x) for x in requested_outputs])
                 results.append(res)
         except Exception as exc:
+            emit_log(f"KORAL: model run failed: {exc}")
             self.error.emit(str(exc))
             return
 
@@ -82,7 +91,7 @@ class KoralPage(QWidget):
     def __init__(self, state: AppState, on_log: Optional[Callable[[str], None]] = None, parent=None):
         super().__init__(parent)
         self.state = state
-        self._on_log = on_log
+        self._on_log = on_log or emit_log
 
         self._ion_angle: float = 0.0
         self._selected_models: list[str] = []
@@ -90,6 +99,8 @@ class KoralPage(QWidget):
         self._primary_models: list[str] = []
 
         self.latest_log_button = None
+        self._logs_dialog = None
+        self._logs_list_widget = None
         self.koral_progress = None
         self.run_button = None
 
@@ -118,6 +129,7 @@ class KoralPage(QWidget):
 
         self._last_request: Optional[dict] = None
         self._last_results: Optional[list] = None
+        self._ui_param_base_specs: dict[str, dict] = {}
 
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
@@ -149,6 +161,167 @@ class KoralPage(QWidget):
         if not self._selected_models and self._primary_models:
             self._selected_models = list(self._primary_models)
         self._update_selected_models_label()
+        self._capture_base_ui_param_specs()
+        self._apply_selected_models_ui_param_specs()
+
+    def _ui_param_widgets(self) -> dict[str, object]:
+        widgets: dict[str, object] = {}
+        if hasattr(self, "ion_mass"):
+            widgets["ion_mass_amu"] = self.ion_mass
+        if hasattr(self, "energy_min"):
+            widgets["energy_min_keV"] = self.energy_min
+        if hasattr(self, "energy_max"):
+            widgets["energy_max_keV"] = self.energy_max
+        if hasattr(self, "spin_compound_corr"):
+            widgets["compound_correction"] = self.spin_compound_corr
+        return widgets
+
+    def _capture_base_ui_param_specs(self) -> None:
+        """Remember initial widget ranges so model constraints can be applied/reverted."""
+
+        base: dict[str, dict] = {}
+        for pid, w in self._ui_param_widgets().items():
+            if isinstance(w, QSpinBox):
+                base[pid] = {
+                    "min": int(w.minimum()),
+                    "max": int(w.maximum()),
+                    "step": int(w.singleStep()),
+                    "default": int(w.value()),
+                }
+            elif isinstance(w, QDoubleSpinBox):
+                base[pid] = {
+                    "min": float(w.minimum()),
+                    "max": float(w.maximum()),
+                    "decimals": int(w.decimals()),
+                    "step": float(w.singleStep()),
+                    "default": float(w.value()),
+                }
+        self._ui_param_base_specs = base
+
+    def _apply_selected_models_ui_param_specs(self) -> None:
+        if not self._ui_param_base_specs:
+            self._capture_base_ui_param_specs()
+
+        widgets = self._ui_param_widgets()
+        if not widgets:
+            return
+
+        # Start from baseline and intersect constraints of all selected models.
+        merged: dict[str, dict] = {k: dict(v) for k, v in self._ui_param_base_specs.items()}
+
+        selected = [str(m) for m in (self._selected_models or []) if str(m).strip()]
+        if selected and load_ui_parameters is not None:
+            per_model: list[dict[str, dict]] = []
+            for mid in selected:
+                try:
+                    spec = load_ui_parameters(mid)
+                except Exception:
+                    spec = {}
+                if isinstance(spec, dict) and spec:
+                    per_model.append(spec)
+
+            for pid, base in merged.items():
+                if not isinstance(base, dict):
+                    continue
+                try:
+                    cur_min = float(base.get("min"))
+                    cur_max = float(base.get("max"))
+                except (TypeError, ValueError):
+                    continue
+
+                cur_decimals = base.get("decimals")
+                try:
+                    cur_decimals_i = int(cur_decimals) if cur_decimals is not None else None
+                except (TypeError, ValueError):
+                    cur_decimals_i = None
+
+                cur_step = base.get("step")
+                try:
+                    cur_step_f = float(cur_step) if cur_step is not None else None
+                except (TypeError, ValueError):
+                    cur_step_f = None
+
+                for model_spec in per_model:
+                    p = model_spec.get(pid)
+                    if not isinstance(p, dict):
+                        continue
+                    try:
+                        cur_min = max(cur_min, float(p.get("min", cur_min)))
+                        cur_max = min(cur_max, float(p.get("max", cur_max)))
+                    except (TypeError, ValueError):
+                        continue
+                    if "decimals" in p:
+                        try:
+                            d = int(p.get("decimals"))
+                            cur_decimals_i = d if cur_decimals_i is None else max(cur_decimals_i, d)
+                        except (TypeError, ValueError):
+                            pass
+                    if "step" in p:
+                        try:
+                            s = float(p.get("step"))
+                            if s > 0:
+                                cur_step_f = s if cur_step_f is None else min(cur_step_f, s)
+                        except (TypeError, ValueError):
+                            pass
+
+                # If the intersection is empty, fall back to the baseline.
+                if cur_min <= cur_max:
+                    base["min"] = cur_min
+                    base["max"] = cur_max
+                    if cur_decimals_i is not None:
+                        base["decimals"] = cur_decimals_i
+                    if cur_step_f is not None:
+                        base["step"] = cur_step_f
+
+        for pid, w in widgets.items():
+            spec = merged.get(pid)
+            if not isinstance(spec, dict):
+                continue
+            if isinstance(w, QSpinBox):
+                try:
+                    vmin = int(spec.get("min"))
+                    vmax = int(spec.get("max"))
+                except (TypeError, ValueError):
+                    continue
+                if vmin > vmax:
+                    continue
+                old = int(w.value())
+                w.setRange(vmin, vmax)
+                step = spec.get("step")
+                try:
+                    step_i = int(step) if step is not None else None
+                except (TypeError, ValueError):
+                    step_i = None
+                if step_i is not None and step_i > 0:
+                    w.setSingleStep(step_i)
+                if vmin <= old <= vmax:
+                    w.setValue(old)
+            elif isinstance(w, QDoubleSpinBox):
+                try:
+                    vmin = float(spec.get("min"))
+                    vmax = float(spec.get("max"))
+                except (TypeError, ValueError):
+                    continue
+                if vmin > vmax:
+                    continue
+                old = float(w.value())
+                w.setRange(vmin, vmax)
+                decimals = spec.get("decimals")
+                try:
+                    decimals_i = int(decimals) if decimals is not None else None
+                except (TypeError, ValueError):
+                    decimals_i = None
+                if decimals_i is not None and decimals_i >= 0:
+                    w.setDecimals(decimals_i)
+                step = spec.get("step")
+                try:
+                    step_f = float(step) if step is not None else None
+                except (TypeError, ValueError):
+                    step_f = None
+                if step_f is not None and step_f > 0:
+                    w.setSingleStep(step_f)
+                if vmin <= old <= vmax:
+                    w.setValue(old)
 
     def _update_selected_models_label(self) -> None:
         if not hasattr(self, "selected_models_label"):
@@ -165,38 +338,91 @@ class KoralPage(QWidget):
         if self.latest_log_button:
             self.latest_log_button.setText(entry)
             self.latest_log_button.setToolTip(entry)
+        if self._logs_list_widget:
+            if self._logs_list_widget.count() == 1 and self._logs_list_widget.item(0).text() == "No logs available.":
+                self._logs_list_widget.clear()
+            self._logs_list_widget.addItem(entry)
+            while self._logs_list_widget.count() > 1000:
+                self._logs_list_widget.takeItem(0)
+            self._logs_list_widget.scrollToBottom()
 
     def add_log_entry(self, message: str) -> None:
         if self._on_log:
             self._on_log(message)
 
+    def _show_logs_dialog(self) -> None:
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Update Notifications")
+        dialog.resize(800, 400)
+        layout = QVBoxLayout(dialog)
+        list_widget = QListWidget()
+
+        if self.state.log_entries:
+            list_widget.addItems(list(self.state.log_entries))
+            list_widget.scrollToBottom()
+        else:
+            list_widget.addItem("No logs available.")
+
+        layout.addWidget(list_widget)
+
+        clear_btn = QPushButton("Clear Logs")
+        clear_btn.clicked.connect(lambda: self._clear_logs(list_widget))
+        layout.addWidget(clear_btn)
+
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        button_box.rejected.connect(dialog.reject)
+        layout.addWidget(button_box)
+
+        self._logs_dialog = dialog
+        self._logs_list_widget = list_widget
+
+        def _cleanup(_result: int) -> None:
+            self._logs_dialog = None
+            self._logs_list_widget = None
+
+        dialog.finished.connect(_cleanup)
+        dialog.exec()
+
+    def _clear_logs(self, list_widget: QListWidget) -> None:
+        self.state.clear_logs()
+        list_widget.clear()
+        list_widget.addItem("No logs available.")
+        if self.latest_log_button:
+            self.latest_log_button.setText("No updates yet")
+            self.latest_log_button.setToolTip("")
+
     def _build_koral_footer(self) -> QWidget:
         from PyQt6.QtWidgets import QProgressBar  # local import
 
-        frame = QFrame(self)
-        frame.setFrameShape(QFrame.Shape.StyledPanel)
-        frame.setObjectName("koral-footer")
+        footer = QFrame(self)
+        layout = QHBoxLayout(footer)
+        layout.setContentsMargins(16, 10, 16, 10)
+        layout.setSpacing(12)
 
-        layout = QHBoxLayout(frame)
-        layout.setContentsMargins(8, 6, 8, 6)
-        layout.setSpacing(8)
+        log_container = QWidget(footer)
+        log_container_l = QVBoxLayout(log_container)
+        log_container_l.setContentsMargins(0, 0, 0, 0)
+        log_container_l.setSpacing(2)
 
-        self.latest_log_button = QPushButton("Ready.")
-        self.latest_log_button.setEnabled(False)
-        self.latest_log_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        layout.addWidget(self.latest_log_button, 1)
+        log_btn = QPushButton("No updates yet")
+        log_btn.setToolTip("Click to open update notifications")
+        log_btn.clicked.connect(self._show_logs_dialog)
+        self.latest_log_button = log_btn
+        log_container_l.addWidget(log_btn)
 
         self.koral_progress = QProgressBar()
         self.koral_progress.setRange(0, 100)
         self.koral_progress.setValue(0)
-        self.koral_progress.setFixedWidth(220)
-        layout.addWidget(self.koral_progress)
+        self.koral_progress.setFormat("Ready")
 
         self.run_button = QPushButton("Run")
         self.run_button.clicked.connect(self._handle_run_clicked)
+
+        layout.addWidget(log_container, 2)
+        layout.addWidget(self.koral_progress, 2)
         layout.addWidget(self.run_button)
 
-        return frame
+        return footer
 
     def _handle_run_clicked(self) -> None:
         self._start_calculation_async()
@@ -240,6 +466,7 @@ class KoralPage(QWidget):
             self.run_button.setEnabled(False)
         if self.koral_progress:
             self.koral_progress.setRange(0, 0)  # busy
+            self.koral_progress.setFormat("Running")
 
         self.add_log_entry("Starting KORAL calculation…")
 
@@ -264,6 +491,7 @@ class KoralPage(QWidget):
         if self.koral_progress:
             self.koral_progress.setRange(0, 100)
             self.koral_progress.setValue(0)
+            self.koral_progress.setFormat("Ready")
         if self.run_button:
             self.run_button.setEnabled(True)
         QMessageBox.warning(self, "KORAL", str(message))
@@ -273,6 +501,7 @@ class KoralPage(QWidget):
         if self.koral_progress:
             self.koral_progress.setRange(0, 100)
             self.koral_progress.setValue(100)
+            self.koral_progress.setFormat("Complete")
         if self.run_button:
             self.run_button.setEnabled(True)
 
@@ -1270,6 +1499,7 @@ class KoralPage(QWidget):
         selected_models = [cb.text() for cb in self.model_checkboxes if cb.isChecked()]
         self._selected_models = list(selected_models)
         self._update_selected_models_label()
+        self._apply_selected_models_ui_param_specs()
         dialog.accept()
 
     # -------- configuration persistence ----------
@@ -1379,6 +1609,7 @@ class KoralPage(QWidget):
         if isinstance(models, list):
             self._selected_models = [str(m) for m in models if isinstance(m, (str, int, float))]
             self._update_selected_models_label()
+            self._apply_selected_models_ui_param_specs()
 
         # elements table
         if hasattr(self, "element_entries"):
@@ -1393,9 +1624,9 @@ class KoralPage(QWidget):
                 if not element:
                     continue
                 overrides = {k: e.get(k) for k in ("damage", "disp", "latt", "surf")}
-                self._add_element_to_table(element, e.get("ratio", 0.0), overrides=overrides, refresh=False)
-                if self.element_entries:
-                    self.element_entries[-1]["mass_override"] = e.get("mass_override")
+                added = self._add_element_to_table(element, e.get("ratio", 0.0), overrides=overrides, refresh=False)
+                if isinstance(added, dict):
+                    added["mass_override"] = e.get("mass_override")
             self._refresh_element_table()
 
         output = payload.get("output") or {}
@@ -1702,17 +1933,44 @@ class KoralPage(QWidget):
             ratio_value = float(ratio)
         except (TypeError, ValueError):
             ratio_value = 0.0
+        if ratio_value < 0:
+            ratio_value = 0.0
 
-        self.element_entries.append({
+        # If the element is already present, increment its stoichiometry instead of adding a new row.
+        try:
+            element_number = int(element.get("number"))
+        except Exception:
+            element_number = None
+
+        if element_number is not None:
+            for entry in self.element_entries:
+                try:
+                    existing_number = int(entry.get("element", {}).get("number"))
+                except Exception:
+                    continue
+                if existing_number != element_number:
+                    continue
+                try:
+                    current = float(entry.get("ratio", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    current = 0.0
+                entry["ratio"] = max(current + ratio_value, 0.0)
+                if refresh:
+                    self._refresh_element_table()
+                return entry
+
+        entry = {
             "element": element,
             "ratio": ratio_value,
             "damage": energy_defaults["damage"],
             "disp": energy_defaults["disp"],
             "latt": energy_defaults["latt"],
             "surf": energy_defaults["surf"],
-        })
+        }
+        self.element_entries.append(entry)
         if refresh:
             self._refresh_element_table()
+        return entry
 
     def _get_default_energy_params(self, element: dict) -> dict:
         params = {}

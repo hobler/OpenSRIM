@@ -10,6 +10,62 @@ A model is a subfolder:
 
 The KORAL UI discovers models by listing these folders.
 
+## UI parameter limits (optional)
+
+The KORAL UI can apply model-specific **min/max ranges** (and a few optional
+display hints) for its input widgets.
+
+If a model folder contains:
+
+- `koral_calculation/<model_id>/ui_params.toml`
+
+then the UI will load it and apply the constraints to the corresponding
+widgets. If multiple models are selected at the same time, the UI uses the
+**intersection** of all selected models' ranges (max of mins / min of maxes). If
+the intersection is empty, the UI falls back to its built-in defaults.
+
+### File format (`ui_params.toml`)
+
+Top-level object:
+
+- `format_version` (int, required): currently `1`
+- `parameters` (object, required): mapping of parameter-id → spec
+
+Parameter spec:
+
+- `min` (number, required)
+- `max` (number, required)
+- `decimals` (int, optional): for `QDoubleSpinBox`
+- `step` (number, optional): for `QSpinBox`/`QDoubleSpinBox`
+- `default` (number, optional)
+- `label` (string, optional)
+- `unit` (string, optional)
+- `description` (string, optional)
+
+Supported parameter IDs (current KORAL page):
+
+- `ion_mass_amu`
+- `energy_min_keV`
+- `energy_max_keV`
+- `compound_correction`
+
+Example:
+
+```toml
+format_version = 1
+
+[parameters.energy_min_keV]
+min = 0.0
+max = 1000000.0
+decimals = 2
+
+[parameters.compound_correction]
+min = 0.0
+max = 10.0
+step = 0.01
+default = 1.0
+```
+
 ### Primary model
 
 If a model folder contains a file named `.primarymodel`, it is treated as a default/preferred model (preselected in the UI).

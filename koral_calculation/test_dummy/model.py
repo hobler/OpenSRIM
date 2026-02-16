@@ -4,6 +4,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping
 
+try:
+    from ui.logging import log as emit_log
+except ModuleNotFoundError:  # pragma: no cover
+    try:
+        from OpenSRIM.ui.logging import log as emit_log  # type: ignore
+    except ModuleNotFoundError:  # pragma: no cover
+        def emit_log(message: str) -> None:  # type: ignore
+            return
+
 
 # Default-Outputs, falls die UI keine Liste liefert
 DEFAULT_OUTPUTS = [
@@ -58,6 +67,13 @@ class DummyModel:
     model_id: str = "test_dummy"
 
     def run(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            ion_sym = _get_nested(request, "ion", "symbol", default="") or ""
+            ion_z = _get_nested(request, "ion", "Z", default=None)
+            emit_log(f"KORAL[{self.model_id}]: run started (ion={ion_sym}, Z={ion_z})")
+        except Exception:
+            emit_log(f"KORAL[{self.model_id}]: run started")
+
         # 1) Energie-Grid bestimmen (bevorzugt energies_keV)
         energies_keV = _ensure_float_list(_get_nested(request, "energy", "energies_keV"))
         if not energies_keV:
@@ -72,11 +88,13 @@ class DummyModel:
                 energies_keV = [10.0, 100.0, 1000.0]
 
         n = len(energies_keV)
+        emit_log(f"KORAL[{self.model_id}]: energy grid prepared (n={n})")
 
         # 2) gewünschte Outputs lesen
         requested = _get_nested(request, "output", "requested", default=None)
         if not isinstance(requested, list) or not requested:
             requested = list(DEFAULT_OUTPUTS)
+        emit_log(f"KORAL[{self.model_id}]: requested outputs = {', '.join(map(str, requested))}")
 
         # 3) Dummy-Berechnungen (deterministisch, glatt, immer Länge n)
         # Ziel: plausible Shapes + positive Größen, aber bewusst "fake".
@@ -111,6 +129,8 @@ class DummyModel:
             "ion_Z": ion_Z,
             "target_elements_count": len(tgt_elems) if isinstance(tgt_elems, list) else None,
         }
+
+        emit_log(f"KORAL[{self.model_id}]: run finished")
 
         return {
             "model_id": self.model_id,

@@ -66,7 +66,7 @@ class AppState:
         timestamp = datetime.now().strftime("%H:%M:%S")
         entry = f"[{timestamp}] {message}"
         self.log_entries.append(entry)
-        self.log_entries = self.log_entries[-100:]
+        self.log_entries = self.log_entries[-1000:]
         return entry
 
     def clear_logs(self) -> None:

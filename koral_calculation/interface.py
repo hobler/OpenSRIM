@@ -5,6 +5,14 @@ import importlib
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover
+    try:
+        import tomli as tomllib  # type: ignore
+    except ModuleNotFoundError:  # pragma: no cover
+        tomllib = None  # type: ignore
+
 
 @dataclass(frozen=True)
 class DiscoveredModel:
@@ -105,4 +113,85 @@ def discover_models(root: Path | None = None) -> list[DiscoveredModel]:
         out.append(DiscoveredModel(id=name, path=child, is_primary=is_primary))
 
     out.sort(key=lambda m: m.id.lower())
+    return out
+
+
+UI_PARAMS_FILENAME = "ui_params.toml"
+UI_PARAMS_FORMAT_VERSION = 1
+
+
+def load_ui_parameters(model_id: str, *, root: Path | None = None) -> dict[str, dict[str, Any]]:
+    """Load optional per-model UI parameter metadata.
+
+    A model may provide a `ui_params.toml` file next to its `model.py` to let the
+    KORAL UI tune input widgets (min/max, step, decimals, defaults, ...).
+
+    The file is optional. Returns an empty dict when missing or invalid.
+    """
+
+    if tomllib is None:
+        return {}
+
+    base = root or models_root()
+    path = base / str(model_id) / UI_PARAMS_FILENAME
+    if not path.exists():
+        return {}
+
+    try:
+        raw = tomllib.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+    if not isinstance(raw, dict):
+        return {}
+
+    fmt = raw.get("format_version", UI_PARAMS_FORMAT_VERSION)
+    try:
+        fmt_i = int(fmt)
+    except (TypeError, ValueError):
+        return {}
+    if fmt_i != UI_PARAMS_FORMAT_VERSION:
+        return {}
+
+    params = raw.get("parameters")
+    if not isinstance(params, dict):
+        return {}
+
+    out: dict[str, dict[str, Any]] = {}
+    for param_id, spec in params.items():
+        if not isinstance(param_id, str) or not param_id.strip():
+            continue
+        if not isinstance(spec, dict):
+            continue
+        if "min" not in spec or "max" not in spec:
+            continue
+        try:
+            vmin = float(spec["min"])
+            vmax = float(spec["max"])
+        except (TypeError, ValueError):
+            continue
+
+        normalized: dict[str, Any] = {"min": vmin, "max": vmax}
+
+        for key in ("decimals", "step", "default"):
+            if key not in spec:
+                continue
+            val = spec.get(key)
+            if val is None:
+                continue
+            try:
+                if key == "decimals":
+                    normalized[key] = int(val)
+                else:
+                    normalized[key] = float(val)
+            except (TypeError, ValueError):
+                continue
+
+        for key in ("label", "unit", "description"):
+            val = spec.get(key)
+            if isinstance(val, str) and val.strip():
+                normalized[key] = val.strip()
+
+        out[param_id] = normalized
+
     return out

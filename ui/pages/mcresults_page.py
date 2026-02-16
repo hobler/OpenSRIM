@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from PyQt6.QtWidgets import QWidget, QVBoxLayout
 
-from simulation.simulation_page import MCResultsWidget
+try:
+    from ui.pages.simulation.simulation_page import MCResultsWidget
+except ModuleNotFoundError:  # pragma: no cover
+    from OpenSRIM.ui.pages.simulation.simulation_page import MCResultsWidget  # type: ignore
 
 
 class MCResultsPage(QWidget):

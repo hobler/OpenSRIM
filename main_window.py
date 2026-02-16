@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 import os
 import sys
+from typing import Optional, Callable
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, QObject, pyqtSignal
 from PyQt6.QtWidgets import (
     QMainWindow,
     QTabWidget,
@@ -34,6 +35,23 @@ except ModuleNotFoundError:
     from ui.pages.mcresults_page import MCResultsPage
     from ui.pages.advanced_options_page import AdvancedOptionsPage
 
+try:
+    from ui.logging import subscribe as subscribe_logs
+    from ui.logging import unsubscribe as unsubscribe_logs
+    from ui.logging import log as emit_log
+except ModuleNotFoundError:  # pragma: no cover
+    from OpenSRIM.ui.logging import subscribe as subscribe_logs  # type: ignore
+    from OpenSRIM.ui.logging import unsubscribe as unsubscribe_logs  # type: ignore
+    from OpenSRIM.ui.logging import log as emit_log  # type: ignore
+
+
+class _LogBridge(QObject):
+    message = pyqtSignal(str)
+
+    def __init__(self, handler: Callable[[str], None], parent: Optional[QObject] = None) -> None:
+        super().__init__(parent)
+        self.message.connect(handler)
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -47,10 +65,10 @@ class MainWindow(QMainWindow):
         self.tab_widget = QTabWidget()
         self.setCentralWidget(self.tab_widget)
 
-        self.koral_tab = KoralPage(self.state, on_log=self._on_page_log)
+        self.koral_tab = KoralPage(self.state, on_log=emit_log)
         self.mc_setup_tab = MCSetupPage(
             state=self.state,
-            on_log=self._on_page_log,
+            on_log=emit_log,
         )
         self.mc_results_tab = MCResultsPage()
         self.advanced_options_tab = AdvancedOptionsPage()
@@ -87,8 +105,22 @@ class MainWindow(QMainWindow):
 
         self._apply_startup_geometry()
 
+        self._log_bridge = _LogBridge(self._on_page_log, parent=self)
+        subscribe_logs(self._receive_external_log)
+
         if not self.state.log_entries:
-            self._on_page_log("Ready for simulation.")
+            emit_log("Ready for simulation.")
+
+    def closeEvent(self, event):
+        try:
+            unsubscribe_logs(self._receive_external_log)
+        except Exception:
+            pass
+        super().closeEvent(event)
+
+    def _receive_external_log(self, message: str) -> None:
+        if hasattr(self, "_log_bridge") and self._log_bridge:
+            self._log_bridge.message.emit(str(message))
 
     # --- sizing: start maximized, but keep a sensible normal size (1366x768) ---
     def _apply_startup_geometry(self):
@@ -197,7 +229,7 @@ class MainWindow(QMainWindow):
             with open(path, "w", encoding="utf-8") as fh:
                 json.dump(payload, fh, indent=2)
             self.state.current_config_path = path
-            self._on_page_log(f"Configuration saved to {os.path.basename(path)}.")
+            emit_log(f"Configuration saved to {os.path.basename(path)}.")
         except OSError as exc:
             QMessageBox.warning(self, "Save Configuration", f"Unable to save file:\n{exc}")
 
@@ -238,7 +270,7 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
             self.state.current_config_path = path
-            self._on_page_log(f"Configuration loaded from {os.path.basename(path)}.")
+            emit_log(f"Configuration loaded from {os.path.basename(path)}.")
         except (OSError, json.JSONDecodeError) as exc:
             QMessageBox.warning(self, "Load Configuration", f"Unable to load file:\n{exc}")
 
@@ -251,17 +283,17 @@ class MainWindow(QMainWindow):
         if ok and name.strip():
             widget.save_layout(name.strip())
             widget.layout_store.reload()
-            self._on_page_log(f"Saved MC Results layout '{name.strip()}'.")
+            emit_log(f"Saved MC Results layout '{name.strip()}'.")
 
     def _manage_results_views(self):
         widget = self.mc_results_tab.get_results_widget()
         if widget and widget.open_manage_views_dialog(self):
             widget.layout_store.reload()
-            self._on_page_log("Updated MC Results view definitions.")
+            emit_log("Updated MC Results view definitions.")
 
     def _handle_export(self, kind: str):
         label = {"csv": "data", "png": "plot", "pdf": "report"}.get(kind, kind)
-        self._on_page_log(f"Export requested for {label}.")
+        emit_log(f"Export requested for {label}.")
         QMessageBox.information(self, "Export", f"The {label} export will start shortly.")
 
 def main():

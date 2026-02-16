@@ -1,62 +1,146 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from typing import Callable, Optional
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, QRectF, pyqtSignal
+from PyQt6.QtGui import QTextDocument, QTextOption
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox, QLabel,
     QLineEdit, QSpinBox, QDoubleSpinBox, QCheckBox, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QComboBox,
     QFrame, QDialog, QListWidget, QDialogButtonBox, QMessageBox,
+    QSplitter, QStyle, QStyleOptionHeader, QScrollArea, QToolButton,
+    QFileDialog,
+    QSizePolicy,
 )
 
-from app.state import AppState
-from app.ui.widgets.periodic_table_picker import PeriodicTableButton, PeriodicTableDialog
-from app.ui.dialogs.compound_dictionary_dialog import CompoundDictionaryDialog
+from state import AppState
+from ui.widgets.periodic_table_picker import PeriodicTableButton, PeriodicTableDialog
+from ui.dialogs.compound_dictionary_dialog import CompoundDictionaryDialog
+
+try:
+    from ui.logging import log as emit_log
+except ModuleNotFoundError:  # pragma: no cover
+    from OpenSRIM.ui.logging import log as emit_log  # type: ignore
+
+
+# HintSystem import (support both possible module locations)
+try:
+    from OpenSRIM.ui.hints.hints_popup import HintSystem  # type: ignore
+except ModuleNotFoundError:
+    from OpenSRIM.ui.widgets.hints_popup import HintSystem  # type: ignore
 
 
 class MCSetupPage(QWidget):
+    advanced_requested = pyqtSignal(str)
+    save_requested = pyqtSignal()
+    load_requested = pyqtSignal()
+
     def __init__(self, state: AppState, on_log: Optional[Callable[[str], None]] = None, parent=None):
         super().__init__(parent)
         self.state = state
-        self._on_log = on_log
+        self._on_log = on_log or emit_log
 
         self.layer_elements = []
         self._updating_elements_table = False
         self.latest_log_button = None
+        self._logs_dialog = None
+        self._logs_list_widget = None
         self.mc_progress = None
         self.run_button = None
         self._progress_timer = None
         self.no_of_ions_spin = None
         self.update_after_ions_spin = None
+        # Column indices for atoms-per-layer energy columns (accounts for delete column at index 0).
+        self._atoms_disp_col = 8
+        self._atoms_latt_col = 9
+        self._atoms_surf_col = 10
+        self._working_directory: Optional[str] = None
+
+        # Hints
+        self._hint_system: Optional[HintSystem] = None
+        self._init_hints()
 
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
 
         ion_box = self.build_ion_data()
-        ion_box.setTitle("Ion Selection")
-        layout.addWidget(ion_box)
 
-        middle = QHBoxLayout()
-        middle.setSpacing(10)
-        middle.addWidget(self.build_target_layers(), stretch=1)
-        middle.addWidget(self.build_input_elements(), stretch=1)
-        layout.addLayout(middle)
+        # Resizable top tables (horizontal)
+        top_split = QSplitter(Qt.Orientation.Horizontal)
+        top_split.setChildrenCollapsible(False)
+        top_split.addWidget(self.build_target_layers())
+        top_split.addWidget(self.build_input_elements())
 
-        layout.addWidget(self.build_model_selection())
-        layout.addWidget(self.build_trajectories_output())
+        # Resizable model/simulator (horizontal)
+        model_sim_split = QSplitter(Qt.Orientation.Horizontal)
+        model_sim_split.setChildrenCollapsible(False)
+        model_sim_split.addWidget(self.build_model_selection())
+        model_sim_split.addWidget(self.build_simulator_selection())
 
-        layout.addStretch(1)
+        # Resizable model/simulator vs output options (vertical)
+        bottom_split = QSplitter(Qt.Orientation.Vertical)
+        bottom_split.setChildrenCollapsible(False)
+        bottom_split.addWidget(model_sim_split)
+        bottom_split.addWidget(self.build_trajectories_output())
+
+        # Resizable tables vs bottom section (vertical)
+        center = QSplitter(Qt.Orientation.Vertical)
+        center.setChildrenCollapsible(False)
+        center.addWidget(top_split)
+        center.addWidget(bottom_split)
+
+        # Resizable ion selection vs the rest (vertical)
+        main_split = QSplitter(Qt.Orientation.Vertical)
+        main_split.setChildrenCollapsible(False)
+        main_split.addWidget(ion_box)
+        main_split.addWidget(center)
+        layout.addWidget(main_split, 1)
+
         layout.addWidget(self._build_mc_setup_footer())
 
         self._refresh_element_table()
+
+    def _init_hints(self) -> None:
+        """Initialize hint system and lock it to this page."""
+        try:
+            hints_path = Path(__file__).resolve().parents[1] / "widgets" / "hints.json"
+            self._hint_system = HintSystem(repo_path=hints_path, parent=self)
+            self._hint_system.set_current_page("MC Setup")
+        except Exception:
+            self._hint_system = None
+
+    def _hint_btn(self, hint_id: str, parent: Optional[QWidget] = None) -> QPushButton:
+        """Create a '?' button for this page; disabled if hint system unavailable / hint missing."""
+        if self._hint_system is None:
+            btn = QPushButton("?", parent)
+            btn.setEnabled(False)
+            btn.setFixedSize(22, 22)
+            btn.setToolTip("Hints not available")
+            return btn
+        try:
+            return self._hint_system.make_hint_button(page_id="MC Setup", hint_id=hint_id, parent=parent)
+        except Exception:
+            btn = QPushButton("?", parent)
+            btn.setEnabled(False)
+            btn.setFixedSize(22, 22)
+            btn.setToolTip(f"Hint '{hint_id}' not available")
+            return btn
 
     # -------- external bridge ----------
     def update_latest_log(self, entry: str):
         if self.latest_log_button:
             self.latest_log_button.setText(entry)
             self.latest_log_button.setToolTip(entry)
+        if self._logs_list_widget:
+            if self._logs_list_widget.count() == 1 and self._logs_list_widget.item(0).text() == "No logs available.":
+                self._logs_list_widget.clear()
+            self._logs_list_widget.addItem(entry)
+            while self._logs_list_widget.count() > 1000:
+                self._logs_list_widget.takeItem(0)
+            self._logs_list_widget.scrollToBottom()
 
     def add_log_entry(self, message: str):
         if self._on_log:
@@ -79,18 +163,19 @@ class MCSetupPage(QWidget):
         }
 
         layers = []
-        for row in range(self.layers_table.rowCount()):
-            unit_widget = self.layers_table.cellWidget(row, 2)
+        layer_rows = max(self.layers_table.rowCount() - 1, 0) if hasattr(self, "layers_table") else 0
+        for row in range(layer_rows):
+            unit_widget = self.layers_table.cellWidget(row, 3)
             unit = unit_widget.currentText() if isinstance(unit_widget, QComboBox) else ""
-            gas_widget = self.layers_table.cellWidget(row, 5)
+            gas_widget = self.layers_table.cellWidget(row, 6)
             gas_checkbox = gas_widget.findChild(QCheckBox) if gas_widget else None
             entries = self.layer_elements[row] if row < len(self.layer_elements) else []
             layer = {
-                "name": (self.layers_table.item(row, 0).text() if self.layers_table.item(row, 0) else ""),
-                "width": (self.layers_table.item(row, 1).text() if self.layers_table.item(row, 1) else ""),
+                "name": (self.layers_table.item(row, 1).text() if self.layers_table.item(row, 1) else ""),
+                "width": (self.layers_table.item(row, 2).text() if self.layers_table.item(row, 2) else ""),
                 "unit": unit,
-                "density": (self.layers_table.item(row, 3).text() if self.layers_table.item(row, 3) else ""),
-                "compound_corr": (self.layers_table.item(row, 4).text() if self.layers_table.item(row, 4) else ""),
+                "density": (self.layers_table.item(row, 4).text() if self.layers_table.item(row, 4) else ""),
+                "compound_corr": (self.layers_table.item(row, 5).text() if self.layers_table.item(row, 5) else ""),
                 "gas": gas_checkbox.isChecked() if gas_checkbox else False,
                 "elements": [
                     {
@@ -107,7 +192,33 @@ class MCSetupPage(QWidget):
                 ],
             }
             layers.append(layer)
-        return {"ion": ion_data, "ions": ions_meta, "layers": layers}
+        model_meta = {
+            "model": self.model_combo.currentText() if hasattr(self, "model_combo") else "",
+            "simulator": self.simulator_combo.currentText() if hasattr(self, "simulator_combo") else "",
+        }
+        output_meta = {
+            "traj_start": bool(self.chk_traj_start.isChecked()) if hasattr(self, "chk_traj_start") else False,
+            "traj_end": bool(self.chk_traj_end.isChecked()) if hasattr(self, "chk_traj_end") else False,
+            "traj_collisions": bool(self.chk_traj_coll.isChecked()) if hasattr(self, "chk_traj_coll") else False,
+            "range_ion_recoil": bool(self.chk_range_ion_recoil.isChecked()) if hasattr(self, "chk_range_ion_recoil") else False,
+            "range_phonons": bool(self.chk_range_phonons.isChecked()) if hasattr(self, "chk_range_phonons") else False,
+            "range_ionization": bool(self.chk_range_ionization.isChecked()) if hasattr(self, "chk_range_ionization") else False,
+            "lateral_ion_recoil": bool(self.chk_lateral_ion_recoil.isChecked()) if hasattr(self, "chk_lateral_ion_recoil") else False,
+            "lateral_phonons": bool(self.chk_lateral_phonons.isChecked()) if hasattr(self, "chk_lateral_phonons") else False,
+            "lateral_ionization": bool(self.chk_lateral_ionization.isChecked()) if hasattr(self, "chk_lateral_ionization") else False,
+            "backscattered_energy": bool(self.chk_backscattered_energy.isChecked()) if hasattr(self, "chk_backscattered_energy") else False,
+            "backscattered_angle": bool(self.chk_backscattered_angle.isChecked()) if hasattr(self, "chk_backscattered_angle") else False,
+            "transmitted_energy": bool(self.chk_transmitted_energy.isChecked()) if hasattr(self, "chk_transmitted_energy") else False,
+            "transmitted_angle": bool(self.chk_transmitted_angle.isChecked()) if hasattr(self, "chk_transmitted_angle") else False,
+        }
+
+        return {
+            "ion": ion_data,
+            "ions": ions_meta,
+            "layers": layers,
+            "selection": model_meta,
+            "output": output_meta,
+        }
 
     def apply_simulation_config(self, payload: dict):
         ion = payload.get("ion", {})
@@ -150,23 +261,62 @@ class MCSetupPage(QWidget):
             self.seed_layer_row(0)
             self.layer_elements = [[]]
 
+        # Keep a final action row inside the table.
+        self.layers_table.insertRow(self.layers_table.rowCount())
+        self._ensure_layers_action_row()
+
         if self.layers_table.rowCount():
             self.layers_table.selectRow(0)
         self._refresh_element_table()
 
+        selection = payload.get("selection") or {}
+        if hasattr(self, "model_combo"):
+            model = selection.get("model")
+            if isinstance(model, str) and model:
+                idx = self.model_combo.findText(model)
+                if idx >= 0:
+                    self.model_combo.setCurrentIndex(idx)
+
+        if hasattr(self, "simulator_combo"):
+            simulator = selection.get("simulator")
+            if isinstance(simulator, str) and simulator:
+                idx = self.simulator_combo.findText(simulator)
+                if idx >= 0:
+                    self.simulator_combo.setCurrentIndex(idx)
+
+        output = payload.get("output") or {}
+        for attr, key in (
+            ("chk_traj_start", "traj_start"),
+            ("chk_traj_end", "traj_end"),
+            ("chk_traj_coll", "traj_collisions"),
+            ("chk_range_ion_recoil", "range_ion_recoil"),
+            ("chk_range_phonons", "range_phonons"),
+            ("chk_range_ionization", "range_ionization"),
+            ("chk_lateral_ion_recoil", "lateral_ion_recoil"),
+            ("chk_lateral_phonons", "lateral_phonons"),
+            ("chk_lateral_ionization", "lateral_ionization"),
+            ("chk_backscattered_energy", "backscattered_energy"),
+            ("chk_backscattered_angle", "backscattered_angle"),
+            ("chk_transmitted_energy", "transmitted_energy"),
+            ("chk_transmitted_angle", "transmitted_angle"),
+        ):
+            if hasattr(self, attr) and key in output:
+                getattr(self, attr).setChecked(bool(output.get(key)))
+
+
     def _apply_layer_data(self, row: int, data: dict):
-        for col, key in enumerate(["name", "width", None, "density", "compound_corr"]):
+        for col, key in enumerate(["name", "width", None, "density", "compound_corr"], start=1):
             if key is None:
                 continue
             self.layers_table.setItem(row, col, QTableWidgetItem(str(data.get(key, ""))))
 
-        unit_widget = self.layers_table.cellWidget(row, 2)
+        unit_widget = self.layers_table.cellWidget(row, 3)
         if isinstance(unit_widget, QComboBox):
             idx = unit_widget.findText(data.get("unit", "Ång"))
             if idx >= 0:
                 unit_widget.setCurrentIndex(idx)
 
-        gas_widget = self.layers_table.cellWidget(row, 5)
+        gas_widget = self.layers_table.cellWidget(row, 6)
         gas_checkbox = gas_widget.findChild(QCheckBox) if gas_widget else None
         if gas_checkbox:
             gas_checkbox.setChecked(bool(data.get("gas", False)))
@@ -180,12 +330,35 @@ class MCSetupPage(QWidget):
             overrides = {k: entry.get(k) for k in ("damage", "disp", "latt", "surf")}
             self._add_element_to_layer(row, element, entry.get("ratio", 0.0), overrides=overrides, refresh=False)
 
+        # Enforce gas/solid-state constraint after loading elements.
+        self._enforce_gas_rule_for_layer(row, show_message=False)
+
     # --------- UI builders ----------
+    def _groupbox_header(self, title: str, hint_id: Optional[str] = None, parent: Optional[QWidget] = None) -> QWidget:
+        w = QWidget(parent)
+        h = QHBoxLayout(w)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.setSpacing(6)
+        lbl = QLabel(title, w)
+        lbl.setStyleSheet("font-weight: 600;")
+        h.addWidget(lbl)
+
+        if hint_id:
+            h.addWidget(self._hint_btn(hint_id, parent=w))
+
+        h.addStretch(1)
+        return w
+
     def build_ion_data(self) -> QGroupBox:
-        box = QGroupBox("Ion Data")
-        grid = QGridLayout(box)
-        grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(10)
+        box = QGroupBox("")
+        v = QVBoxLayout(box)
+        v.setSpacing(10)
+
+        v.addWidget(self._groupbox_header("Ion Selection", hint_id="ion", parent=box))
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(6)
+        grid.setVerticalSpacing(6)
 
         self.pick_btn = PeriodicTableButton(
             "Click to Select Element",
@@ -196,24 +369,86 @@ class MCSetupPage(QWidget):
         )
         self.pick_btn.element_selected.connect(self.on_element_selected)
 
-        self.ion_symbol = QLineEdit(); self.ion_symbol.setReadOnly(True); self.ion_symbol.setPlaceholderText("Symbol")
-        self.ion_name = QLineEdit(); self.ion_name.setReadOnly(True); self.ion_name.setPlaceholderText("Element Name")
-        self.ion_z = QSpinBox(); self.ion_z.setRange(1, 120); self.ion_z.setReadOnly(True)
-        self.ion_mass = QDoubleSpinBox(); self.ion_mass.setRange(0.01, 1000.0); self.ion_mass.setDecimals(3); self.ion_mass.setReadOnly(True)
-        self.ion_energy = QDoubleSpinBox(); self.ion_energy.setRange(0.001, 1_000_000); self.ion_energy.setSuffix(" keV"); self.ion_energy.setValue(10.0)
-        self.ion_angle = QDoubleSpinBox(); self.ion_angle.setRange(0.0, 90.0); self.ion_angle.setDecimals(1); self.ion_angle.setSuffix(" °"); self.ion_angle.setValue(0.0)
+        pick_row = QWidget(box)
+        pick_row_l = QHBoxLayout(pick_row)
+        pick_row_l.setContentsMargins(0, 0, 0, 0)
+        pick_row_l.setSpacing(6)
+        pick_row_l.addWidget(self.pick_btn)
+        pick_row_l.addStretch(1)
+        grid.addWidget(pick_row, 1, 0, Qt.AlignmentFlag.AlignLeft)
 
-        grid.addWidget(self.pick_btn, 0, 0, 1, 2)
-        grid.addWidget(QLabel("Symbol"), 0, 2); grid.addWidget(self.ion_symbol, 0, 3)
-        grid.addWidget(QLabel("Name of Element"), 0, 4); grid.addWidget(self.ion_name, 0, 5)
-        grid.addWidget(QLabel("Atomic Number"), 0, 6); grid.addWidget(self.ion_z, 0, 7)
-        grid.addWidget(QLabel("Mass (amu)"), 0, 8); grid.addWidget(self.ion_mass, 0, 9)
-        grid.addWidget(QLabel("Energy (keV)"), 0, 10); grid.addWidget(self.ion_energy, 0, 11)
-        grid.addWidget(QLabel("Angle of Incidence"), 0, 12); grid.addWidget(self.ion_angle, 0, 13)
+        # Labels (packed on the left, like KORAL)
+        grid.addWidget(QLabel("Symbol"), 0, 1, Qt.AlignmentFlag.AlignLeft)
+        grid.addWidget(QLabel("Name of Element"), 0, 2, Qt.AlignmentFlag.AlignLeft)
+        grid.addWidget(QLabel("Atomic Number"), 0, 3, Qt.AlignmentFlag.AlignLeft)
+        grid.addWidget(QLabel("Mass (amu)"), 0, 4, Qt.AlignmentFlag.AlignLeft)
+        grid.addWidget(QLabel("Energy (keV)"), 0, 5, Qt.AlignmentFlag.AlignLeft)
 
-        grid.setColumnStretch(5, 1)
-        grid.setColumnStretch(13, 1)
+        self.ion_symbol = QLineEdit()
+        self.ion_symbol.setReadOnly(True)
+        self.ion_symbol.setPlaceholderText("Symbol")
+        self.ion_symbol.setMaximumWidth(90)
+        self.ion_symbol.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        grid.addWidget(self.ion_symbol, 1, 1, Qt.AlignmentFlag.AlignLeft)
+
+        self.ion_name = QLineEdit()
+        self.ion_name.setReadOnly(True)
+        self.ion_name.setPlaceholderText("Element Name")
+        self.ion_name.setMaximumWidth(180)
+        self.ion_name.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        grid.addWidget(self.ion_name, 1, 2, Qt.AlignmentFlag.AlignLeft)
+
+        self.ion_z = QSpinBox()
+        self.ion_z.setRange(1, 120)
+        self.ion_z.setReadOnly(True)
+        self.ion_z.setFixedWidth(120)
+        self.ion_z.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        grid.addWidget(self.ion_z, 1, 3, Qt.AlignmentFlag.AlignLeft)
+
+        self.ion_mass = QDoubleSpinBox()
+        self.ion_mass.setRange(0.01, 1000.0)
+        self.ion_mass.setDecimals(3)
+        self.ion_mass.setReadOnly(True)
+        self.ion_mass.setMaximumWidth(120)
+        self.ion_mass.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        grid.addWidget(self.ion_mass, 1, 4, Qt.AlignmentFlag.AlignLeft)
+
+        self.ion_energy = QDoubleSpinBox()
+        self.ion_energy.setRange(0.001, 1_000_000)
+        self.ion_energy.setSuffix(" keV")
+        self.ion_energy.setValue(10.0)
+        self.ion_energy.setMaximumWidth(160)
+        self.ion_energy.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        grid.addWidget(self.ion_energy, 1, 5, Qt.AlignmentFlag.AlignLeft)
+
+        # Advanced: angle of incidence moved to Advanced Options
+        self.ion_angle = QDoubleSpinBox()
+        self.ion_angle.setRange(0.0, 90.0)
+        self.ion_angle.setDecimals(1)
+        self.ion_angle.setSuffix(" °")
+        self.ion_angle.setValue(0.0)
+
+        ion_settings_btn = QToolButton(box)
+        ion_settings_btn.setText("⚙")
+        ion_settings_btn.setToolTip("Open ion advanced options")
+        ion_settings_btn.clicked.connect(lambda: self.advanced_requested.emit("ion_selection_mc"))
+        grid.addWidget(ion_settings_btn, 1, 6, Qt.AlignmentFlag.AlignLeft)
+
+        # Force extra horizontal space to the far right (keeps fields packed on the left)
+        for c in range(0, 7):
+            grid.setColumnStretch(c, 0)
+        grid.setColumnStretch(7, 1)
+        v.addLayout(grid)
         return box
+
+    def set_ion_angle(self, angle: float) -> None:
+        try:
+            self.ion_angle.setValue(float(angle))
+        except (TypeError, ValueError):
+            return
+
+    def get_ion_angle(self) -> float:
+        return float(self.ion_angle.value())
 
     def on_element_selected(self, element: dict):
         self.ion_symbol.setText(element.get("symbol", ""))
@@ -228,109 +463,347 @@ class MCSetupPage(QWidget):
             pass
 
     def build_target_layers(self) -> QGroupBox:
-        box = QGroupBox("Target layer selection")
+        box = QGroupBox("")
         v = QVBoxLayout(box)
 
-        controls = QHBoxLayout()
-        add_layer = QPushButton("Add New Layer")
-        del_layer = QPushButton("Delete Selected Layer(s)")
-        controls.addWidget(add_layer); controls.addWidget(del_layer); controls.addStretch(1)
-        v.addLayout(controls)
+        # Header row (like KORAL): title + hint on the left, '+' button right-aligned.
+        header = QWidget(box)
+        header_l = QHBoxLayout(header)
+        header_l.setContentsMargins(0, 0, 0, 0)
+        header_l.setSpacing(6)
+        title_lbl = QLabel("Target layer selection", header)
+        title_lbl.setStyleSheet("font-weight: 600;")
+        header_l.addWidget(title_lbl)
+        header_l.addWidget(self._hint_btn("target_layers", parent=header))
+        header_l.addStretch(1)
+        v.addWidget(header)
 
-        self.layers_table = QTableWidget(1, 6)
+        # Table: first column is a per-row delete button.
+        # Extra last row is reserved for the "Add layer" action.
+        self.layers_table = QTableWidget(2, 7)
         self.layers_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.layers_table.setHorizontalHeaderLabels(["Layer", "Width", "Units", "Density (g/cm³)", "Compound Corr", "Gas"])
-        self.layers_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.layers_table.setHorizontalHeaderLabels(["", "Layer", "Width", "Units", "Density (g/cm³)", "Compound Corr", "Gas"])
+        self.layers_table.setHorizontalHeader(_WrapHeaderView(self.layers_table))
+        hdr = self.layers_table.horizontalHeader()
+        hdr.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        try:
+            hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        except Exception:
+            pass
+        self.layers_table.setColumnWidth(0, 28)
         self.layers_table.verticalHeader().setVisible(False)
         self.layers_table.setAlternatingRowColors(True)
+        self.layers_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.layers_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
 
         self.seed_layer_row(0)
-        v.addWidget(self.layers_table)
+        self._ensure_layers_action_row()
+        v.addWidget(self.layers_table, 1)
 
         self.layer_elements.append([])
         self.layers_table.selectRow(0)
         self.layers_table.itemSelectionChanged.connect(self._handle_layer_selection_changed)
 
-        add_layer.clicked.connect(self.add_layer_row)
-        del_layer.clicked.connect(self.delete_selected_layers)
+        # Button is created in the action row.
         return box
 
+    def _ensure_layers_action_row(self) -> None:
+        """Ensure the last row of layers_table is an in-table action row."""
+        if not hasattr(self, "layers_table"):
+            return
+        if self.layers_table.columnCount() != 7:
+            return
+
+        if self.layers_table.rowCount() == 0:
+            self.layers_table.setRowCount(1)
+
+        action_row = self.layers_table.rowCount() - 1
+
+        # Clear any prior widgets in this row.
+        for c in range(self.layers_table.columnCount()):
+            self.layers_table.setCellWidget(action_row, c, None)
+            self.layers_table.setItem(action_row, c, None)
+
+        # Ensure span is applied reliably.
+        try:
+            self.layers_table.clearSpans()
+        except Exception:
+            pass
+
+        # Span across all columns.
+        try:
+            self.layers_table.setSpan(action_row, 0, 1, self.layers_table.columnCount())
+        except Exception:
+            pass
+
+        cell = QWidget(self.layers_table)
+        cell_l = QHBoxLayout(cell)
+        cell_l.setContentsMargins(0, 0, 0, 0)
+        cell_l.setSpacing(6)
+        add_layer = QPushButton("+", cell)
+        add_layer.setToolTip("Add layer")
+        add_layer.setFixedSize(20, 20)
+        add_layer.setStyleSheet("padding: 0px;")
+        add_layer.clicked.connect(self.add_layer_row)
+        cell_l.addWidget(add_layer)
+        cell_l.addStretch(1)
+        self.layers_table.setCellWidget(action_row, 0, cell)
+
     def seed_layer_row(self, r: int):
-        self.layers_table.setItem(r, 0, QTableWidgetItem(f"Layer {r + 1}"))
-        self.layers_table.setItem(r, 1, QTableWidgetItem("10000" if r == 0 else ""))
+        # Guard: don't seed the action row.
+        if hasattr(self, "layers_table") and r == self.layers_table.rowCount() - 1:
+            return
+        # Per-row delete button (column 0)
+        btn = QPushButton("-")
+        btn.setFixedSize(20, 20)
+        btn.setStyleSheet("padding: 0px;")
+        btn.setToolTip("Delete layer")
+        btn.clicked.connect(lambda _=False, b=btn: self._delete_layer_row_for_button(b))
+        cell = QWidget(self.layers_table)
+        cell_l = QHBoxLayout(cell)
+        cell_l.setContentsMargins(0, 0, 0, 0)
+        cell_l.setSpacing(0)
+        cell_l.addStretch(1)
+        cell_l.addWidget(btn)
+        cell_l.addStretch(1)
+        self.layers_table.setCellWidget(r, 0, cell)
+
+        self.layers_table.setItem(r, 1, QTableWidgetItem(f"Layer {r + 1}"))
+        self.layers_table.setItem(r, 2, QTableWidgetItem("10000" if r == 0 else ""))
         unit_combo = QComboBox(); unit_combo.addItems(self.state.unit_options); unit_combo.setCurrentText("Ång")
-        self.layers_table.setCellWidget(r, 2, unit_combo)
-        self.layers_table.setItem(r, 3, QTableWidgetItem("1.0" if r == 0 else ""))
-        self.layers_table.setItem(r, 4, QTableWidgetItem("0"))
+        self.layers_table.setCellWidget(r, 3, unit_combo)
+        self.layers_table.setItem(r, 4, QTableWidgetItem("1.0" if r == 0 else ""))
+        self.layers_table.setItem(r, 5, QTableWidgetItem("0"))
         gas_chk = QCheckBox()
+        gas_chk.toggled.connect(self._handle_layer_gas_toggled)
         gas_widget = QWidget(); lay = QHBoxLayout(gas_widget); lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(gas_chk); lay.addStretch(1)
-        self.layers_table.setCellWidget(r, 5, gas_widget)
+        self.layers_table.setCellWidget(r, 6, gas_widget)
+
+    def _delete_layer_row_for_button(self, button: QPushButton) -> None:
+        if not hasattr(self, "layers_table"):
+            return
+        for r in range(max(self.layers_table.rowCount() - 1, 0)):
+            cell = self.layers_table.cellWidget(r, 0)
+            btn = cell.findChild(QPushButton) if cell else None
+            if btn is button:
+                self._delete_layer_row(r)
+                return
+
+    def _delete_layer_row(self, row: int) -> None:
+        if not hasattr(self, "layers_table"):
+            return
+        data_rows = max(self.layers_table.rowCount() - 1, 0)
+        if row < 0 or row >= data_rows:
+            return
+        self.layers_table.removeRow(row)
+        if 0 <= row < len(self.layer_elements):
+            self.layer_elements.pop(row)
+        if max(self.layers_table.rowCount() - 1, 0) == 0:
+            # Keep one empty layer row + action row.
+            if self.layers_table.rowCount() == 0:
+                self.layers_table.setRowCount(2)
+            else:
+                # Ensure we have at least 2 rows (one data + action).
+                while self.layers_table.rowCount() < 2:
+                    self.layers_table.insertRow(self.layers_table.rowCount())
+            self.seed_layer_row(0)
+            self.layer_elements = [[]]
+
+        self._ensure_layers_action_row()
+        # Reselect a valid row and refresh the atoms table.
+        data_rows = max(self.layers_table.rowCount() - 1, 0)
+        if data_rows:
+            self.layers_table.selectRow(min(max(row - 1, 0), data_rows - 1))
+        self._refresh_element_table()
 
     def add_layer_row(self):
-        r = self.layers_table.rowCount()
-        self.layers_table.insertRow(r)
-        self.seed_layer_row(r)
-        self.layer_elements.append([])
-        self.layers_table.selectRow(r)
+        action_row = max(self.layers_table.rowCount() - 1, 0)
+        self.layers_table.insertRow(action_row)
+        self.seed_layer_row(action_row)
+        self.layer_elements.insert(action_row, [])
+        self._ensure_layers_action_row()
+        self.layers_table.selectRow(action_row)
 
     def delete_selected_layers(self):
-        rows = sorted({idx.row() for idx in self.layers_table.selectedIndexes()}, reverse=True)
+        data_rows = max(self.layers_table.rowCount() - 1, 0)
+        rows = sorted({idx.row() for idx in self.layers_table.selectedIndexes() if idx.row() < data_rows}, reverse=True)
         for r in rows:
             self.layers_table.removeRow(r)
             if 0 <= r < len(self.layer_elements):
                 self.layer_elements.pop(r)
-        if self.layers_table.rowCount() == 0:
-            self.layers_table.insertRow(0)
+        if max(self.layers_table.rowCount() - 1, 0) == 0:
+            # Keep one empty layer row + action row.
+            if self.layers_table.rowCount() == 0:
+                self.layers_table.setRowCount(2)
+            else:
+                while self.layers_table.rowCount() < 2:
+                    self.layers_table.insertRow(self.layers_table.rowCount())
             self.seed_layer_row(0)
             self.layer_elements = [[]]
-        self.layers_table.selectRow(min(self.layers_table.rowCount() - 1, 0))
+        self._ensure_layers_action_row()
+        data_rows = max(self.layers_table.rowCount() - 1, 0)
+        if data_rows:
+            self.layers_table.selectRow(min(data_rows - 1, 0))
         self._refresh_element_table()
+
+    def _handle_layer_gas_toggled(self, checked: bool) -> None:
+        """Prevent gas layers from containing solid-state energy parameters."""
+        sender = self.sender()
+        if not isinstance(sender, QCheckBox):
+            return
+        row = self._find_layer_row_for_gas_checkbox(sender)
+        if row < 0:
+            return
+        self._enforce_gas_rule_for_layer(row, show_message=True)
+        # If the currently selected layer changed, refresh displayed atoms table.
+        if row == self._current_layer_index():
+            self._refresh_element_table()
+
+    def _find_layer_row_for_gas_checkbox(self, checkbox: QCheckBox) -> int:
+        if not hasattr(self, "layers_table"):
+            return -1
+        for r in range(max(self.layers_table.rowCount() - 1, 0)):
+            gas_widget = self.layers_table.cellWidget(r, 6)
+            gas_cb = gas_widget.findChild(QCheckBox) if gas_widget else None
+            if gas_cb is checkbox:
+                return r
+        return -1
+
+    def _is_layer_gas(self, layer_idx: int) -> bool:
+        if not hasattr(self, "layers_table"):
+            return False
+        data_rows = max(self.layers_table.rowCount() - 1, 0)
+        if layer_idx < 0 or layer_idx >= data_rows:
+            return False
+        gas_widget = self.layers_table.cellWidget(layer_idx, 6)
+        gas_cb = gas_widget.findChild(QCheckBox) if gas_widget else None
+        return bool(gas_cb.isChecked()) if gas_cb else False
+
+    def _enforce_gas_rule_for_layer(self, layer_idx: int, *, show_message: bool) -> None:
+        """If layer is gas: store solid params and set energies to 0. If not gas: restore."""
+        entries = self._get_layer_entries(layer_idx)
+        is_gas = self._is_layer_gas(layer_idx)
+
+        if is_gas:
+            had_solid = False
+            for entry in entries:
+                # Keep a backup so unchecking gas restores prior values.
+                if "_solid_energy_backup" not in entry:
+                    entry["_solid_energy_backup"] = {
+                        "damage": entry.get("damage"),
+                        "disp": entry.get("disp"),
+                        "latt": entry.get("latt"),
+                        "surf": entry.get("surf"),
+                    }
+                for key in ("damage", "disp", "latt", "surf"):
+                    val = entry.get(key)
+                    try:
+                        had_solid = had_solid or (float(val) != 0.0)
+                    except (TypeError, ValueError):
+                        had_solid = True
+                    entry[key] = "0"
+            if show_message and had_solid and entries:
+                QMessageBox.information(
+                    self,
+                    "Gas layer",
+                    "Gas layers cannot contain solid-state energy parameters. "
+                    "Damage/Disp/Latt/Surf were reset to 0.",
+                )
+            return
+
+        # Not gas: restore previous values if available, else defaults.
+        for entry in entries:
+            backup = entry.pop("_solid_energy_backup", None)
+            if isinstance(backup, dict) and all(k in backup for k in ("damage", "disp", "latt", "surf")):
+                for key in ("damage", "disp", "latt", "surf"):
+                    if backup.get(key) is not None:
+                        entry[key] = str(backup[key])
+            else:
+                defaults = self._get_default_energy_params(entry["element"])
+                for key in ("damage", "disp", "latt", "surf"):
+                    entry[key] = defaults[key]
 
     def _handle_layer_selection_changed(self):
         self._refresh_element_table()
 
     def build_input_elements(self) -> QGroupBox:
-        box = QGroupBox("Atoms per layer")
+        box = QGroupBox("")
         v = QVBoxLayout(box)
+        # Header row (like KORAL): title + hint left; actions right.
+        header = QWidget(box)
+        header_l = QHBoxLayout(header)
+        header_l.setContentsMargins(0, 0, 0, 0)
+        header_l.setSpacing(6)
+        title_lbl = QLabel("Atoms per layer", header)
+        title_lbl.setStyleSheet("font-weight: 600;")
+        header_l.addWidget(title_lbl)
+        header_l.addWidget(self._hint_btn("elements", parent=header))
+        header_l.addStretch(1)
 
-        controls = QHBoxLayout()
+        dict_btn = QPushButton("Compound Dictionary")
+        dict_btn.clicked.connect(self._open_compound_dictionary)
+        header_l.addWidget(dict_btn)
+
+        settings_btn = QToolButton()
+        settings_btn.setText("⚙")
+        settings_btn.setToolTip("Open advanced options")
+        settings_btn.clicked.connect(lambda: self.advanced_requested.emit("atoms_per_layer"))
+        header_l.addWidget(settings_btn)
+
+        v.addWidget(header)
+
+        # Table: first column is a per-row delete button.
+        self.elem_table = QTableWidget(0, 11)
+        self.elem_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.elem_table.setHorizontalHeaderLabels([
+            "", "Symbol", "Name", "Atomic No.", "Weight (amu)",
+            "Atom Stoich", "Atom Stoich %", "Damage (eV)", "Disp (eV)", "Latt (eV)", "Surf (eV)"
+        ])
+        self.elem_table.setHorizontalHeader(_WrapHeaderView(self.elem_table))
+        hdr = self.elem_table.horizontalHeader()
+        hdr.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        try:
+            hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        except Exception:
+            pass
+        self.elem_table.setColumnWidth(0, 28)
+        self.elem_table.verticalHeader().setVisible(False)
+        self.elem_table.setAlternatingRowColors(True)
+
+        self.elem_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.elem_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
+        # Advanced options default: hide disp/latt/surf
+        self._set_atoms_energy_columns_visible(show_disp=False, show_latt=False, show_surf=False)
+
+        v.addWidget(self.elem_table, 1)
+
+        # Create the in-table action row (last row).
         self.elem_pick_btn = PeriodicTableButton(
-            "Click to Select Element",
+            "+",
+            parent=box,
             compact=True,
             show_hover_info=True,
             bordered=True,
             update_button_text=False,
         )
+        self.elem_pick_btn.setToolTip("Add element")
+        self.elem_pick_btn.setFixedSize(20, 20)
+        self.elem_pick_btn.setStyleSheet("padding: 0px;")
         self.elem_pick_btn.element_selected.connect(self.on_target_element_selected)
-
-        del_elem = QPushButton("Delete Selected Element(s)")
-        dict_btn = QPushButton("Compound Dictionary")
-        dict_btn.clicked.connect(self._open_compound_dictionary)
-
-        controls.addWidget(self.elem_pick_btn)
-        controls.addWidget(del_elem)
-        controls.addStretch(1)
-        controls.addWidget(dict_btn)
-        v.addLayout(controls)
-
-        self.elem_table = QTableWidget(0, 10)
-        self.elem_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.elem_table.setHorizontalHeaderLabels([
-            "Symbol", "Name", "Atomic No.", "Weight (amu)",
-            "Atom Stoich", "Atom Stoich %", "Damage (eV)", "Disp (eV)", "Latt (eV)", "Surf (eV)"
-        ])
-        self.elem_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.elem_table.verticalHeader().setVisible(False)
-        self.elem_table.setAlternatingRowColors(True)
-
-        v.addWidget(self.elem_table)
 
         self.elem_table.itemChanged.connect(self._handle_element_item_changed)
         self.elem_table.cellDoubleClicked.connect(self._handle_element_cell_double_clicked)
-        del_elem.clicked.connect(self.delete_selected_elements)
 
         return box
+
+    def _set_atoms_energy_columns_visible(self, *, show_disp: bool, show_latt: bool, show_surf: bool) -> None:
+        if not hasattr(self, "elem_table"):
+            return
+        self.elem_table.setColumnHidden(self._atoms_disp_col, not show_disp)
+        self.elem_table.setColumnHidden(self._atoms_latt_col, not show_latt)
+        self.elem_table.setColumnHidden(self._atoms_surf_col, not show_surf)
 
     def on_target_element_selected(self, element: dict):
         layer_idx = self._current_layer_index()
@@ -342,7 +815,8 @@ class MCSetupPage(QWidget):
         layer_idx = self._current_layer_index()
         if layer_idx < 0:
             return
-        rows = sorted({idx.row() for idx in self.elem_table.selectedIndexes()}, reverse=True)
+        data_rows = max(self.elem_table.rowCount() - 1, 0)
+        rows = sorted({idx.row() for idx in self.elem_table.selectedIndexes() if idx.row() < data_rows}, reverse=True)
         entries = self._get_layer_entries(layer_idx)
         for r in rows:
             if 0 <= r < len(entries):
@@ -350,52 +824,165 @@ class MCSetupPage(QWidget):
         self._refresh_element_table()
 
     def build_model_selection(self) -> QGroupBox:
-        box = QGroupBox("Model selection")
-        h = QHBoxLayout(box)
+        box = QGroupBox("")
+        v = QVBoxLayout(box)
+        v.addWidget(self._groupbox_header("Model selection", hint_id="model", parent=box))
+
+        row = QHBoxLayout()
         self.model_combo = QComboBox()
         self.model_combo.addItems(["Sample Model 1", "Sample Model 2", "Sample Model 3"])
-        h.addWidget(self.model_combo, 1)
-        h.addStretch(1)
-        btn_advanced = QPushButton("Advanced")
-        btn_advanced.clicked.connect(lambda: QMessageBox.information(self, "Advanced", "Advanced tab was split out; implement as needed."))
-        h.addWidget(btn_advanced)
+        row.addWidget(self.model_combo, 1)
+
+        model_settings_btn = QToolButton(box)
+        model_settings_btn.setText("⚙")
+        model_settings_btn.setToolTip("Open model advanced options")
+        model_settings_btn.clicked.connect(lambda: self.advanced_requested.emit("model_selection"))
+        row.addWidget(model_settings_btn)
+        v.addLayout(row)
+        v.addStretch(1)
+        return box
+
+    def build_simulator_selection(self) -> QGroupBox:
+        box = QGroupBox("")
+        v = QVBoxLayout(box)
+        v.addWidget(self._groupbox_header("Simulator selection", hint_id="simulator", parent=box))
+        self.simulator_combo = QComboBox()
+        self.simulator_combo.addItems(["OpenTRIM", "PyTRIM"])
+        v.addWidget(self.simulator_combo)
+        v.addStretch(1)
         return box
 
     def build_trajectories_output(self) -> QGroupBox:
-        box = QGroupBox("Output Options")
+        box = QGroupBox("")
         v = QVBoxLayout(box)
 
-        v.addWidget(QLabel("Trajectories:"))
-        row = QHBoxLayout(); row.addSpacing(40)
-        self.chk_traj_start = QCheckBox("Start"); self.chk_traj_end = QCheckBox("End"); self.chk_traj_coll = QCheckBox("Collisions")
-        row.addWidget(self.chk_traj_start); row.addWidget(self.chk_traj_end); row.addWidget(self.chk_traj_coll); row.addStretch(1)
-        v.addLayout(row)
+        # Header: title + hint.
+        header = QWidget(box)
+        header_l = QHBoxLayout(header)
+        header_l.setContentsMargins(0, 0, 0, 0)
+        header_l.setSpacing(6)
 
-        v.addWidget(QLabel("Range Distributions:"))
-        row_range = QHBoxLayout(); row_range.addSpacing(40)
-        self.chk_range_ion_recoil = QCheckBox("Ion/Recoil"); self.chk_range_phonons = QCheckBox("Phonons"); self.chk_range_ionization = QCheckBox("Ionization")
-        row_range.addWidget(self.chk_range_ion_recoil); row_range.addWidget(self.chk_range_phonons); row_range.addWidget(self.chk_range_ionization); row_range.addStretch(1)
-        v.addLayout(row_range)
+        title_lbl = QLabel("Output Options", header)
+        title_lbl.setStyleSheet("font-weight: 600;")
+        header_l.addWidget(title_lbl)
+        header_l.addWidget(self._hint_btn("output", parent=header))
+        header_l.addStretch(1)
 
-        v.addWidget(QLabel("Lateral Range Distributions:"))
-        row_lat = QHBoxLayout(); row_lat.addSpacing(40)
-        self.chk_lateral_ion_recoil = QCheckBox("Ion/Recoil"); self.chk_lateral_phonons = QCheckBox("Phonons"); self.chk_lateral_ionization = QCheckBox("Ionization")
-        row_lat.addWidget(self.chk_lateral_ion_recoil); row_lat.addWidget(self.chk_lateral_phonons); row_lat.addWidget(self.chk_lateral_ionization); row_lat.addStretch(1)
-        v.addLayout(row_lat)
+        v.addWidget(header)
 
-        v.addWidget(QLabel("Backscattered:"))
-        row_back = QHBoxLayout(); row_back.addSpacing(40)
-        self.chk_backscattered_energy = QCheckBox("Energy"); self.chk_backscattered_angle = QCheckBox("Angle")
-        row_back.addWidget(self.chk_backscattered_energy); row_back.addWidget(self.chk_backscattered_angle); row_back.addStretch(1)
-        v.addLayout(row_back)
+        scroll = QScrollArea(box)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
 
-        v.addWidget(QLabel("Transmitted:"))
-        row_trans = QHBoxLayout(); row_trans.addSpacing(40)
-        self.chk_transmitted_energy = QCheckBox("Energy"); self.chk_transmitted_angle = QCheckBox("Angle")
-        row_trans.addWidget(self.chk_transmitted_energy); row_trans.addWidget(self.chk_transmitted_angle); row_trans.addStretch(1)
-        v.addLayout(row_trans)
+        # Use a grid with “invisible” columns:
+        #   col 0 = section label
+        #   col 1 = options (checkboxes)
+        #   col 2 = right-side actions (working directory)
+        content = QWidget(scroll)
+        grid = QGridLayout(content)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(8)
+        # Layout: left column (main output groups) + right column (back/trans) + actions.
+        grid.setColumnStretch(0, 3)
+        grid.setColumnStretch(1, 2)
+        grid.setColumnStretch(2, 1)
 
-        v.addStretch(1)
+        def _opts_row(*checkboxes: QCheckBox) -> QWidget:
+            w = QWidget(content)
+            h = QHBoxLayout(w)
+            h.setContentsMargins(0, 0, 0, 0)
+            h.setSpacing(10)
+            for cb in checkboxes:
+                h.addWidget(cb)
+            h.addStretch(1)
+            return w
+
+        def _label_opts_row(label_text: str, *checkboxes: QCheckBox) -> QWidget:
+            w = QWidget(content)
+            h = QHBoxLayout(w)
+            h.setContentsMargins(0, 0, 0, 0)
+            h.setSpacing(10)
+            h.addWidget(QLabel(label_text, w))
+            for cb in checkboxes:
+                h.addWidget(cb)
+            h.addStretch(1)
+            return w
+
+        # Right-side action button placed in its own (third) column.
+        set_wd_btn = QPushButton("Set working directory", content)
+        set_wd_btn.setToolTip("Select the working directory used for outputs")
+        set_wd_btn.clicked.connect(self._choose_working_directory)
+
+        # Row 0
+        self.chk_traj_start = QCheckBox("Start")
+        self.chk_traj_end = QCheckBox("End")
+        self.chk_traj_coll = QCheckBox("Collisions")
+        grid.addWidget(
+            _label_opts_row("Trajectories:", self.chk_traj_start, self.chk_traj_end, self.chk_traj_coll),
+            0,
+            0,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
+        )
+
+        self.chk_backscattered_energy = QCheckBox("Energy")
+        self.chk_backscattered_angle = QCheckBox("Angle")
+        grid.addWidget(
+            _label_opts_row("Backscattered:", self.chk_backscattered_energy, self.chk_backscattered_angle),
+            0,
+            1,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
+        )
+        grid.addWidget(set_wd_btn, 0, 2, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
+
+        # Row 1
+        self.chk_range_ion_recoil = QCheckBox("Ion/Recoil")
+        self.chk_range_phonons = QCheckBox("Phonons")
+        self.chk_range_ionization = QCheckBox("Ionization")
+        grid.addWidget(
+            _label_opts_row(
+                "Range Distributions:",
+                self.chk_range_ion_recoil,
+                self.chk_range_phonons,
+                self.chk_range_ionization,
+            ),
+            1,
+            0,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
+        )
+
+        self.chk_transmitted_energy = QCheckBox("Energy")
+        self.chk_transmitted_angle = QCheckBox("Angle")
+        grid.addWidget(
+            _label_opts_row("Transmitted:", self.chk_transmitted_energy, self.chk_transmitted_angle),
+            1,
+            1,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
+        )
+
+        # Row 2
+        self.chk_lateral_ion_recoil = QCheckBox("Ion/Recoil")
+        self.chk_lateral_phonons = QCheckBox("Phonons")
+        self.chk_lateral_ionization = QCheckBox("Ionization")
+        grid.addWidget(
+            _label_opts_row(
+                "Lateral Range Distributions:",
+                self.chk_lateral_ion_recoil,
+                self.chk_lateral_phonons,
+                self.chk_lateral_ionization,
+            ),
+            2,
+            0,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
+        )
+
+        r = 3
+
+        # Spacer to keep things anchored at the top.
+        grid.setRowStretch(r, 1)
+
+        scroll.setWidget(content)
+        v.addWidget(scroll, 1)
         return box
 
     # -------- footer / logs / progress ----------
@@ -427,9 +1014,16 @@ class MCSetupPage(QWidget):
         ions_row.addStretch(1)
         layout.addLayout(ions_row, 2)
 
+        log_container = QWidget(footer)
+        log_container_l = QVBoxLayout(log_container)
+        log_container_l.setContentsMargins(0, 0, 0, 0)
+        log_container_l.setSpacing(2)
+
         log_btn = QPushButton("No updates yet")
+        log_btn.setToolTip("Click to open update notifications")
         log_btn.clicked.connect(self._show_logs_dialog)
         self.latest_log_button = log_btn
+        log_container_l.addWidget(log_btn)
 
         self.mc_progress = QProgressBar()
         self.mc_progress.setRange(0, 100)
@@ -439,10 +1033,21 @@ class MCSetupPage(QWidget):
         self.run_button = QPushButton("Run")
         self.run_button.clicked.connect(self._handle_run_clicked)
 
-        layout.addWidget(log_btn, 2)
+        layout.addWidget(log_container, 2)
         layout.addWidget(self.mc_progress, 2)
         layout.addWidget(self.run_button)
         return footer
+
+    def _choose_working_directory(self) -> None:
+        path = QFileDialog.getExistingDirectory(
+            self,
+            "Select working directory",
+            self._working_directory or str(Path.home()),
+        )
+        if not path:
+            return
+        self._working_directory = str(path)
+        self.add_log_entry(f"Working directory set to: {self._working_directory}")
 
     def _show_logs_dialog(self):
         dialog = QDialog(self)
@@ -452,7 +1057,8 @@ class MCSetupPage(QWidget):
         list_widget = QListWidget()
 
         if self.state.log_entries:
-            list_widget.addItems(list(reversed(self.state.log_entries)))
+            list_widget.addItems(list(self.state.log_entries))
+            list_widget.scrollToBottom()
         else:
             list_widget.addItem("No logs available.")
 
@@ -466,6 +1072,14 @@ class MCSetupPage(QWidget):
         button_box.rejected.connect(dialog.reject)
         layout.addWidget(button_box)
 
+        self._logs_dialog = dialog
+        self._logs_list_widget = list_widget
+
+        def _cleanup(_result: int) -> None:
+            self._logs_dialog = None
+            self._logs_list_widget = None
+
+        dialog.finished.connect(_cleanup)
         dialog.exec()
 
     def _clear_logs(self, list_widget: QListWidget):
@@ -535,6 +1149,33 @@ class MCSetupPage(QWidget):
             ratio_value = float(ratio)
         except (TypeError, ValueError):
             ratio_value = 0.0
+        if ratio_value < 0:
+            ratio_value = 0.0
+
+        # If the element is already present in this layer, increment its stoichiometry instead of adding a new row.
+        try:
+            element_number = int(element.get("number"))
+        except Exception:
+            element_number = None
+
+        if element_number is not None:
+            for entry in entries:
+                try:
+                    existing_number = int(entry.get("element", {}).get("number"))
+                except Exception:
+                    continue
+                if existing_number != element_number:
+                    continue
+                try:
+                    current = float(entry.get("ratio", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    current = 0.0
+                entry["ratio"] = max(current + ratio_value, 0.0)
+                # Enforce gas/solid-state constraint immediately for gas layers.
+                self._enforce_gas_rule_for_layer(layer_idx, show_message=False)
+                if refresh:
+                    self._refresh_element_table()
+                return
         entries.append({
             "element": element,
             "ratio": ratio_value,
@@ -543,6 +1184,9 @@ class MCSetupPage(QWidget):
             "latt": energy_defaults["latt"],
             "surf": energy_defaults["surf"],
         })
+
+        # Enforce gas/solid-state constraint immediately for gas layers.
+        self._enforce_gas_rule_for_layer(layer_idx, show_message=False)
         if refresh:
             self._refresh_element_table()
 
@@ -571,7 +1215,8 @@ class MCSetupPage(QWidget):
                 entry.setdefault(key, defaults[key])
 
         total_ratio = sum(entry["ratio"] for entry in entries)
-        self.elem_table.setRowCount(len(entries))
+        # Last row is reserved for the in-table "Add element" action.
+        self.elem_table.setRowCount(len(entries) + 1)
 
         for row, entry in enumerate(entries):
             element = entry["element"]
@@ -586,25 +1231,68 @@ class MCSetupPage(QWidget):
                 it.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
                 return it
 
-            self.elem_table.setItem(row, 0, ro_item(element["symbol"]))
-            self.elem_table.setItem(row, 1, ro_item(element["name"]))
-            self.elem_table.setItem(row, 2, ro_item(str(element["number"])))
-            self.elem_table.setItem(row, 3, ro_item(mass_text))
+            # Per-row delete button (column 0)
+            btn = QPushButton("-")
+            btn.setFixedSize(20, 20)
+            btn.setStyleSheet("padding: 0px;")
+            btn.setToolTip("Delete element")
+            btn.clicked.connect(lambda _=False, r=row: self._delete_element_row(r))
+            cell = QWidget(self.elem_table)
+            cell_l = QHBoxLayout(cell)
+            cell_l.setContentsMargins(0, 0, 0, 0)
+            cell_l.setSpacing(0)
+            cell_l.addStretch(1)
+            cell_l.addWidget(btn)
+            cell_l.addStretch(1)
+            self.elem_table.setCellWidget(row, 0, cell)
+
+            self.elem_table.setItem(row, 1, ro_item(element["symbol"]))
+            self.elem_table.setItem(row, 2, ro_item(element["name"]))
+            self.elem_table.setItem(row, 3, ro_item(str(element["number"])))
+            self.elem_table.setItem(row, 4, ro_item(mass_text))
 
             ratio_item = QTableWidgetItem(f"{entry['ratio']:.4f}")
             ratio_item.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEditable | Qt.ItemFlag.ItemIsEnabled)
-            self.elem_table.setItem(row, 4, ratio_item)
+            self.elem_table.setItem(row, 5, ratio_item)
 
             percent = (entry["ratio"] / total_ratio * 100.0) if total_ratio else 0.0
-            self.elem_table.setItem(row, 5, ro_item(f"{percent:.2f}"))
+            self.elem_table.setItem(row, 6, ro_item(f"{percent:.2f}"))
 
-            for offset, key in enumerate(("damage", "disp", "latt", "surf"), start=6):
+            for offset, key in enumerate(("damage", "disp", "latt", "surf"), start=7):
                 self.elem_table.setItem(row, offset, ro_item(str(entry[key])))
+
+        # Action row: span across all columns and place the add-element button.
+        action_row = self.elem_table.rowCount() - 1
+        for c in range(self.elem_table.columnCount()):
+            self.elem_table.setCellWidget(action_row, c, None)
+            self.elem_table.setItem(action_row, c, None)
+
+        # Ensure span is applied reliably.
+        try:
+            self.elem_table.clearSpans()
+        except Exception:
+            pass
+        try:
+            self.elem_table.setSpan(action_row, 0, 1, self.elem_table.columnCount())
+        except Exception:
+            pass
+
+        action_cell = QWidget(self.elem_table)
+        action_l = QHBoxLayout(action_cell)
+        action_l.setContentsMargins(0, 0, 0, 0)
+        action_l.setSpacing(6)
+        if hasattr(self, "elem_pick_btn") and self.elem_pick_btn is not None:
+            action_l.addWidget(self.elem_pick_btn)
+        action_l.addStretch(1)
+        self.elem_table.setCellWidget(action_row, 0, action_cell)
 
         self._updating_elements_table = False
 
     def _handle_element_item_changed(self, item):
         if self._updating_elements_table:
+            return
+        # Ignore edits in the action row.
+        if hasattr(self, "elem_table") and item.row() == self.elem_table.rowCount() - 1:
             return
         layer_idx = self._current_layer_index()
         if layer_idx < 0:
@@ -614,7 +1302,7 @@ class MCSetupPage(QWidget):
         if row < 0 or row >= len(entries):
             return
         entry = entries[row]
-        if item.column() == 4:
+        if item.column() == 5:
             try:
                 entry["ratio"] = max(float(item.text()), 0.0)
             except ValueError:
@@ -622,7 +1310,10 @@ class MCSetupPage(QWidget):
             self._refresh_element_table()
 
     def _handle_element_cell_double_clicked(self, row, column):
-        if column != 0:
+        # Ignore the action row.
+        if hasattr(self, "elem_table") and row == self.elem_table.rowCount() - 1:
+            return
+        if column != 1:
             return
         layer_idx = self._current_layer_index()
         entries = self._get_layer_entries(layer_idx)
@@ -640,16 +1331,135 @@ class MCSetupPage(QWidget):
         entries[row].update(self._get_default_energy_params(element))
         self._refresh_element_table()
 
+    def _delete_element_row(self, row: int) -> None:
+        layer_idx = self._current_layer_index()
+        if layer_idx < 0:
+            return
+        entries = self._get_layer_entries(layer_idx)
+        if row < 0 or row >= len(entries):
+            return
+        entries.pop(row)
+        self._refresh_element_table()
+
     def _current_layer_index(self):
         if not hasattr(self, "layers_table"):
             return -1
         row = self.layers_table.currentRow()
-        if row < 0 and self.layers_table.rowCount() > 0:
+        data_rows = max(self.layers_table.rowCount() - 1, 0)
+        if data_rows <= 0:
+            return -1
+        if row < 0:
             row = 0
             self.layers_table.selectRow(0)
+        if row >= data_rows:
+            row = data_rows - 1
+            self.layers_table.selectRow(row)
         return row
 
     def _get_layer_entries(self, layer_idx):
         while len(self.layer_elements) <= layer_idx:
             self.layer_elements.append([])
         return self.layer_elements[layer_idx] if layer_idx >= 0 else []
+
+
+class _WrapHeaderView(QHeaderView):
+    """QHeaderView that wraps header text instead of eliding it."""
+
+    def __init__(self, parent=None):
+        super().__init__(Qt.Orientation.Horizontal, parent)
+        self.setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setTextElideMode(Qt.TextElideMode.ElideNone)
+
+        self._sync_scheduled = False
+        # Recompute after geometry changes so Stretch-mode columns are accounted for.
+        self.geometriesChanged.connect(self._schedule_sync)
+        self.sectionResized.connect(lambda *_: self._schedule_sync())
+
+    def _bold_font(self):
+        f = self.font()
+        f.setBold(True)
+        return f
+
+    def _schedule_sync(self) -> None:
+        if self._sync_scheduled:
+            return
+        self._sync_scheduled = True
+        QTimer.singleShot(0, self._sync_height)
+
+    def _sync_height(self) -> None:
+        self._sync_scheduled = False
+        h = self.sizeHint().height()
+        if h > 0:
+            # Fix height to computed minimum; prevents the persistent "two-line" look.
+            self.setMinimumHeight(h)
+            self.setMaximumHeight(h)
+
+    def _header_text(self, logical_index: int) -> str:
+        model = self.model()
+        if model is None:
+            return ""
+        value = model.headerData(logical_index, self.orientation(), Qt.ItemDataRole.DisplayRole)
+        return "" if value is None else str(value)
+
+    def sizeHint(self):
+        base = super().sizeHint()
+        model = self.model()
+        if model is None:
+            return base
+
+        bold = self._bold_font()
+        fm_h = bold.metrics().height() if hasattr(bold, "metrics") else None
+
+        height = 0
+        for i in range(model.columnCount()):
+            if self.isSectionHidden(i):
+                continue
+            text = self._header_text(i)
+            if not text:
+                continue
+            doc = QTextDocument()
+            doc.setDefaultFont(bold)
+            doc.setDocumentMargin(0)
+            option = QTextOption()
+            option.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            option.setWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
+            doc.setDefaultTextOption(option)
+            doc.setPlainText(text)
+            width = max(40, self.sectionSize(i))
+            doc.setTextWidth(float(width))
+            height = max(height, int(doc.size().height()))
+        if height:
+            # Tight padding; QTextDocument already accounts for line height.
+            base.setHeight(max(base.height(), height + 8))
+        return base
+
+    def paintSection(self, painter, rect, logicalIndex):
+        if not rect.isValid():
+            return
+        painter.save()
+        opt = QStyleOptionHeader()
+        self.initStyleOption(opt)
+        opt.rect = rect
+        opt.section = logicalIndex
+        opt.text = ""
+
+        # draw background/section
+        self.style().drawControl(QStyle.ControlElement.CE_HeaderSection, opt, painter, self)
+
+        text_rect = self.style().subElementRect(QStyle.SubElement.SE_HeaderLabel, opt, self)
+        text = self._header_text(logicalIndex)
+
+        doc = QTextDocument()
+        doc.setDefaultFont(self._bold_font())
+        doc.setDocumentMargin(0)
+        option = QTextOption()
+        option.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        option.setWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
+        doc.setDefaultTextOption(option)
+        doc.setPlainText(text)
+        doc.setTextWidth(float(text_rect.width()))
+
+        painter.translate(text_rect.topLeft())
+        clip = QRectF(0.0, 0.0, float(text_rect.width()), float(text_rect.height()))
+        doc.drawContents(painter, clip)
+        painter.restore()

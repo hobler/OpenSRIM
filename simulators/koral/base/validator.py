@@ -1,6 +1,8 @@
 from koral_input import KORALInput
 from koral_settings import KORALSettings
 
+# TODO: Add validation
+
 def valid(input_params: KORALInput, settings: KORALSettings) -> bool:
     return (validateInput(input_params) and validateSettings(settings))
 

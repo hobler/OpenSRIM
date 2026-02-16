@@ -19,6 +19,10 @@ def KORAL(input_params: KORALInput, settings: KORALSettings) -> list[list[float]
              input_params.d_target,
              input_params.s_e_f)
     
+    # TODO: wie berechnet sich mu für mehrere ziel-elemente?
+    mu = misc.mu(input_params.m_ion, input_params.m_target)
+    gamma = misc.gamma(mu)
+    
     if input_params.method == 'ZBL':
         def s_n(e: list[float]) -> list[list[float]]:
             mu = misc.mu(input_params.m_ion, input_params.m_target)

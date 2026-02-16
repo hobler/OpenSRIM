@@ -37,7 +37,7 @@ from PyQt6.QtWidgets import (
     QInputDialog,
 )
 
-from app.ui.widgets.periodic_table_picker import PeriodicTableDialog
+from ui.widgets.periodic_table_picker import PeriodicTableDialog
 
 
 class _CompoundEditDialog(QDialog):

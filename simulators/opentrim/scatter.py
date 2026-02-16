@@ -11,8 +11,8 @@ Available functions:
 """
 
 import math
-from zbl import magic
-from cm_scatter import scatter_integrals
+from .zbl import magic
+from .cm_scatter import scatter_integrals
 import numpy as np
 from numba import jit
 

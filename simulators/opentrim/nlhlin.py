@@ -12,7 +12,7 @@ import sys
 from numba.core.types import UniTuple, float64
 from numba.experimental import jitclass
 import numpy as np
-from apsis import Apsis
+from .apsis import Apsis
 
 @jitclass
 class NLHlin_screen:

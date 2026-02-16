@@ -1,11 +1,11 @@
 import time
-import config
+from . import config
 import numpy as np
 from numba import jit, prange
-import cascade
-from mytypes import Projectile
-from nlhlin import NLHlin_screen
-from zbl import ZBL_screen
+from . import cascade
+from .mytypes import Projectile
+from .nlhlin import NLHlin_screen
+from .zbl import ZBL_screen
 
 # @jit(parallel=config.PARALLEL, nogil=config.PARALLEL)
 # def parallel_exec(proj_sim, proj_dummy, sim_params_arr, screen_fun, follow_recoils):

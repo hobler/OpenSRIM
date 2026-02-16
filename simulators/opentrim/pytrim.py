@@ -16,19 +16,30 @@ mean and the straggling of the penetration depth of the primary ions are
 recorded.
 """
 import time
+import sys
 import os
-import config
+from pathlib import Path
+
+if __package__ is None:
+    # Running as a script: add parent dir to sys.path
+    project_root = str(Path(__file__).parent.parent)
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+    __package__ = str(Path(__file__).parent.name)
+
+from . import config
+from . import select_recoil
+from . import scatter
+from . import cm_scatter
+from . import estop
+from . import geometry
+from . import cascade
+from . import pytrim_stats as statistics
+from .mytypes import SimParams
+from .nlhlin import read_coefs
+from .simulator import simulate, simulate_chunked, simulate_adaptive  # noqa: F401
+
 import numpy as np
-import select_recoil
-import scatter
-import cm_scatter
-import estop
-import geometry
-import cascade
-import pytrim_stats as statistics
-from mytypes import SimParams
-from nlhlin import read_coefs
-from simulator import simulate, simulate_chunked, simulate_adaptive  # noqa: F401
 
 zmin = 0.0              # minimum z coordinate of the target (A)
 zmax = 4000.0           # maximum z coordinate of the target (A)

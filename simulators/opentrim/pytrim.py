@@ -71,7 +71,7 @@ if __name__ == "__main__":
     
     print("Startup time:", time.time() - start)
     iter_cnt = 1
-    counts = [100, 200]
+    counts = [10000]
     chunk_size = 100
     # avg_chunk_time = 0.1    # seconds
     

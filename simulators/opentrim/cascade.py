@@ -13,6 +13,7 @@ from estop import eloss
 from geometry import is_inside_target
 import numpy as np
 from numba import jit
+import pytrim_stats as statistics
 
 
 def setup():
@@ -28,7 +29,7 @@ def setup():
 
 
 @jit
-def trajectory(initial_proj, sim_params_arr, screen_fun, follow_recoils=False, prealloc=100):
+def trajectory(initial_proj, sim_params_arr, screen_fun, follow_recoils=False, prealloc=400):
     """Simulate one projectile trajectory.
     
     Parameters:
@@ -39,19 +40,36 @@ def trajectory(initial_proj, sim_params_arr, screen_fun, follow_recoils=False, p
         prealloc: (int) number of recoil projectiles to pre-allocate space for (for better performance)
         
     Returns:
-        (numpy.ndarray[Projectile]) list of final projectile states
+        tuple[ndarray[Projectile], ndarray[int32], ndarray[float64]]:
+            list of final projectile states,
+            results buffer of Histogram_1d class,
+            results buffer of Moment_1d class
     """
+    GROWTH_FACTOR = 1.5
+    INITIAL_STACK_SIZE = 100
+    INITIAL_RECOILS_SIZE = 5
+    
     sim_params = sim_params_arr[0]
     emin = sim_params.cascade_params.emin
     ed = sim_params.cascade_params.ed
     is_magic = (sim_params.scatter_params.pot_model == 'ZBL_magic')
+    stat_params = sim_params.stat_params
+    hist = statistics.Histogram_1d(stat_params.nspec, stat_params.nbin, (stat_params.limits[0], stat_params.limits[1]))
+    mom = statistics.Moment_1d(stat_params.nspec, 4)
     
     proj_lst = np.full(1 if not follow_recoils else prealloc, initial_proj)
-    tail = 0
-    head = 1
+    lst_tail = 0
+    
+    stack = np.full(INITIAL_STACK_SIZE, initial_proj)
+    stack_tail = 1
+    
+    recoils = np.full(INITIAL_RECOILS_SIZE, initial_proj)
 
-    while tail < head:
-        proj = proj_lst[tail]
+    while stack_tail > 0:
+        stack_tail -= 1
+        proj = stack[stack_tail]
+        recoils_tail = 0
+        
         while proj.e > emin:
             free_path, p, dirp, recoil_pos = get_recoil_position(proj.pos[:], proj.dir[:], sim_params.recoil_params)
             
@@ -65,15 +83,30 @@ def trajectory(initial_proj, sim_params_arr, screen_fun, follow_recoils=False, p
             
             recoil_dir, recoil_e = scatter(proj, p, dirp[:], screen_fun, sim_params.scatter_params, is_magic)        
             if follow_recoils and recoil_e > ed:
-                if head == proj_lst.size:
-                    proj_lst = np.append(proj_lst, np.full(int(1.5 * proj_lst.size), initial_proj))
+                if recoils_tail >= recoils.size:
+                    recoils = np.append(recoils, np.full(int(GROWTH_FACTOR * recoils.size), initial_proj))
                 
-                proj_lst[head].e = recoil_e
-                proj_lst[head].pos[:] = recoil_pos
-                proj_lst[head].dir[:] = recoil_dir
-                proj_lst[head].ispec = 1
-                proj_lst[head].is_inside = True
-                head += 1
-        tail+=1
+                recoils[recoils_tail].e = recoil_e
+                recoils[recoils_tail].pos[:] = recoil_pos
+                recoils[recoils_tail].dir[:] = recoil_dir
+                recoils[recoils_tail].ispec = 1
+                recoils[recoils_tail].is_inside = True
+                recoils_tail += 1
+        
+        if lst_tail >= proj_lst.size:
+            proj_lst = np.append(proj_lst, np.full(int(GROWTH_FACTOR * proj_lst.size), initial_proj))
+        proj_lst[lst_tail] = proj
+        lst_tail+=1
+        
+        if proj.is_inside:
+            hist.score(proj.ispec, proj.pos[2])
+            mom.score(proj.ispec, proj.pos[2])
+        
+        for i in range(recoils_tail - 1, -1, -1):
+            if stack_tail >= stack.size:
+                stack = np.append(stack, np.full(int(GROWTH_FACTOR * stack.size), initial_proj))
+            stack[stack_tail] = recoils[i]
+            stack_tail += 1
 
-    return proj_lst[:head]
+    # Return continuous arrays
+    return proj_lst[:lst_tail][::-1].copy(), hist.results.copy(), mom.results.copy()

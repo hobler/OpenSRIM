@@ -18,7 +18,15 @@ from numba import jit
 
 @jit(inline = 'always')
 def normalize_if_needed(vec, fallback):
-    """Fast normalization with fallback – in‑place, no new array."""
+    """Fast normalization with fallback – in‑place, no new array.
+    
+    Parameters:
+        vec (np.ndarray): Vector to be normalized
+        fallback (np.ndarray): Vector to replace the original with if len(norm) == 0
+        
+    Returns:
+        np.ndarray: The normalized vector
+    """
     norm_sq = vec[0]**2 + vec[1]**2 + vec[2]**2
     if norm_sq == 0.0:
         # fallback is already a unit vector, just copy it

@@ -31,7 +31,7 @@ def calc_phi_chi(u, r0, screen_fun):
     Parameters:
         u (array-like): Integration variable.
         r0 (float): Distance of closest approach (RNORM).
-        screen_fun (callable): Function to calculate the screening function
+        screen_fun (object): Object with `.call()` to calculate the screening function
             for given distance r (RNORM).
     Returns:
         (float): Value of chi function.
@@ -53,7 +53,7 @@ def scatter_integrals(e, p, screen_fun):
     Parameters:
         e (float): Reduced energy.
         p (float): Reduced impact parameter.
-        screen_fun (callable): Function to calculate the screening function
+        screen_fun (object): Object with `.call()` to calculate the screening function
             for given distance r (RNORM).
     
     Returns:
@@ -109,7 +109,7 @@ def plot_chi(r0_vals, screen_fun):
     Parameters:
         u (float): Integration variable.
         r0_vals (array-like): Distance of closest approach (RNORM).
-        screen_fun (callable): Function to calculate the screening function
+        screen_fun (object): Object with `.call()` to calculate the screening function
             for given distance r (RNORM).
     Returns:
         (float): Value of chi function.
@@ -148,7 +148,7 @@ def plot_chi_near_zero(r0_vals, screen_fun):
     Parameters:
         u (float): Integration variable.
         r0_vals (array-like): Distance of closest approach (RNORM).
-        screen_fun (callable): Function to calculate the screening function
+        screen_fun (object): Object with `.call()` to calculate the screening function
             for given distance r (RNORM).
     Returns:
         (float): Value of chi function.
@@ -192,7 +192,7 @@ def plot_chi_near_one(r0_vals, screen_fun):
     Parameters:
         u (float): Integration variable.
         r0_vals (array-like): Distance of closest approach (RNORM).
-        screen_fun (callable): Function to calculate the screening function
+        screen_fun (object): Object with `.call()` to calculate the screening function
             for given distance r (RNORM).
     Returns:
         (float): Value of chi function.
@@ -231,7 +231,7 @@ def plot_theta_error(screen_fun):
     """Plot the error in the scattering angle.
     
     Parameters:
-        screen_fun (callable): Screening function
+        screen_fun (object): Screening function instance with `.call()` method
     """
     import matplotlib.pyplot as plt
     from zbl import magic
@@ -297,7 +297,7 @@ def plot_tau_error(screen_fun):
     """Plot the error in the time integral.
     
     Parameters:
-        screen_fun (callable): Screening function
+        screen_fun (object): Screening function instance with `.call()` method
     """
     import matplotlib.pyplot as plt
     plt.rcParams.update({'font.size': 13})
@@ -351,7 +351,7 @@ def plot_tau_over_theta(screen_fun):
     """Plot the time integral as a function of scattering angle.
     
     Parameters:
-        screen_fun (callable): Screening function
+        screen_fun (object): Screening function instance with `.call()` method
     """
     import matplotlib.pyplot as plt
     plt.rcParams.update({'font.size': 13})
@@ -395,7 +395,7 @@ def plot_sinhalftheta_over_p(screen_fun):
     """Plot the scattering angle as a function of impact parameter.
     
     Parameters:
-        screen_fun (callable): Screening function
+        screen_fun (object): Screening function instance with `.call()` method
     """
     import matplotlib.pyplot as plt
     plt.rcParams.update({'font.size': 13})

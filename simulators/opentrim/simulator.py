@@ -7,12 +7,6 @@ from .mytypes import Projectile
 from .nlhlin import NLHlin_screen
 from .zbl import ZBL_screen
 
-# @jit(parallel=config.PARALLEL, nogil=config.PARALLEL)
-# def parallel_exec(proj_sim, proj_dummy, sim_params_arr, screen_fun, follow_recoils):
-#     for i in prange(nion):
-#         np.random.seed(sim_params_arr[0].rng_seed + sim_idx + i)
-#         proj_sim[i] = cascade.trajectory(proj_dummy[0], sim_params_arr, screen_fun, follow_recoils)
-
 def simulate(nion, sim_params, coefs, follow_recoils=False, sim_idx=0):
     """Perform simulation on given number of projectiles
     
@@ -154,13 +148,16 @@ def simulate_chunked(chunk_size, nion, *args, **kwargs):
             Total number of simulated projectiles,
             Result buffer for `Histogram_1d` class,
             Result buffer for `Moment_1d` class
-    """
-    assert nion % chunk_size == 0, "Total projectile count must be a multiple of chunk size"
-    
+    """    
     total_proj_count = 0
     total_hist_buf = None
     total_mom_buf = None
-    for processed_count in range(0, nion, chunk_size):
+    
+    def _process_chunks(chunk_size):
+        nonlocal total_hist_buf, total_mom_buf, total_proj_count
+        if chunk_size == 0:
+            return
+        
         proj_count, hist_buf, mom_buf = simulate(chunk_size, *args, sim_idx=processed_count, **kwargs)
         # NOTE: Saving can be performed here
         
@@ -171,4 +168,8 @@ def simulate_chunked(chunk_size, nion, *args, **kwargs):
             total_hist_buf += hist_buf
             total_mom_buf += mom_buf  # pyright: ignore[reportOperatorIssue]
         total_proj_count += proj_count
+    
+    for processed_count in range(0, nion, chunk_size):
+        _process_chunks(chunk_size)
+    _process_chunks(nion // chunk_size) # Process remainder
     return total_proj_count, total_hist_buf, total_mom_buf

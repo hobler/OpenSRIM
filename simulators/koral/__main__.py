@@ -58,8 +58,8 @@ if __name__ == '__main__':
         m_ion=74.992,
         z_target=[14],
         m_target=[28.085],
-        d_target=0.04996,
-        s_e_f=[1],
+        d_target=0.04996, # TODO: feld enthält alle dichten
+        s_e_f=[1], # TODO: ein Wert für s_e_corr
         start_energy=1,
         stop_energy=10e6,
         nr_values=100)

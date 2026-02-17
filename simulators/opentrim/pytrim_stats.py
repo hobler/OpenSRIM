@@ -15,6 +15,9 @@ from numba.experimental import jitclass
 from numba.extending import overload, register_jitable
 from numba import int32, float64, jit
 
+mom = None
+hist = None
+
 @register_jitable
 def fct(n: int):
     """Calculate the factorial of a number (Numba-compatible)
@@ -239,23 +242,10 @@ def setup(nspec, nbin, limits):
     mom.skewness()
     mom.kurtosis()
 
-@jit
-def score(proj):
-    """Score the final projectile position into moments sum and histogram.
-
-    Parameters:
-        proj (Projectile): the state of the projectile to be scored
-    """
-    global mom, hist
-
-    if proj.is_inside:
-        mom.score(proj.ispec, proj.pos[2])
-        hist.score(proj.ispec, proj.pos[2])
-
-
 def print_results():
     """Print statistics of the scored projectiles."""
     global mom
+    assert mom is not None
 
     mom.central_moments()
     mean, mean_err = mom.mean()
@@ -285,6 +275,7 @@ def print_results():
 def plot_results(log=False):
     """Plot the histogram using matplotlib."""
     import matplotlib.pyplot as plt
+    assert hist is not None
 
     for ivar in range(hist.nvar):
         plt.stairs(hist.counts[ivar,1:-1],

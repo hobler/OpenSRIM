@@ -9,6 +9,7 @@ from numba import jit
 import numpy as np
 from scipy.special import roots_legendre
 
+ROOTS_LEGENDRE = None
 
 def setup(n_absc):
     """Setup Gauss-Legendre abscissae and weights.
@@ -234,7 +235,7 @@ def plot_theta_error(screen_fun):
         screen_fun (object): Screening function instance with `.call()` method
     """
     import matplotlib.pyplot as plt
-    from zbl import magic
+    from .zbl import magic
     plt.rcParams.update({'font.size': 13})
 
     p_vals = (np.linspace(0.02, 30, 101), 
@@ -433,8 +434,8 @@ def plot_sinhalftheta_over_p(screen_fun):
 
 
 if __name__ == "__main__":
-    from zbl import ZBL_screen
-    from nlhlin import NLHlin_screen, read_coefs
+    from .zbl import ZBL_screen
+    from .nlhlin import NLHlin_screen, read_coefs
 
     #screen_fun = ZBL_screen()
 

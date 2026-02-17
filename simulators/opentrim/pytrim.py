@@ -54,8 +54,9 @@ corr_lindhard2 = 1.0    # Correction factor to Lindhard stopping power (Si->Si)
 
 start = time.time()
 # Setup modules
+nlhlin_coefs = read_coefs()
 recoil_params_tup = select_recoil.setup(density)
-scatter_params_tup = scatter.setup(z1, m1, z2, m2, pot_model)
+scatter_params_tup = scatter.setup(z1, m1, z2, m2, pot_model, nlhlin_coefs)
 cm_scatter.setup(n_absc=4)
 estop_params_tup = estop.setup(corr_lindhard1, z1, m1, corr_lindhard2, z2, m2, density)
 geometry_params_tup = geometry.setup(zmin, zmax)
@@ -88,7 +89,6 @@ if __name__ == "__main__":
     
     proj_counts = [[] for _ in range(len(counts))]
     times = [[] for _ in range(len(counts))]
-    coefs = read_coefs()
     
     for _ in range(iter_cnt):
         for i, c in enumerate(counts):
@@ -96,9 +96,9 @@ if __name__ == "__main__":
             statistics.setup(nspec=sim_params.nspec, nbin=sim_params.nbin, limits=sim_params.limits)
             
             start_time = time.time()
-            # proj_count, hist_buf, mom_buf = simulate_adaptive(avg_chunk_time, c, sim_params.to_record(), coefs, follow_recoils=True)
-            proj_count, hist_buf, mom_buf = simulate_chunked(chunk_size, c, sim_params.to_record(), coefs, follow_recoils=True)
-            # proj_count, hist_buf, mom_buf = simulate(c, sim_params.to_record(), coefs, follow_recoils=True, sim_idx=0)
+            # proj_count, hist_buf, mom_buf = simulate_adaptive(avg_chunk_time, c, sim_params.to_record(), follow_recoils=True)
+            proj_count, hist_buf, mom_buf = simulate_chunked(chunk_size, c, sim_params.to_record(), follow_recoils=True)
+            # proj_count, hist_buf, mom_buf = simulate(c, sim_params.to_record(), follow_recoils=True, sim_idx=0)
             statistics.hist.results = hist_buf
             statistics.mom.results = mom_buf
             times[i].append(time.time() - start_time)

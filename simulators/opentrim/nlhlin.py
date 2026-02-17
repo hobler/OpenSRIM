@@ -13,6 +13,7 @@ from numba.core.types import UniTuple, float64
 from numba.experimental import jitclass
 import numpy as np
 from .apsis import Apsis
+from .mytypes import NLHLIN_COEFS_DTYPE
 
 @jitclass
 class NLHlin_screen:
@@ -20,9 +21,9 @@ class NLHlin_screen:
     """
     Z1: int
     Z2: int
-    a: UniTuple(float64, 3) # pyright: ignore[reportInvalidTypeForm]
-    b: UniTuple(float64, 3) # pyright: ignore[reportInvalidTypeForm]
-    ab: UniTuple(float64, 3)    # pyright: ignore[reportInvalidTypeForm]
+    a: UniTuple(float64, 3)  # ty:ignore[invalid-type-form]
+    b: UniTuple(float64, 3) # ty:ignore[invalid-type-form]
+    ab: UniTuple(float64, 3)    # ty:ignore[invalid-type-form]
     c: float
     d: float
     rmax: float
@@ -114,17 +115,6 @@ def read_coefs():
         print(f'NLHlin_screen: Coefficients file {fname} not found')
         sys.exit()
     
-    rec_dtype = np.dtype([
-        ("z1", np.uint32),
-        ("z2", np.uint32),
-        ("a1", np.float64),
-        ("b1", np.float64),
-        ("a2", np.float64),
-        ("b2", np.float64),
-        ("a3", np.float64),
-        ("b3", np.float64),
-        ("rmax", np.float64),
-    ], align=True)
     coef_rows = []
     with open(fname, "r") as f:
         for line in f:
@@ -132,7 +122,7 @@ def read_coefs():
                 continue
             coefs = line.split()[:-1]   # exclude "error" column
             coef_rows.append(tuple([float(c) for c in coefs]))
-    return np.array(coef_rows, dtype=rec_dtype).view(np.recarray)
+    return np.array(coef_rows, dtype=NLHLIN_COEFS_DTYPE).view(np.recarray)
 
 def post_plot(p1, p2, Z2):
     """Do post-plot setup for NLHlin screening function plots.

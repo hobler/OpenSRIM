@@ -46,7 +46,7 @@ class Apsis:
                 df = 1 - dscreen/e
                 delta_r0 = - f / df
                 r0 += delta_r0
-            dr0_de = - r0**2 / (screen - r0 * dscreen)  # pyright: ignore[reportPossiblyUnboundVariable]
+            dr0_de = - r0**2 / (screen - r0 * dscreen)
             energies.append(e)
             apses.append(r0)
             dapses_de.append(dr0_de)

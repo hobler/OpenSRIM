@@ -13,7 +13,7 @@ from .estop import eloss
 from .geometry import is_inside_target
 import numpy as np
 from numba import jit
-from . import pytrim_stats as statistics
+from . import stats as statistics
 
 
 def setup():
@@ -29,7 +29,7 @@ def setup():
 
 
 @jit
-def trajectory(initial_proj, sim_params_arr, screen_fun, follow_recoils=False, prealloc=400):
+def cascade(initial_proj, sim_params_arr, screen_fun, follow_recoils=False, prealloc=400):
     """Simulate one projectile trajectory.
     
     Parameters:
@@ -56,7 +56,11 @@ def trajectory(initial_proj, sim_params_arr, screen_fun, follow_recoils=False, p
     stat_params = sim_params.stat_params
     hist = statistics.Histogram_1d(stat_params.nspec, stat_params.nbin, (stat_params.limits[0], stat_params.limits[1]))
     mom = statistics.Moment_1d(stat_params.nspec, 4)
-    
+
+    #proj_lst = np.empty(1 if not follow_recoils else prealloc, dtype=initial_proj.dtype)
+    #proj_lst[0] = initial_proj
+
+    # proj_lst[1:] will be overwritten with recoils
     proj_lst = np.full(1 if not follow_recoils else prealloc, initial_proj)
     lst_tail = 0
     

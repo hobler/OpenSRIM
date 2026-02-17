@@ -66,7 +66,7 @@ def _simulate(nion, sim_params, follow_recoils, sim_idx):
     def _parallel_exec(screen_fun):
         for i in prange(nion):
             np.random.seed(sim_params_arr[0].rng_seed + sim_idx + i)
-            proj_sim[i], hist_results[i], mom_results[i] = cascade.trajectory(proj_dummy[0], sim_params_arr, screen_fun, follow_recoils)
+            proj_sim[i], hist_results[i], mom_results[i] = cascade.cascade(proj_dummy[0], sim_params_arr, screen_fun, follow_recoils)
     
     # Simulate the trajectories
     if sim_params.scatter_params.pot_model == 'NLHlin':

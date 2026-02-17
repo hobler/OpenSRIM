@@ -70,7 +70,7 @@ SIM_PARAMS_DTYPE = np.dtype([
     ("scatter_params", SCATTER_PARAMS_DTYPE)
 ], align=True)
 
-# Preserve compatibility with vanilla NumPy (with numba disabled)
+# Preserve compatibility with vanilla NumPy (with nusim_params.scatter_paramsmba disabled)
 if os.environ.get("NUMBA_DISABLE_JIT", "") == "1":
     def Projectile(e, pos, dir, ispec=0, is_inside=True):
         """Create a single numpy record with initial properties of a Projectile

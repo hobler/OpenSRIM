@@ -56,17 +56,18 @@ SCATTER_PARAMS_DTYPE = np.dtype([
     ("rnorm", np.float64, (2,)),
     ("dirfrac", np.float64, (2,)),
     ("denfrac", np.float64, (2,)),
+    ("nlhlin_coefs", NLHLIN_COEFS_DTYPE, (4278,)),
 ], align=True)
 
 # Main simulation parameters with nested data types
 SIM_PARAMS_DTYPE = np.dtype([
+    ("rng_seed", np.uint32),
     ("stat_params", STAT_PARAMS_DTYPE),
     ("cascade_params", CASCADE_PARAMS_DTYPE),
     ("recoil_params", RECOIL_PARAMS_DTYPE),
     ("geometry_params", GEOMETRY_PARAMS_DTYPE),
     ("estop_params", ESTOP_PARAMS_DTYPE),
-    ("scatter_params", SCATTER_PARAMS_DTYPE),
-    ("rng_seed", np.uint32),
+    ("scatter_params", SCATTER_PARAMS_DTYPE)
 ], align=True)
 
 # Preserve compatibility with vanilla NumPy (with numba disabled)
@@ -141,6 +142,7 @@ class SimParams:
         self.dirfrac = np.zeros(2)
         self.denfrac = np.zeros(2)
         self.rng_seed = np.random.randint(2**31, dtype=np.uint32)
+        self.nlhlin_coefs = np.zeros(4278, dtype=NLHLIN_COEFS_DTYPE)
         
         if stat_params_tup is not None:
             self.nspec, self.nbin, self.limits = stat_params_tup
@@ -153,7 +155,7 @@ class SimParams:
         if estop_params_tup is not None:
             self.fac_linhard, self.density = estop_params_tup
         if scatter_params_tup is not None:
-            self.pot_model, self.z1, self.z2, self.enorm, self.rnorm, self.dirfrac, self.denfrac = scatter_params_tup
+            self.pot_model, self.z1, self.z2, self.enorm, self.rnorm, self.dirfrac, self.denfrac, self.nlhlin_coefs = scatter_params_tup
         if rng_seed is not None:
             self.rng_seed = np.uint32(rng_seed)
 
@@ -177,5 +179,6 @@ class SimParams:
         rec['scatter_params']['rnorm'] = self.rnorm
         rec['scatter_params']['dirfrac'] = self.dirfrac
         rec['scatter_params']['denfrac'] = self.denfrac
+        rec['scatter_params']['nlhlin_coefs'] = self.nlhlin_coefs
         rec['rng_seed'] = self.rng_seed
         return rec

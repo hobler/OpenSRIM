@@ -100,8 +100,7 @@ def scatter(proj, p, dirp, screen_fun, scatter_params, is_magic):
 
     return recoil_dir[:], recoil_e
 
-# Excluded from being JIT-Compiled
-def setup(z1, m1, z2, m2, pot_model):
+def setup(z1, m1, z2, m2, pot_model, nlhlin_coefs):
     """Setup module variables depending on projectile and target species.
 
     Each of the module variables ENORM, RNORM, DIRFAC, and DENFAC is a tuple
@@ -114,6 +113,7 @@ def setup(z1, m1, z2, m2, pot_model):
         z2 (int): atomic number of target
         m2 (float): mass of target (amu)
         pot_model (str): potential model for scattering
+        nlhlin_coefs (np.recarray): coefficients for NHLlin screening function
         
     Returns:
         (str): Model identifier (name)
@@ -123,6 +123,7 @@ def setup(z1, m1, z2, m2, pot_model):
         (np.ndarray): RNORM
         (np.ndarray): DIRFAC
         (np.ndarray): DENFAC
+        (np.recarray): nlhlin_coefs
     """
     m1_m2 = m1 / m2
     if pot_model.startswith('ZBL'):
@@ -138,4 +139,4 @@ def setup(z1, m1, z2, m2, pot_model):
     denfac = np.array((4 * m1_m2 / (1 + m1_m2)**2,
                 1))
               
-    return pot_model, z1, z2, enorm, rnorm, dirfac, denfac
+    return pot_model, z1, z2, enorm, rnorm, dirfac, denfac, nlhlin_coefs

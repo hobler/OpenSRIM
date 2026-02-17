@@ -46,7 +46,7 @@ def impl(n: int, k: int):
     return inner
     
 
-@jitclass(spec = [  # pyright: ignore[reportCallIssue]
+@jitclass(spec = [
     ("nvar", int32),
     ("nmax", int32),
     ("count", float64[:]),
@@ -169,7 +169,7 @@ class Moment_1d:
         return cenmom_err[:]
 
 
-@jitclass(spec = [  # pyright: ignore[reportCallIssue]
+@jitclass(spec = [
     ("nvar", int32),
     ("nbin", int32),
     ("limits", UniTuple(float64, 2)),

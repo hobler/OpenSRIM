@@ -10,6 +10,18 @@ PROJ_DTYPE = np.dtype([
     ("is_inside", np.bool_)
 ], align=True)
 
+NLHLIN_COEFS_DTYPE = np.dtype([
+    ("z1", np.uint32),
+    ("z2", np.uint32),
+    ("a1", np.float64),
+    ("b1", np.float64),
+    ("a2", np.float64),
+    ("b2", np.float64),
+    ("a3", np.float64),
+    ("b3", np.float64),
+    ("rmax", np.float64),
+], align=True)
+
 STAT_PARAMS_DTYPE = np.dtype([
     ("nspec", np.int32),
     ("nbin", np.int32),

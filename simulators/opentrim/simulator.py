@@ -125,7 +125,7 @@ def simulate_adaptive(avg_chunk_time, nion, *args, **kwargs):
             total_mom_buf = mom_buf.copy()
         else:
             total_hist_buf += hist_buf
-            total_mom_buf += mom_buf  # pyright: ignore[reportOperatorIssue]
+            total_mom_buf += mom_buf
         duration = time.time() - start_time
         
         processed_count += current_batch
@@ -166,7 +166,7 @@ def simulate_chunked(chunk_size, nion, *args, **kwargs):
             total_mom_buf = mom_buf.copy()
         else:
             total_hist_buf += hist_buf
-            total_mom_buf += mom_buf  # pyright: ignore[reportOperatorIssue]
+            total_mom_buf += mom_buf
         total_proj_count += proj_count
     
     for processed_count in range(0, nion, chunk_size):

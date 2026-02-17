@@ -44,9 +44,9 @@ class ZBL_screen:
     """
     Z1: Optional[int]
     Z2: Optional[int]
-    a: UniTuple(float64, 4) # pyright: ignore[reportInvalidTypeForm]
-    b: UniTuple(float64, 4) # pyright: ignore[reportInvalidTypeForm]
-    ab: UniTuple(float64, 4)    # pyright: ignore[reportInvalidTypeForm]
+    a: UniTuple(float64, 4) # ty:ignore[invalid-type-form]
+    b: UniTuple(float64, 4) # ty:ignore[invalid-type-form]
+    ab: UniTuple(float64, 4)    # ty:ignore[invalid-type-form]
     c: float
     d: float
     rmax: float

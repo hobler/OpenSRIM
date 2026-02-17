@@ -34,7 +34,7 @@ from . import cm_scatter
 from . import estop
 from . import geometry
 from . import cascade
-from . import pytrim_stats as statistics
+from . import stats as statistics
 from .mytypes import SimParams
 from .nlhlin import read_coefs
 from .simulator import simulate, simulate_chunked, simulate_adaptive  # noqa: F401

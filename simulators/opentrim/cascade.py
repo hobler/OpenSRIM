@@ -7,6 +7,7 @@ Available functions:
     setup: setup module variables.
     trajectory: simulate one trajectory.
 """
+from .mytypes import PROJ_DTYPE
 from .select_recoil import get_recoil_position
 from .scatter import scatter
 from .estop import eloss
@@ -29,7 +30,7 @@ def setup():
 
 
 @jit
-def cascade(initial_proj, sim_params_arr, screen_fun, follow_recoils=False, prealloc=400):
+def cascade(initial_proj, sim_params, screen_fun, follow_recoils=False, prealloc=400):
     """Simulate one projectile trajectory.
     
     Parameters:
@@ -49,7 +50,6 @@ def cascade(initial_proj, sim_params_arr, screen_fun, follow_recoils=False, prea
     INITIAL_STACK_SIZE = 100
     INITIAL_RECOILS_SIZE = 5
     
-    sim_params = sim_params_arr[0]
     emin = sim_params.cascade_params.emin
     ed = sim_params.cascade_params.ed
     is_magic = (sim_params.scatter_params.pot_model == 'ZBL_magic')
@@ -57,17 +57,17 @@ def cascade(initial_proj, sim_params_arr, screen_fun, follow_recoils=False, prea
     hist = statistics.Histogram_1d(stat_params.nspec, stat_params.nbin, (stat_params.limits[0], stat_params.limits[1]))
     mom = statistics.Moment_1d(stat_params.nspec, 4)
 
-    #proj_lst = np.empty(1 if not follow_recoils else prealloc, dtype=initial_proj.dtype)
-    #proj_lst[0] = initial_proj
-
-    # proj_lst[1:] will be overwritten with recoils
-    proj_lst = np.full(1 if not follow_recoils else prealloc, initial_proj)
+    # Fully simulated projectiles
+    proj_lst = np.empty(1 if not follow_recoils else prealloc, dtype=PROJ_DTYPE)
     lst_tail = 0
     
-    stack = np.full(INITIAL_STACK_SIZE, initial_proj)
+    # Projectiles to be simulated
+    stack = np.empty(INITIAL_STACK_SIZE, dtype=PROJ_DTYPE)
+    stack[0] = initial_proj
     stack_tail = 1
     
-    recoils = np.full(INITIAL_RECOILS_SIZE, initial_proj)
+    # Recoils of the currently simulated projectile
+    recoils = np.empty(INITIAL_RECOILS_SIZE, dtype=PROJ_DTYPE)
 
     while stack_tail > 0:
         stack_tail -= 1
@@ -88,7 +88,7 @@ def cascade(initial_proj, sim_params_arr, screen_fun, follow_recoils=False, prea
             recoil_dir, recoil_e = scatter(proj, p, dirp[:], screen_fun, sim_params.scatter_params, is_magic)        
             if follow_recoils and recoil_e > ed:
                 if recoils_tail >= recoils.size:
-                    recoils = np.append(recoils, np.full(int(GROWTH_FACTOR * recoils.size), initial_proj))
+                    recoils = np.append(recoils, np.empty(int(GROWTH_FACTOR * recoils.size), dtype=PROJ_DTYPE))
                 
                 recoils[recoils_tail].e = recoil_e
                 recoils[recoils_tail].pos[:] = recoil_pos
@@ -98,7 +98,7 @@ def cascade(initial_proj, sim_params_arr, screen_fun, follow_recoils=False, prea
                 recoils_tail += 1
         
         if lst_tail >= proj_lst.size:
-            proj_lst = np.append(proj_lst, np.full(int(GROWTH_FACTOR * proj_lst.size), initial_proj))
+            proj_lst = np.append(proj_lst, np.empty(int(GROWTH_FACTOR * proj_lst.size), dtype=PROJ_DTYPE))
         proj_lst[lst_tail] = proj
         lst_tail+=1
         
@@ -108,7 +108,7 @@ def cascade(initial_proj, sim_params_arr, screen_fun, follow_recoils=False, prea
         
         for i in range(recoils_tail - 1, -1, -1):
             if stack_tail >= stack.size:
-                stack = np.append(stack, np.full(int(GROWTH_FACTOR * stack.size), initial_proj))
+                stack = np.append(stack, np.empty(int(GROWTH_FACTOR * stack.size), dtype=PROJ_DTYPE))
             stack[stack_tail] = recoils[i]
             stack_tail += 1
 

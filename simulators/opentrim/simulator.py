@@ -3,7 +3,7 @@ from . import config
 import numpy as np
 from numba import jit, prange
 from . import cascade
-from .mytypes import Projectile
+from .mytypes import Projectile, PROJ_DTYPE
 from .nlhlin import NLHlin_screen
 from .zbl import ZBL_screen
 
@@ -31,7 +31,7 @@ def _simulate(nion, sim_params, follow_recoils, sim_idx):
     
     Parameters:
         nion: (int) Total number of projectiles to simulate
-        sim_params_tup: (tuple) Simulation parameters (provided by `SimParams.to_tuple()`)
+        sim_params_tup: (np.recarray) Simulation parameters
         follow_recoils: (bool) If the simulation should be performed for recoils aswell
         sim_idx: (int) Simulation index (for chunked simulations)
         
@@ -49,8 +49,8 @@ def _simulate(nion, sim_params, follow_recoils, sim_idx):
         0,
         True
     )
-    proj_dummy = np.full(1, proj_init)
-    proj_sim = [proj_dummy for _ in range(nion)]
+    proj_dummy_arr = np.empty(1, dtype=PROJ_DTYPE)
+    proj_sim = [proj_dummy_arr for _ in range(nion)]
     z1 = sim_params.scatter_params.z1
     z2 = sim_params.scatter_params.z2
     nlhlin_coefs = sim_params.scatter_params.nlhlin_coefs
@@ -64,24 +64,35 @@ def _simulate(nion, sim_params, follow_recoils, sim_idx):
     mom_results = [mom_dummy for _ in range(nion)]
     
     def _parallel_exec(screen_fun):
-        for i in prange(nion):
+        for i in prange(nion):  # ty:ignore[not-iterable]
             np.random.seed(sim_params_arr[0].rng_seed + sim_idx + i)
-            proj_sim[i], hist_results[i], mom_results[i] = cascade.cascade(proj_dummy[0], sim_params_arr, screen_fun, follow_recoils)
+            proj_sim[i], hist_results[i], mom_results[i] = cascade.cascade(
+                proj_dummy_arr[0],
+                sim_params_arr[0],
+                screen_fun,
+                follow_recoils
+            )
     
     # Simulate the trajectories
     if sim_params.scatter_params.pot_model == 'NLHlin':
-        screen_fun_nlh = (NLHlin_screen(z1, z2, sim_params.scatter_params.rnorm[0], nlhlin_coefs),
-                        NLHlin_screen(z2, z2, sim_params.scatter_params.rnorm[1], nlhlin_coefs))
+        screen_fun_nlh = (
+            NLHlin_screen(z1, z2, sim_params.scatter_params.rnorm[0], nlhlin_coefs),
+            NLHlin_screen(z2, z2, sim_params.scatter_params.rnorm[1], nlhlin_coefs)
+        )
         _parallel_exec(screen_fun_nlh)
 
     elif sim_params.scatter_params.pot_model == 'ZBL':
-        screen_fun_zbl = (ZBL_screen(z1, z2, sim_params.scatter_params.rnorm[0], False),
-                        ZBL_screen(z2, z2, sim_params.scatter_params.rnorm[1], False))
+        screen_fun_zbl = (
+            ZBL_screen(z1, z2, sim_params.scatter_params.rnorm[0], False),
+            ZBL_screen(z2, z2, sim_params.scatter_params.rnorm[1], False)
+        )
         _parallel_exec(screen_fun_zbl)
 
     else:   # Defaults to 'ZBL_magic'
-        screen_fun_magic = (ZBL_screen(z1, z2, sim_params.scatter_params.rnorm[0], True),
-                        ZBL_screen(z2, z2, sim_params.scatter_params.rnorm[1], True))
+        screen_fun_magic = (
+            ZBL_screen(z1, z2, sim_params.scatter_params.rnorm[0], True),
+            ZBL_screen(z2, z2, sim_params.scatter_params.rnorm[1], True)
+        )
         _parallel_exec(screen_fun_magic)
     
     proj_count = 0
@@ -117,7 +128,12 @@ def simulate_adaptive(avg_chunk_time, nion, *args, **kwargs):
         current_batch = min(chunk_size, nion - processed_count)
         
         start_time = time.time()
-        proj_count, hist_buf, mom_buf = simulate(current_batch, *args, sim_idx=processed_count, **kwargs)
+        proj_count, hist_buf, mom_buf = simulate(
+            current_batch,
+            *args,
+            sim_idx=processed_count,
+            **kwargs
+        )
         # NOTE: Saving or adding data to queue can be performed here
         
         total_proj_count += proj_count
@@ -159,7 +175,12 @@ def simulate_chunked(chunk_size, nion, *args, **kwargs):
         if chunk_size == 0:
             return
         
-        proj_count, hist_buf, mom_buf = simulate(chunk_size, *args, sim_idx=processed_count, **kwargs)
+        proj_count, hist_buf, mom_buf = simulate(
+            chunk_size,
+            *args,
+            sim_idx=processed_count,
+            **kwargs
+        )
         # NOTE: Saving can be performed here
         
         if total_hist_buf is None:

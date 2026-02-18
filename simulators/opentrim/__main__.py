@@ -99,8 +99,10 @@ if __name__ == "__main__":
             # proj_count, hist_buf, mom_buf = simulate_adaptive(avg_chunk_time, c, sim_params.to_record(), follow_recoils=True)
             proj_count, hist_buf, mom_buf = simulate_chunked(chunk_size, c, sim_params.to_record(), follow_recoils=True)
             # proj_count, hist_buf, mom_buf = simulate(c, sim_params.to_record(), follow_recoils=True, sim_idx=0)
-            statistics.hist.results = hist_buf
-            statistics.mom.results = mom_buf
+            if statistics.hist is not None:
+                statistics.hist.results = hist_buf
+            if statistics.mom is not None:
+                statistics.mom.results = mom_buf
             times[i].append(time.time() - start_time)
             proj_counts[i].append(proj_count)
     

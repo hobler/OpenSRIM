@@ -37,22 +37,22 @@ def init_params():
 
     nlhlin_coefs = read_coefs()
     
-    recoil_params_tup = select_recoil.setup(density)
-    scatter_params_tup = scatter.setup(z1, m1, z2, m2, pot_model, nlhlin_coefs)
+    recoil_tup = select_recoil.setup(density)
+    scatter_tup = scatter.setup(z1, m1, z2, m2, pot_model, nlhlin_coefs)
     cm_scatter.setup(n_absc=4)
-    estop_params_tup = estop.setup(corr_lindhard1, z1, m1, corr_lindhard2, z2, m2, density)
-    geometry_params_tup = geometry.setup(zmin, zmax)
-    cascade_params_tup = cascade.setup()
+    estop_tup = estop.setup(corr_lindhard1, z1, m1, corr_lindhard2, z2, m2, density)
+    geometry_tup = geometry.setup(zmin, zmax)
+    cascade_tup = cascade.setup()
 
-    sim_params = SimParams( rng_seed = np.random.randint(2**31, dtype=np.uint32),
+    params = SimParams( rng_seed = np.random.randint(2**31, dtype=np.uint32),
                             # Seed can be specified manually or generated automatically (default)
-                            stat_params_tup = (2, 40, (0.0, 4000.0)),
-                            cascade_params_tup = cascade_params_tup,
-                            recoil_params_tup = recoil_params_tup,
-                            geometry_params_tup = geometry_params_tup,
-                            estop_params_tup = estop_params_tup,
-                            scatter_params_tup = scatter_params_tup)
+                            stat_tup = (2, 40, (0.0, 4000.0)),
+                            cascade_tup = cascade_tup,
+                            recoil_tup = recoil_tup,
+                            geometry_tup = geometry_tup,
+                            estop_tup = estop_tup,
+                            scatter_tup = scatter_tup)
 
-    statistics.setup(nspec=sim_params.nspec, nbin=sim_params.nbin, limits=sim_params.limits)
+    statistics.setup(nspec=params.nspec, nbin=params.nbin, limits=params.limits)
 
-    return sim_params
+    return params

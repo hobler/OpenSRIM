@@ -22,14 +22,14 @@ def setup(zmin, zmax):
     return zmin, zmax
 
 @jit(inline = 'always')
-def is_inside_target(pos, geometry_params):
+def is_inside_target(pos, geometry):
     """Check if a given position is inside the target.
 
     Parameters:
         pos (ndarray): position to check (size 3)
-        geometry_params (np.recarray): Geometry parameters
+        geometry (np.recarray): Geometry parameters
 
     Returns:
         (bool): whether the position is inside the target
     """
-    return geometry_params.zmin <= pos[2] <= geometry_params.zmax
+    return geometry.zmin <= pos[2] <= geometry.zmax

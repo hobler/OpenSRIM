@@ -13,7 +13,7 @@ from numba.core.types import UniTuple, float64
 from numba.experimental import jitclass
 import numpy as np
 from .apsis import Apsis
-from .mytypes import NLHLIN_COEFS_DTYPE
+
 
 @jitclass
 class NLHlin_screen:
@@ -104,6 +104,7 @@ class NLHlin_screen:
         dscreen = np.where(mask, dscreen, 0.0)
         return screen, dscreen
 
+
 def read_coefs():
     """Read NLHlin screening coefficients from the data file.
 
@@ -122,7 +123,22 @@ def read_coefs():
                 continue
             coefs = line.split()[:-1]   # exclude "error" column
             coef_rows.append(tuple([float(c) for c in coefs]))
+
+    # TODO: Remove duplicate definition of SCATTER_PARAMS_DTYPE
+    NLHLIN_COEFS_DTYPE = np.dtype([
+        ("z1", np.uint32),
+        ("z2", np.uint32),
+        ("a1", np.float64),
+        ("b1", np.float64),
+        ("a2", np.float64),
+        ("b2", np.float64),
+        ("a3", np.float64),
+        ("b3", np.float64),
+        ("rmax", np.float64),
+    ], align=True)
+
     return np.array(coef_rows, dtype=NLHLIN_COEFS_DTYPE).view(np.recarray)
+
 
 def post_plot(p1, p2, Z2):
     """Do post-plot setup for NLHlin screening function plots.

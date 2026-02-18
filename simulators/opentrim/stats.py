@@ -14,7 +14,6 @@ import numpy as np
 from numba.experimental import jitclass
 from numba.extending import overload, register_jitable
 from numba import int32, float64, jit
-from .mytypes import STAT_PARAMS_DTYPE
 
 
 mom = None
@@ -237,6 +236,12 @@ def setup(nspec, nbin, limits):
         (STAT_PARAMS_DTYPE): Statistics parameters
     """
     global mom, hist
+
+    STAT_PARAMS_DTYPE = np.dtype([
+        ("nspec", np.int32),
+        ("nbin", np.int32),
+        ("limits", np.float64, (2,)),
+    ], align=True)
 
     stat_params = np.recarray(1, dtype=STAT_PARAMS_DTYPE)[0]
     stat_params["nspec"] = nspec

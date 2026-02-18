@@ -12,7 +12,6 @@ from . import estop
 from . import geometry
 from . import cascade
 from . import stats as statistics
-from .mytypes import PARAMS_DTYPE
 from .nlhlin import read_coefs
 
 
@@ -48,6 +47,16 @@ def init_params():
     geometry_params = geometry.setup(zmin, zmax)
     cascade_params = cascade.setup()
     stat_params = statistics.setup(nspec, nbin, limits)
+
+    PARAMS_DTYPE = np.dtype([
+        ("rng_seed", np.uint64),    # 64 bits needed for alignment
+        ("stat", stat_params.dtype),
+        ("cascade", cascade_params.dtype),
+        ("recoil", recoil_params.dtype),
+        ("geometry", geometry_params.dtype),
+        ("estop", estop_params.dtype),
+        ("scatter", scatter_params.dtype),
+    ], align=True)
 
     params = np.recarray(1, dtype=PARAMS_DTYPE)[0]
     params["stat"] = stat_params

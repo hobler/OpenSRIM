@@ -8,7 +8,6 @@ Available functions:
 """
 import numpy as np
 from numba import jit
-from mytypes import GEOMETRY_PARAMS_DTYPE
 
 
 def setup(zmin, zmax):
@@ -20,6 +19,11 @@ def setup(zmin, zmax):
     Returns:
         (GEOMETRY_PARAMS_DTYPE): geometry parameters
     """
+    GEOMETRY_PARAMS_DTYPE = np.dtype([
+        ("zmin", np.float64),
+        ("zmax", np.float64),
+    ], align=True)
+
     geometry_params = np.recarray(1, dtype=GEOMETRY_PARAMS_DTYPE)[0]
     geometry_params["zmin"] = zmin
     geometry_params["zmax"] = zmax

@@ -12,16 +12,15 @@ from . import estop
 from . import geometry
 from . import cascade
 from . import stats as statistics
-from .mytypes import SimParams
+from .mytypes import PARAMS_DTYPE
 from .nlhlin import read_coefs
-
 
 
 def init_params():
     """Initialize the simulation parameters.
 
     Returns:
-        (SimParams): A structured array containing all simulation parameters.
+        (PARAMS_DTYPE): A structured array containing all simulation parameters.
     """
 
     # Example hardcoded parameters (to be replaced with file input)
@@ -50,15 +49,14 @@ def init_params():
     cascade_params = cascade.setup()
     stat_params = statistics.setup(nspec, nbin, limits)
 
-    params = SimParams( rng_seed = np.random.randint(2**31, dtype=np.uint32),
-                        # Seed can be specified manually or generated automatically (default)
-                        stat_params = stat_params,
-                        cascade_params = cascade_params,
-                        recoil_params = recoil_params,
-                        geometry_params = geometry_params,
-                        estop_params = estop_params,
-                        scatter_params = scatter_params)
+    params = np.recarray(1, dtype=PARAMS_DTYPE)[0]
+    params['stat'] = stat_params
+    params['cascade'] = cascade_params
+    params['recoil'] = recoil_params
+    params['geometry'] = geometry_params
+    params['estop'] = estop_params
+    params['scatter'] = scatter_params
 
-    statistics.setup(nspec=params.nspec, nbin=params.nbin, limits=params.limits)
+    statistics.setup(nspec=params.stat.nspec, nbin=params.stat.nbin, limits=params.stat.limits)
 
     return params

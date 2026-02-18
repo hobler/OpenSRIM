@@ -36,7 +36,7 @@ def cascade(initial_proj, params_arr, screen_fun, follow_recoils=False, prealloc
     
     Parameters:
         initial_proj: (Projectile) the initial state of the first projectile
-        params: (SimParams) Simulation parameters
+        params: (PARAMS_DTYPE) Simulation parameters
         screen_fun (object): Screening function
         follow_recoils: (bool) whether to follow recoil trajectories
         prealloc: (int) number of recoil projectiles to pre-allocate space for (for better performance)

@@ -14,7 +14,7 @@ import numpy as np
 from numba.experimental import jitclass
 from numba.extending import overload, register_jitable
 from numba import int32, float64, jit
-from mytypes import STAT_PARAMS_DTYPE
+from .mytypes import STAT_PARAMS_DTYPE
 
 
 mom = None
@@ -187,7 +187,7 @@ class Histogram_1d:
     To calculate histograms, create an instance of this class with the
     desired number of variables, number of bins, and limits. Score data points
     using the score() method. The histogram counts can be accessed via the 
-    'counts' attribute.
+    "counts" attribute.
     
     Attributes:
         nvar (int): number variables for which histograms are desired
@@ -296,12 +296,12 @@ def plot_results(log=False):
         plt.stairs(hist.counts[ivar,1:-1],
                    edges=np.linspace(hist.limits[0], hist.limits[1], 
                                      hist.nbin+1),
-                   label=f'Species {ivar}')
+                   label=f"Species {ivar}")
     if log:
-        plt.yscale('log')
-    plt.xlabel('Penetration depth (A)')
-    plt.ylabel('Counts')
-    plt.title('Histogram of Penetration Depths')
+        plt.yscale("log")
+    plt.xlabel("Penetration depth (A)")
+    plt.ylabel("Counts")
+    plt.title("Histogram of Penetration Depths")
     plt.legend()
     plt.show()
 

@@ -11,7 +11,7 @@ Available functions:
 from math import sqrt, sin, cos
 import numpy as np
 from numba import jit
-from mytypes import RECOIL_PARAMS_DTYPE
+from .mytypes import RECOIL_PARAMS_DTYPE
 
 
 def setup(density):
@@ -31,13 +31,13 @@ def setup(density):
 
 
 @jit
-def get_recoil_position(pos, dir, recoil):
+def get_recoil_position(pos, dir, params):
     """Get the recoil position based on the projectile position and direction.
 
     Parameters:
         pos (ndarray): position of the projectile (size 3)
         dir (ndarray): direction vector of the projectile (size 3)
-        recoil (np.recarray): Recoil parameters
+        params (RECOIL_PARAMS_DTYPE): Recoil parameters
 
     Returns:
         (float): free path length to the next collision (A)
@@ -46,10 +46,10 @@ def get_recoil_position(pos, dir, recoil):
         (ndarray): direction vector from collision point to recoil (size 3)
         (ndarray): position of the recoil (A, size 3)
     """
-    free_path = recoil.mean_free_path
+    free_path = params.mean_free_path
     collision_pos = pos[:] + free_path * dir[:]
 
-    p = recoil.pmax * sqrt(np.random.rand())
+    p = params.pmax * sqrt(np.random.rand())
     # Azimuthal angle fi
     fi = 2 * np.pi * np.random.rand()
     cos_fi = cos(fi)

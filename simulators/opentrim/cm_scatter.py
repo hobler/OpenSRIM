@@ -116,26 +116,26 @@ def plot_chi(r0_vals, screen_fun):
         (float): Value of chi function.
     """
     import matplotlib.pyplot as plt
-    plt.rcParams.update({'font.size': 14})
+    plt.rcParams.update({"font.size": 14})
 
     u = np.linspace(0.001, 0.999, 999)
 
     for r0 in r0_vals:
         phi, chi = calc_phi_chi(u, r0, screen_fun)
-        plt.plot(u, chi, label=fr'$R_0$={r0}')
+        plt.plot(u, chi, label=fr"$R_0$={r0}")
 
-    plt.xlabel('u')
-    plt.ylabel(r'$\chi$(u)')
+    plt.xlabel("u")
+    plt.ylabel(r"$\chi$(u)")
     plt.xlim(0, 1)
     plt.ylim(0, 1)
     plt.legend()
     title = "Potential"
     if isinstance(screen_fun, ZBL_screen):
-        title = 'ZBL potential'
+        title = "ZBL potential"
     elif isinstance(screen_fun, NLHlin_screen):
-        title = (fr'NLHlin potential, Z$_1$={screen_fun.Z1}, '
-                    fr'Z$_2$={screen_fun.Z2}')
-    plt.title(title, fontsize='medium')
+        title = (fr"NLHlin potential, Z$_1$={screen_fun.Z1}, "
+                    fr"Z$_2$={screen_fun.Z2}")
+    plt.title(title, fontsize="medium")
     plt.show()
 
 
@@ -155,7 +155,7 @@ def plot_chi_near_zero(r0_vals, screen_fun):
         (float): Value of chi function.
     """
     import matplotlib.pyplot as plt
-    plt.rcParams.update({'font.size': 14})
+    plt.rcParams.update({"font.size": 14})
 
     u = np.logspace(-10, 0, 101)
 
@@ -164,22 +164,22 @@ def plot_chi_near_zero(r0_vals, screen_fun):
         phi, _ = screen_fun.call(r0/(1-u**2))
         #chi = (phi0 - phi*(1-u**2)) / u**2
         _, chi = calc_phi_chi(u, r0, screen_fun)
-        plt.plot(u, np.full_like(u, phi0) - r0*dphi0, 'k--')
-        plt.plot(u, chi, label=fr'$R_0$={r0}')
+        plt.plot(u, np.full_like(u, phi0) - r0*dphi0, "k--")
+        plt.plot(u, chi, label=fr"$R_0$={r0}")
 
-    plt.xscale('log')
-    plt.xlabel('u')
-    plt.ylabel(r'$\chi$(u)')
+    plt.xscale("log")
+    plt.xlabel("u")
+    plt.ylabel(r"$\chi$(u)")
     plt.xlim(0, 1)
     plt.ylim(0, 1)
     plt.legend()
     title = "Potential"
     if isinstance(screen_fun, ZBL_screen):
-        title = 'ZBL potential'
+        title = "ZBL potential"
     elif isinstance(screen_fun, NLHlin_screen):
-        title = (fr'NLHlin potential, Z$_1$={screen_fun.Z1}, '
-                    fr'Z$_2$={screen_fun.Z2}')
-    plt.title(title, fontsize='medium')
+        title = (fr"NLHlin potential, Z$_1$={screen_fun.Z1}, "
+                    fr"Z$_2$={screen_fun.Z2}")
+    plt.title(title, fontsize="medium")
     plt.show()
 
 
@@ -199,7 +199,7 @@ def plot_chi_near_one(r0_vals, screen_fun):
         (float): Value of chi function.
     """
     import matplotlib.pyplot as plt
-    plt.rcParams.update({'font.size': 14})
+    plt.rcParams.update({"font.size": 14})
 
     u1 = np.logspace(-10, 0, 101)
     u = 1 - u1
@@ -209,22 +209,22 @@ def plot_chi_near_one(r0_vals, screen_fun):
         phi, _ = screen_fun.call(r0/(1-u**2))
         #chi = (phi0 - phi*(1-u**2)) / u**2
         _, chi = calc_phi_chi(u, r0, screen_fun)
-        plt.plot(u1, np.full_like(u, phi0), 'k--')
-        plt.plot(u1, chi, label=fr'$R_0$={r0}')
+        plt.plot(u1, np.full_like(u, phi0), "k--")
+        plt.plot(u1, chi, label=fr"$R_0$={r0}")
 
-    plt.xscale('log')
-    plt.xlabel('1-u')
-    plt.ylabel(r'$\chi$(u)')
+    plt.xscale("log")
+    plt.xlabel("1-u")
+    plt.ylabel(r"$\chi$(u)")
     plt.xlim(0, 1)
     plt.ylim(0, 1)
     plt.legend()
     title = "Potential"
     if isinstance(screen_fun, ZBL_screen):
-        title = 'ZBL potential'
+        title = "ZBL potential"
     elif isinstance(screen_fun, NLHlin_screen):
-        title = (fr'NLHlin potential, Z$_1$={screen_fun.Z1}, '
-                    fr'Z$_2$={screen_fun.Z2}')
-    plt.title(title, fontsize='medium')
+        title = (fr"NLHlin potential, Z$_1$={screen_fun.Z1}, "
+                    fr"Z$_2$={screen_fun.Z2}")
+    plt.title(title, fontsize="medium")
     plt.show()
 
 
@@ -236,7 +236,7 @@ def plot_theta_error(screen_fun):
     """
     import matplotlib.pyplot as plt
     from .zbl import magic
-    plt.rcParams.update({'font.size': 13})
+    plt.rcParams.update({"font.size": 13})
 
     p_vals = (np.linspace(0.02, 30, 101), 
               np.linspace(0.02, 12, 101), 
@@ -245,7 +245,7 @@ def plot_theta_error(screen_fun):
     n_absc_vals = (1, 2, 3, 4, 5, 10)
 
     for ie, e in enumerate((1e-4, 0.1, 100)):
-        fig, ax = plt.subplots(1, 1, figsize=(6, 4), layout='constrained')
+        fig, ax = plt.subplots(1, 1, figsize=(6, 4), layout="constrained")
         theta_ref_vals = []
         theta_magic_vals = []
         setup(n_absc=32)
@@ -265,32 +265,32 @@ def plot_theta_error(screen_fun):
                 theta_ref = theta_ref_vals[ip]
                 err = np.abs(theta - theta_ref) / np.abs(theta_ref)
                 errors.append(err)
-            plt.semilogy(p_vals[ie], errors, f'C{i_absc}')
+            plt.semilogy(p_vals[ie], errors, f"C{i_absc}")
 
         if type(screen_fun) is ZBL_screen:
             theta_magic_vals = np.array(theta_magic_vals)
             errors = (np.abs(theta_magic_vals - theta_ref_vals) 
                       / np.abs(theta_ref_vals))
-            plt.semilogy(p_vals[ie], errors, 'k--')
+            plt.semilogy(p_vals[ie], errors, "k--")
 
-        lines = [f'n={n}' for n in n_absc_vals]
+        lines = [f"n={n}" for n in n_absc_vals]
         if type(screen_fun) is ZBL_screen:
-            lines.append('magic')
+            lines.append("magic")
         plt.legend(lines, loc=(1.03, 0.2))
 
         plt.xlim(0, p_vals[ie][-1])
         plt.ylim(1e-7, 1)
         plt.yticks([1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1])
-        plt.xlabel('impact parameter P')
-        plt.ylabel(r'relative error in scattering angle $\theta$')
+        plt.xlabel("impact parameter P")
+        plt.ylabel(r"relative error in scattering angle $\theta$")
         title = "Potential"
         if type(screen_fun) is ZBL_screen:
-            title = 'ZBL potential'
+            title = "ZBL potential"
         elif type(screen_fun) is NLHlin_screen:
-            title = (fr'NLHlin potential, Z$_1$={screen_fun.Z1}, '
-                     fr'Z$_2$={screen_fun.Z2}')
-        title += fr', $\varepsilon$={e}'
-        plt.title(title, fontsize='medium')
+            title = (fr"NLHlin potential, Z$_1$={screen_fun.Z1}, "
+                     fr"Z$_2$={screen_fun.Z2}")
+        title += fr", $\varepsilon$={e}"
+        plt.title(title, fontsize="medium")
         plt.show()
 
 
@@ -301,7 +301,7 @@ def plot_tau_error(screen_fun):
         screen_fun (object): Screening function instance with `.call()` method
     """
     import matplotlib.pyplot as plt
-    plt.rcParams.update({'font.size': 13})
+    plt.rcParams.update({"font.size": 13})
 
     p_vals = (np.linspace(0.02, 30, 101), 
               np.linspace(0.02, 12, 101), 
@@ -310,7 +310,7 @@ def plot_tau_error(screen_fun):
     n_absc_vals = (1, 2, 3, 4, 5, 10)
 
     for ie, e in enumerate((1e-4, 0.1, 100)):
-        fig, ax = plt.subplots(1, 1, figsize=(6, 4), layout='constrained')
+        fig, ax = plt.subplots(1, 1, figsize=(6, 4), layout="constrained")
         tau_ref_vals = []
         setup(n_absc=32)
         for p in p_vals[ie]:
@@ -326,25 +326,25 @@ def plot_tau_error(screen_fun):
                 tau_ref = tau_ref_vals[ip]
                 err = np.abs(tau - tau_ref)# / abs(tau_ref)
                 errors.append(err)
-            plt.semilogy(p_vals[ie], errors, f'C{i_absc}')
+            plt.semilogy(p_vals[ie], errors, f"C{i_absc}")
 
-        lines = [f'n={n}' for n in n_absc_vals]
+        lines = [f"n={n}" for n in n_absc_vals]
         plt.legend(lines, loc=(1.03, 0.25))
 
         plt.xlim(0, p_vals[ie][-1])
         plt.ylim(1e-7, 1)
         plt.yticks([1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1])
-        plt.xlabel('impact parameter P')
-        plt.ylabel(r'absolute error in time integral T')
-        #plt.ylabel(r'relative error in time integral T')
+        plt.xlabel("impact parameter P")
+        plt.ylabel(r"absolute error in time integral T")
+        #plt.ylabel(r"relative error in time integral T")
         title = "Potential"
         if isinstance(screen_fun, ZBL_screen):
-            title = 'ZBL potential'
+            title = "ZBL potential"
         elif isinstance(screen_fun, NLHlin_screen):
-            title = (fr'NLHlin potential, Z$_1$={screen_fun.Z1}, '
-                     fr'Z$_2$={screen_fun.Z2}')
-        title += fr', $\varepsilon$={e}'
-        plt.title(title, fontsize='medium')
+            title = (fr"NLHlin potential, Z$_1$={screen_fun.Z1}, "
+                     fr"Z$_2$={screen_fun.Z2}")
+        title += fr", $\varepsilon$={e}"
+        plt.title(title, fontsize="medium")
         plt.show()
 
 
@@ -355,12 +355,12 @@ def plot_tau_over_theta(screen_fun):
         screen_fun (object): Screening function instance with `.call()` method
     """
     import matplotlib.pyplot as plt
-    plt.rcParams.update({'font.size': 13})
+    plt.rcParams.update({"font.size": 13})
 
     e_vals = np.logspace(-4, 1, 6)
     p_vals = np.linspace(0.02, 30, 201)
 
-    fig, ax = plt.subplots(1, 1, figsize=(6, 4), layout='constrained')
+    fig, ax = plt.subplots(1, 1, figsize=(6, 4), layout="constrained")
 
     setup(n_absc=32)
     for ie, e in enumerate(e_vals):
@@ -373,21 +373,21 @@ def plot_tau_over_theta(screen_fun):
         theta_vals = np.array(theta_vals)
         tau_vals = np.array(tau_vals)
 
-        plt.plot(theta_vals*180/np.pi, tau_vals, f'C{ie}', 
-                 label=fr'$\varepsilon$={e:.0e}')
+        plt.plot(theta_vals*180/np.pi, tau_vals, f"C{ie}", 
+                 label=fr"$\varepsilon$={e:.0e}")
 
     plt.xlim(0, 180)
     #plt.ylim(1e-7, 1)
     #plt.yticks([1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1])
-    plt.xlabel('scattering angle θ (rad)')
-    plt.ylabel(r'time integral τ (RNORM)')
+    plt.xlabel("scattering angle θ (rad)")
+    plt.ylabel(r"time integral τ (RNORM)")
     title = "Potential"
     if isinstance(screen_fun, ZBL_screen):
-        title = 'ZBL potential'
+        title = "ZBL potential"
     elif isinstance(screen_fun, NLHlin_screen):
-        title = (fr'NLHlin potential, Z$_1$={screen_fun.Z1}, '
-                    fr'Z$_2$={screen_fun.Z2}')
-    plt.title(title, fontsize='medium')
+        title = (fr"NLHlin potential, Z$_1$={screen_fun.Z1}, "
+                    fr"Z$_2$={screen_fun.Z2}")
+    plt.title(title, fontsize="medium")
     plt.legend()
     plt.show()
 
@@ -399,12 +399,12 @@ def plot_sinhalftheta_over_p(screen_fun):
         screen_fun (object): Screening function instance with `.call()` method
     """
     import matplotlib.pyplot as plt
-    plt.rcParams.update({'font.size': 13})
+    plt.rcParams.update({"font.size": 13})
 
     e_vals = np.logspace(-4, 2, 7)
     p_vals = np.linspace(0.01, 30, 201)
 
-    fig, ax = plt.subplots(1, 1, figsize=(6, 4), layout='constrained')
+    fig, ax = plt.subplots(1, 1, figsize=(6, 4), layout="constrained")
 
     setup(n_absc=32)
     for ie, e in enumerate(e_vals):
@@ -414,21 +414,21 @@ def plot_sinhalftheta_over_p(screen_fun):
             theta_vals.append(theta)
         theta_vals = np.array(theta_vals)
 
-        plt.plot(p_vals, np.sin(theta_vals/2)**2, f'C{ie}', 
-                 label=fr'$\varepsilon$={e:.0e}')
-        plt.axvline(2/e, color=f'C{ie}', linestyle='dashed')
+        plt.plot(p_vals, np.sin(theta_vals/2)**2, f"C{ie}", 
+                 label=fr"$\varepsilon$={e:.0e}")
+        plt.axvline(2/e, color=f"C{ie}", linestyle="dashed")
 
     plt.xlim(0, p_vals[-1])
     plt.ylim(0, 1)
-    plt.xlabel('impact parameter P')
-    plt.ylabel(r'sin$^2$(θ/2)')
+    plt.xlabel("impact parameter P")
+    plt.ylabel(r"sin$^2$(θ/2)")
     title = "Potential"
     if isinstance(screen_fun, ZBL_screen):
-        title = 'ZBL potential'
+        title = "ZBL potential"
     elif isinstance(screen_fun, NLHlin_screen):
-        title = (fr'NLHlin potential, Z$_1$={screen_fun.Z1}, '
-                    fr'Z$_2$={screen_fun.Z2}')
-    plt.title(title, fontsize='medium')
+        title = (fr"NLHlin potential, Z$_1$={screen_fun.Z1}, "
+                    fr"Z$_2$={screen_fun.Z2}")
+    plt.title(title, fontsize="medium")
     plt.legend()
     plt.show()
 

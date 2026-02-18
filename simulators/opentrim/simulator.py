@@ -7,12 +7,12 @@ from .mytypes import Projectile
 from .nlhlin import NLHlin_screen
 from .zbl import ZBL_screen
 
-def simulate(nion, sim_params, follow_recoils=False, sim_idx=0):
+def simulate(nion, params, follow_recoils=False, sim_idx=0):
     """Perform simulation on given number of projectiles
     
     Parameters:
         nion: (int) Total number of projectiles to simulate
-        sim_params_tup: (tuple) Simulation parameters (provided by `SimParams.to_tuple()`)
+        params_tup: (tuple) Simulation parameters (provided by `SimParams.to_tuple()`)
         follow_recoils: (bool) If the simulation should be performed for recoils aswell
         sim_idx: (int) Simulation index (for chunked simulations)
         
@@ -22,16 +22,16 @@ def simulate(nion, sim_params, follow_recoils=False, sim_idx=0):
             Result buffers for `Histogram_1d` class,
             Result buffers for `Moments_1d` class
     """
-    proj_count, hist_buf, mom_buf = _simulate(nion, sim_params, follow_recoils, sim_idx)
+    proj_count, hist_buf, mom_buf = _simulate(nion, params, follow_recoils, sim_idx)
     return proj_count, np.sum(hist_buf, axis=0, dtype=np.int32), np.sum(mom_buf, axis=0, dtype=np.float64)
 
 @jit(cache=config.ENABLE_CACHING, parallel=config.PARALLEL, nogil=config.PARALLEL)
-def _simulate(nion, sim_params, follow_recoils, sim_idx):
+def _simulate(nion, params, follow_recoils, sim_idx):
     """Perform simulation on given number of projectiles
     
     Parameters:
         nion: (int) Total number of projectiles to simulate
-        sim_params_tup: (tuple) Simulation parameters (provided by `SimParams.to_tuple()`)
+        params_tup: (tuple) Simulation parameters (provided by `SimParams.to_tuple()`)
         follow_recoils: (bool) If the simulation should be performed for recoils aswell
         sim_idx: (int) Simulation index (for chunked simulations)
         
@@ -51,12 +51,12 @@ def _simulate(nion, sim_params, follow_recoils, sim_idx):
     )
     proj_dummy = np.full(1, proj_init)
     proj_sim = [proj_dummy for _ in range(nion)]
-    z1 = sim_params.scatter_params.z1
-    z2 = sim_params.scatter_params.z2
-    nlhlin_coefs = sim_params.scatter_params.nlhlin_coefs
+    z1 = params.scatter.z1
+    z2 = params.scatter.z2
+    nlhlin_coefs = params.scatter.nlhlin_coefs
 
     # Fixes weird Numba error by passing array instead of single record
-    sim_params_arr = np.full(1, sim_params)
+    params_arr = np.full(1, params)
     
     hist_dummy = np.empty((1, 1), dtype=np.int32)
     mom_dummy = np.empty((1, 1), dtype=np.float64)
@@ -65,23 +65,23 @@ def _simulate(nion, sim_params, follow_recoils, sim_idx):
     
     def _parallel_exec(screen_fun):
         for i in prange(nion):
-            np.random.seed(sim_params_arr[0].rng_seed + sim_idx + i)
-            proj_sim[i], hist_results[i], mom_results[i] = cascade.cascade(proj_dummy[0], sim_params_arr, screen_fun, follow_recoils)
+            np.random.seed(params_arr[0].rng_seed + sim_idx + i)
+            proj_sim[i], hist_results[i], mom_results[i] = cascade.cascade(proj_dummy[0], params_arr, screen_fun, follow_recoils)
     
     # Simulate the trajectories
-    if sim_params.scatter_params.pot_model == 'NLHlin':
-        screen_fun_nlh = (NLHlin_screen(z1, z2, sim_params.scatter_params.rnorm[0], nlhlin_coefs),
-                        NLHlin_screen(z2, z2, sim_params.scatter_params.rnorm[1], nlhlin_coefs))
+    if params.scatter.pot_model == 'NLHlin':
+        screen_fun_nlh = (NLHlin_screen(z1, z2, params.scatter.rnorm[0], nlhlin_coefs),
+                        NLHlin_screen(z2, z2, params.scatter.rnorm[1], nlhlin_coefs))
         _parallel_exec(screen_fun_nlh)
 
-    elif sim_params.scatter_params.pot_model == 'ZBL':
-        screen_fun_zbl = (ZBL_screen(z1, z2, sim_params.scatter_params.rnorm[0], False),
-                        ZBL_screen(z2, z2, sim_params.scatter_params.rnorm[1], False))
+    elif params.scatter.pot_model == 'ZBL':
+        screen_fun_zbl = (ZBL_screen(z1, z2, params.scatter.rnorm[0], False),
+                        ZBL_screen(z2, z2, params.scatter.rnorm[1], False))
         _parallel_exec(screen_fun_zbl)
 
     else:   # Defaults to 'ZBL_magic'
-        screen_fun_magic = (ZBL_screen(z1, z2, sim_params.scatter_params.rnorm[0], True),
-                        ZBL_screen(z2, z2, sim_params.scatter_params.rnorm[1], True))
+        screen_fun_magic = (ZBL_screen(z1, z2, params.scatter.rnorm[0], True),
+                        ZBL_screen(z2, z2, params.scatter.rnorm[1], True))
         _parallel_exec(screen_fun_magic)
     
     proj_count = 0

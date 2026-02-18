@@ -60,17 +60,17 @@ SCATTER_PARAMS_DTYPE = np.dtype([
 ], align=True)
 
 # Main simulation parameters with nested data types
-SIM_PARAMS_DTYPE = np.dtype([
+PARAMS_DTYPE = np.dtype([
     ("rng_seed", np.uint32),
-    ("stat_params", STAT_PARAMS_DTYPE),
-    ("cascade_params", CASCADE_PARAMS_DTYPE),
-    ("recoil_params", RECOIL_PARAMS_DTYPE),
-    ("geometry_params", GEOMETRY_PARAMS_DTYPE),
-    ("estop_params", ESTOP_PARAMS_DTYPE),
-    ("scatter_params", SCATTER_PARAMS_DTYPE)
+    ("stat", STAT_PARAMS_DTYPE),
+    ("cascade", CASCADE_PARAMS_DTYPE),
+    ("recoil", RECOIL_PARAMS_DTYPE),
+    ("geometry", GEOMETRY_PARAMS_DTYPE),
+    ("estop", ESTOP_PARAMS_DTYPE),
+    ("scatter", SCATTER_PARAMS_DTYPE)
 ], align=True)
 
-# Preserve compatibility with vanilla NumPy (with nusim_params.scatter_paramsmba disabled)
+# Preserve compatibility with vanilla NumPy (with nuparams.scattermba disabled)
 if os.environ.get("NUMBA_DISABLE_JIT", "") == "1":
     def Projectile(e, pos, dir, ispec=0, is_inside=True):
         """Create a single numpy record with initial properties of a Projectile
@@ -122,7 +122,7 @@ else:
         return rec
 
 class SimParams:
-    def __init__(self, stat_params_tup=None, cascade_params_tup=None, recoil_params_tup=None, geometry_params_tup=None, estop_params_tup=None, scatter_params_tup=None, rng_seed=None):
+    def __init__(self, stat_tup=None, cascade_tup=None, recoil_tup=None, geometry_tup=None, estop_tup=None, scatter_tup=None, rng_seed=None):
         self.nspec = 0
         self.nbin = 0
         self.limits = (0.0, 0.0)
@@ -144,41 +144,41 @@ class SimParams:
         self.rng_seed = np.random.randint(2**31, dtype=np.uint32)
         self.nlhlin_coefs = np.zeros(4278, dtype=NLHLIN_COEFS_DTYPE)
         
-        if stat_params_tup is not None:
-            self.nspec, self.nbin, self.limits = stat_params_tup
-        if cascade_params_tup is not None:
-            self.emin, self.ed = cascade_params_tup 
-        if recoil_params_tup is not None:
-            self.pmax, self.mean_free_path = recoil_params_tup
-        if geometry_params_tup is not None:
-            self.zmin, self.zmax = geometry_params_tup     
-        if estop_params_tup is not None:
-            self.fac_linhard, self.density = estop_params_tup
-        if scatter_params_tup is not None:
-            self.pot_model, self.z1, self.z2, self.enorm, self.rnorm, self.dirfrac, self.denfrac, self.nlhlin_coefs = scatter_params_tup
+        if stat_tup is not None:
+            self.nspec, self.nbin, self.limits = stat_tup
+        if cascade_tup is not None:
+            self.emin, self.ed = cascade_tup 
+        if recoil_tup is not None:
+            self.pmax, self.mean_free_path = recoil_tup
+        if geometry_tup is not None:
+            self.zmin, self.zmax = geometry_tup     
+        if estop_tup is not None:
+            self.fac_linhard, self.density = estop_tup
+        if scatter_tup is not None:
+            self.pot_model, self.z1, self.z2, self.enorm, self.rnorm, self.dirfrac, self.denfrac, self.nlhlin_coefs = scatter_tup
         if rng_seed is not None:
             self.rng_seed = np.uint32(rng_seed)
 
     def to_record(self):
-        rec = np.recarray(1, dtype=SIM_PARAMS_DTYPE)[0]
-        rec['stat_params']['nspec'] = self.nspec
-        rec['stat_params']['nbin'] = self.nbin
-        rec['stat_params']['limits'] = np.array(self.limits)
-        rec['cascade_params']['emin'] = self.emin
-        rec['cascade_params']['ed'] = self.ed
-        rec['recoil_params']['pmax'] = self.pmax
-        rec['recoil_params']['mean_free_path'] = self.mean_free_path
-        rec['geometry_params']['zmin'] = self.zmin
-        rec['geometry_params']['zmax'] = self.zmax
-        rec['estop_params']['fac_linhard'] = self.fac_linhard
-        rec['estop_params']['density'] = self.density
-        rec['scatter_params']['pot_model'] = self.pot_model
-        rec['scatter_params']['z1'] = self.z1
-        rec['scatter_params']['z2'] = self.z2
-        rec['scatter_params']['enorm'] = self.enorm
-        rec['scatter_params']['rnorm'] = self.rnorm
-        rec['scatter_params']['dirfrac'] = self.dirfrac
-        rec['scatter_params']['denfrac'] = self.denfrac
-        rec['scatter_params']['nlhlin_coefs'] = self.nlhlin_coefs
+        rec = np.recarray(1, dtype=PARAMS_DTYPE)[0]
+        rec['stat']['nspec'] = self.nspec
+        rec['stat']['nbin'] = self.nbin
+        rec['stat']['limits'] = np.array(self.limits)
+        rec['cascade']['emin'] = self.emin
+        rec['cascade']['ed'] = self.ed
+        rec['recoil']['pmax'] = self.pmax
+        rec['recoil']['mean_free_path'] = self.mean_free_path
+        rec['geometry']['zmin'] = self.zmin
+        rec['geometry']['zmax'] = self.zmax
+        rec['estop']['fac_linhard'] = self.fac_linhard
+        rec['estop']['density'] = self.density
+        rec['scatter']['pot_model'] = self.pot_model
+        rec['scatter']['z1'] = self.z1
+        rec['scatter']['z2'] = self.z2
+        rec['scatter']['enorm'] = self.enorm
+        rec['scatter']['rnorm'] = self.rnorm
+        rec['scatter']['dirfrac'] = self.dirfrac
+        rec['scatter']['denfrac'] = self.denfrac
+        rec['scatter']['nlhlin_coefs'] = self.nlhlin_coefs
         rec['rng_seed'] = self.rng_seed
         return rec

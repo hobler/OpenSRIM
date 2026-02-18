@@ -39,7 +39,7 @@ def normalize_if_needed(vec, fallback):
     return vec
 
 @jit
-def scatter(proj, p, dirp, screen_fun, scatter_params, is_magic):
+def scatter(proj, p, dirp, screen_fun, scatter, is_magic):
     """Treat a scattering event.
 
     The atomic numbers and masses of the ion and the target atom enter the
@@ -55,7 +55,7 @@ def scatter(proj, p, dirp, screen_fun, scatter_params, is_magic):
             (= from the collision point to the recoil position before 
             the collision) (unit vector, size 3)
         screen_fun (object): Screening function
-        scatter_params (np.recarray): Scatter parameters
+        scatter (np.recarray): Scatter parameters
         is_magic (bool): If magic function should be used (otherwise scatter_integrals)
     
     Returns:
@@ -65,10 +65,10 @@ def scatter(proj, p, dirp, screen_fun, scatter_params, is_magic):
         (float): energy of the projectile after the collision
     """
     # scattering angle theta in the center-of-mass system
-    enorm = scatter_params.enorm
-    rnorm = scatter_params.rnorm
-    dirfrac = scatter_params.dirfrac
-    denfrac = scatter_params.denfrac
+    enorm = scatter.enorm
+    rnorm = scatter.rnorm
+    dirfrac = scatter.dirfrac
+    denfrac = scatter.denfrac
     
     ispec = proj.ispec
     proj_e = proj.e

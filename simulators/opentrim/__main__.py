@@ -60,12 +60,12 @@ if __name__ == "__main__":
     for _ in range(iter_cnt):
         for i, c in enumerate(counts):
             # empty stats for each nion count
-            statistics.setup(nspec=params.nspec, nbin=params.nbin, limits=tuple(params.limits))
+            statistics.setup(nspec=params.stat.nspec, nbin=params.stat.nbin, limits=tuple(params.stat.limits))
             
             start_time = time.time()
-            # proj_count, hist_buf, mom_buf = simulate_adaptive(avg_chunk_time, c, params.to_record(), follow_recoils=True)
-            proj_count, hist_buf, mom_buf = simulate_chunked(chunk_size, c, params.to_record(), follow_recoils=True)
-            # proj_count, hist_buf, mom_buf = simulate(c, params.to_record(), follow_recoils=True, sim_idx=0)
+            # proj_count, hist_buf, mom_buf = simulate_adaptive(avg_chunk_time, c, params, follow_recoils=True)
+            proj_count, hist_buf, mom_buf = simulate_chunked(chunk_size, c, params, follow_recoils=True)
+            # proj_count, hist_buf, mom_buf = simulate(c, params, follow_recoils=True, sim_idx=0)
             statistics.hist.results = hist_buf
             statistics.mom.results = mom_buf
             times[i].append(time.time() - start_time)

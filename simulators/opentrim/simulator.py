@@ -12,7 +12,7 @@ def simulate(nion, params, follow_recoils=False, sim_idx=0):
     
     Parameters:
         nion: (int) Total number of projectiles to simulate
-        params_tup: (tuple) Simulation parameters (provided by `SimParams.to_tuple()`)
+        params: (PARAMS_DTYPE) Simulation parameters
         follow_recoils: (bool) If the simulation should be performed for recoils aswell
         sim_idx: (int) Simulation index (for chunked simulations)
         
@@ -31,7 +31,7 @@ def _simulate(nion, params, follow_recoils, sim_idx):
     
     Parameters:
         nion: (int) Total number of projectiles to simulate
-        params_tup: (tuple) Simulation parameters (provided by `SimParams.to_tuple()`)
+        params: (PARAMS_DTYPE) Simulation parameters
         follow_recoils: (bool) If the simulation should be performed for recoils aswell
         sim_idx: (int) Simulation index (for chunked simulations)
         

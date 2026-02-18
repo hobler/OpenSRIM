@@ -1,11 +1,8 @@
 """Simulate projectile trajectories.
 
-The trajectory function may call itself recursively to follow recoil
-trajectories.
-
 Available functions:
     setup: setup module variables.
-    trajectory: simulate one trajectory.
+    cascade: simulate one cascade.
 """
 import numpy as np
 from numba import jit
@@ -54,7 +51,7 @@ def cascade(initial_proj, params_arr, screen_fun, follow_recoils=False, prealloc
     params = params_arr[0]
     emin = params.cascade.emin
     ed = params.cascade.ed
-    is_magic = (params.scatter.pot_model == 'ZBL_magic')
+    is_magic = (params.scatter.pot_model == "ZBL_magic")
     stat = params.stat
     hist = statistics.Histogram_1d(stat.nspec, stat.nbin, (stat.limits[0], stat.limits[1]))
     mom = statistics.Moment_1d(stat.nspec, 4)

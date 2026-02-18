@@ -1,25 +1,24 @@
-"""PyTRIM aims to be a Python implementation of TRIM.
+"""OpenTRIM aims to be a Python implementation of TRIM.
 
 TRIM (Transport of Ions in Matter) is a widely used software package
 for simulating the interaction of ions with matter, particularly for
 ion implantation in semiconductors. It comes as part of SRIM, see
 www.srim.org.
 
-PyTRIM seeks to replicate the core functionalities of TRIM using
+OpenTRIM seeks to replicate the core functionalities of TRIM using
 Python, making it more accessible and easier to integrate with other
-Python-based tools and workflows.
+Python-based tools and workflows. Computational efficiency is achieved 
+through the use of Numba for JIT compilation.
 
 Currently, the input parameters are hardcoded in this script, but future
 versions may include a more user-friendly interface for specifying
-simulation parameters. Also, recoils are not yet followed, and only the
-mean and the straggling of the penetration depth of the primary ions are
-recorded.
+simulation parameters. Also, only depth histograms and moments of the
+penetration depth distribution are recorded.
 """
 import time
 import sys
 import os
 from pathlib import Path
-import stats as statistics
 
 if __package__ is None:
     # Running as a script: add parent dir to sys.path
@@ -28,11 +27,11 @@ if __package__ is None:
         sys.path.insert(0, project_root)
     __package__ = str(Path(__file__).parent.name)
 
-from .init import init_params
+from . import stats as statistics
 from . import config
+from .init import init_params
 from .simulator import simulate, simulate_chunked, simulate_adaptive  # noqa: F401
 
-import numpy as np
 
 params = init_params()
 
@@ -43,7 +42,7 @@ if __name__ == "__main__":
         print("##### CACHING DISABLED #####")
     else:
         print("----- CACHING ENABLED -----")
-    if os.environ.get("NUMBA_DISABLE_JIT", '') == "1":
+    if os.environ.get("NUMBA_DISABLE_JIT", "") == "1":
         print("##### NUMBA DISABLED #####")
     else:
         print("----- NUMBA ENABLED -----")

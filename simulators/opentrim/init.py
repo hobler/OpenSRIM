@@ -26,7 +26,7 @@ def init_params():
     # Example hardcoded parameters (to be replaced with file input)
     zmin = 0.0              # minimum z coordinate of the target (A)
     zmax = 4000.0           # maximum z coordinate of the target (A)
-    pot_model = 'ZBL_magic'  # potential model for scattering
+    pot_model = "ZBL_magic"  # potential model for scattering
     z1 = 5                  # atomic number of projectile
     m1 = 11.009             # mass of projectile (amu)
     z2 = 14                 # atomic number of target
@@ -50,13 +50,11 @@ def init_params():
     stat_params = statistics.setup(nspec, nbin, limits)
 
     params = np.recarray(1, dtype=PARAMS_DTYPE)[0]
-    params['stat'] = stat_params
-    params['cascade'] = cascade_params
-    params['recoil'] = recoil_params
-    params['geometry'] = geometry_params
-    params['estop'] = estop_params
-    params['scatter'] = scatter_params
-
-    statistics.setup(nspec=params.stat.nspec, nbin=params.stat.nbin, limits=params.stat.limits)
+    params["stat"] = stat_params
+    params["cascade"] = cascade_params
+    params["recoil"] = recoil_params
+    params["geometry"] = geometry_params
+    params["estop"] = estop_params
+    params["scatter"] = scatter_params
 
     return params

@@ -2,6 +2,7 @@ import os
 import numpy as np
 from numba import jit
 
+
 PROJ_DTYPE = np.dtype([
     ("e", np.float64),
     ("pos", np.float64, (3,)),
@@ -75,8 +76,9 @@ if os.environ.get("NUMBA_DISABLE_JIT", "") == "1":
     def Projectile(e, pos, dir, ispec=0, is_inside=True):
         """Create a single numpy record with initial properties of a Projectile
         
-        This implementation is used when Numba is disabled to preserve compatability
-        with vanilla NumPy and allow record field access via its attributes.
+        This implementation is used when Numba is disabled to preserve 
+        compatability with vanilla NumPy and allow record field access via its 
+        attributes.
     
         Parameters:
             e (float): Energy of the projectile
@@ -86,17 +88,17 @@ if os.environ.get("NUMBA_DISABLE_JIT", "") == "1":
             is_inside (bool): If the projectile is within the simulation area.
                 Defaults to True
         Returns:
-            (numpy.record): A single record containing properties of a Projectile
+            (PROJ_TYPE): A single record containing properties of a Projectile
         """
         rec = np.recarray(1, dtype=PROJ_DTYPE)[0]
-        rec['e'] = e
-        rec['pos'] = pos    # copied
-        rec['dir'] = dir    # copied
-        rec['ispec'] = ispec
-        rec['is_inside'] = is_inside
+        rec["e"] = e
+        rec["pos"] = pos    # copied
+        rec["dir"] = dir    # copied
+        rec["ispec"] = ispec
+        rec["is_inside"] = is_inside
         return rec
 else:
-    @jit(inline = 'always')
+    @jit(inline = "always")
     def Projectile(e, pos, dir, ispec=0, is_inside=True):
         """Create a single numpy record with initial properties of a Projectile
         
@@ -110,14 +112,15 @@ else:
             ispec (int): Species index. Defaults to 0
             is_inside (bool): If the projectile is within the simulation area.
                 Defaults to True
+        
         Returns:
-            (numpy.void): A single record containing properties of a Projectile
+            (PROJ_TYPE): A single record containing properties of a Projectile
         """
         rec = np.empty(1, dtype=PROJ_DTYPE)[0]
-        rec['e'] = e
-        rec['pos'] = pos    # copied
-        rec['dir'] = dir    # copied
-        rec['ispec'] = ispec
-        rec['is_inside'] = is_inside
+        rec["e"] = e
+        rec["pos"] = pos    # copied
+        rec["dir"] = dir    # copied
+        rec["ispec"] = ispec
+        rec["is_inside"] = is_inside
         return rec
 

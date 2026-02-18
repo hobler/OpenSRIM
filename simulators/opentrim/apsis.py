@@ -129,7 +129,7 @@ def plot_iteration_counts(screen_fun_type, n_iter, e_values, p_values, Z1=None, 
     e_idx = np.arange(len(e_values)+1) - 0.5
     p_idx = np.arange(len(p_values)+1) - 0.5
 
-    plt.rcParams.update({'font.size': 14})
+    plt.rcParams.update({"font.size": 14})
     fig = plt.figure(figsize=(8,6))
     ax = plt.gca()
     bounds = np.linspace(-0.5, 4.5, 6)
@@ -138,7 +138,7 @@ def plot_iteration_counts(screen_fun_type, n_iter, e_values, p_values, Z1=None, 
     norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
 
     c = ax.pcolormesh(e_idx - 0.5, p_idx - 0.5, n_iter,
-                      shading='auto', cmap=cmap, norm=norm)
+                      shading="auto", cmap=cmap, norm=norm)
     cbar = fig.colorbar(c, ax=ax, ticks=ticks)
     cbar.set_label(r"number of iterations $n$")
 

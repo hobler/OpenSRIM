@@ -1,32 +1,33 @@
 """Treat the scattering of a projectile on a target atom.
 
-Currently, only the ZBL potential (Ziegler, Biersack, Littmark,
-The Stopping and Range of Ions in Matter, Pergamon Press, 1985) is 
-implemented, along with Biersack's "magic formula" for the scattering 
-angle.
+Currently, the ZBL potential (Ziegler, Biersack, Littmark, The Stopping and 
+Range of Ions in Matter, Pergamon Press, 1985) and the NLHlin potential
+(to be published) are implemented. The scattering integrals are evaluated
+numerically, or Biersack"s "magic formula" is usedfor the scattering angle.
 
 Available functions:
     setup: setup module variables.
     scatter: treat a scattering event.
 """
 import math
-from .zbl import magic
-from .cm_scatter import scatter_integrals
 import numpy as np
 from numba import jit
 from mytypes import SCATTER_PARAMS_DTYPE
+from .zbl import magic
+from .cm_scatter import scatter_integrals
 
 
-@jit(inline = 'always')
+@jit(inline = "always")
 def normalize_if_needed(vec, fallback):
     """Fast normalization with fallback – in‑place, no new array.
     
     Parameters:
-        vec (np.ndarray): Vector to be normalized
-        fallback (np.ndarray): Vector to replace the original with if len(norm) == 0
+        vec (np.ndarray): Vector to be normalized (size 3)
+        fallback (np.ndarray): Vector to replace the original with if 
+            len(norm) == 0
         
     Returns:
-        np.ndarray: The normalized vector
+        np.ndarray: The normalized vector (size 3)
     """
     norm_sq = vec[0]**2 + vec[1]**2 + vec[2]**2
     if norm_sq == 0.0:
@@ -89,8 +90,8 @@ def scatter(proj, p, dirp, screen_fun, scatter, is_magic):
     recoil_dir = dirfac[ispec] * sin_half_theta * (sin_half_theta*proj.dir[:] 
                                                  + cos_half_theta*dirp[:])
     dir_new = proj.dir[:] - recoil_dir[:]
-    dir_new = normalize_if_needed(dir_new, proj['dir'][:])
-    recoil_dir = normalize_if_needed(recoil_dir, proj['dir'][:])
+    dir_new = normalize_if_needed(dir_new, proj["dir"][:])
+    recoil_dir = normalize_if_needed(recoil_dir, proj["dir"][:])
 
     # Copy dir_new buffer content into proj.dir buffer
     proj.dir[:] = dir_new
@@ -100,6 +101,7 @@ def scatter(proj, p, dirp, screen_fun, scatter, is_magic):
     proj.e -= recoil_e
 
     return recoil_dir[:], recoil_e
+
 
 def setup(z1, m1, z2, m2, pot_model, nlhlin_coefs):
     """Setup module variables depending on projectile and target species.
@@ -117,17 +119,10 @@ def setup(z1, m1, z2, m2, pot_model, nlhlin_coefs):
         nlhlin_coefs (np.recarray): coefficients for NHLlin screening function
         
     Returns:
-        (str): Model identifier (name)
-        (int): Z1
-        (int): Z2
-        (np.ndarray): ENORM
-        (np.ndarray): RNORM
-        (np.ndarray): DIRFAC
-        (np.ndarray): DENFAC
-        (np.recarray): nlhlin_coefs
+        (SCATTER_PARAMS_DTYPE): Scatter parameters
     """
     m1_m2 = m1 / m2
-    if pot_model.startswith('ZBL'):
+    if pot_model.startswith("ZBL"):
         rnorm = (0.4685 / (z1**0.23 + z2**0.23),
                  0.4685 / (z2**0.23 + z2**0.23))                  # A
     else:
@@ -141,13 +136,13 @@ def setup(z1, m1, z2, m2, pot_model, nlhlin_coefs):
                 1))
 
     scatter_params = np.recarray(1, dtype=SCATTER_PARAMS_DTYPE)[0]
-    scatter_params['pot_model'] = pot_model
-    scatter_params['z1'] = z1
-    scatter_params['z2'] = z2
-    scatter_params['enorm'] = enorm
-    scatter_params['rnorm'] = rnorm
-    scatter_params['dirfac'] = dirfac
-    scatter_params['denfac'] = denfac
-    scatter_params['nlhlin_coefs'] = nlhlin_coefs
+    scatter_params["pot_model"] = pot_model
+    scatter_params["z1"] = z1
+    scatter_params["z2"] = z2
+    scatter_params["enorm"] = enorm
+    scatter_params["rnorm"] = rnorm
+    scatter_params["dirfac"] = dirfac
+    scatter_params["denfac"] = denfac
+    scatter_params["nlhlin_coefs"] = nlhlin_coefs
 
     return scatter_params

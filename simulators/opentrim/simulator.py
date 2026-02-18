@@ -69,17 +69,17 @@ def _simulate(nion, params, follow_recoils, sim_idx):
             proj_sim[i], hist_results[i], mom_results[i] = cascade.cascade(proj_dummy[0], params_arr, screen_fun, follow_recoils)
     
     # Simulate the trajectories
-    if params.scatter.pot_model == 'NLHlin':
+    if params.scatter.pot_model == "NLHlin":
         screen_fun_nlh = (NLHlin_screen(z1, z2, params.scatter.rnorm[0], nlhlin_coefs),
                         NLHlin_screen(z2, z2, params.scatter.rnorm[1], nlhlin_coefs))
         _parallel_exec(screen_fun_nlh)
 
-    elif params.scatter.pot_model == 'ZBL':
+    elif params.scatter.pot_model == "ZBL":
         screen_fun_zbl = (ZBL_screen(z1, z2, params.scatter.rnorm[0], False),
                         ZBL_screen(z2, z2, params.scatter.rnorm[1], False))
         _parallel_exec(screen_fun_zbl)
 
-    else:   # Defaults to 'ZBL_magic'
+    else:   # Defaults to "ZBL_magic"
         screen_fun_magic = (ZBL_screen(z1, z2, params.scatter.rnorm[0], True),
                         ZBL_screen(z2, z2, params.scatter.rnorm[1], True))
         _parallel_exec(screen_fun_magic)

@@ -12,7 +12,6 @@ Available functions:
 import math
 import numpy as np
 from numba import jit
-from mytypes import SCATTER_PARAMS_DTYPE
 from .zbl import magic
 from .cm_scatter import scatter_integrals
 
@@ -39,6 +38,7 @@ def normalize_if_needed(vec, fallback):
     vec[1] /= norm
     vec[2] /= norm
     return vec
+
 
 @jit
 def scatter(proj, p, dirp, screen_fun, scatter, is_magic):
@@ -134,6 +134,30 @@ def setup(z1, m1, z2, m2, pot_model, nlhlin_coefs):
                 1))
     denfac = np.array((4 * m1_m2 / (1 + m1_m2)**2,
                 1))
+
+    # TODO: Remove duplicate definition of SCATTER_PARAMS_DTYPE
+    NLHLIN_COEFS_DTYPE = np.dtype([
+        ("z1", np.uint32),
+        ("z2", np.uint32),
+        ("a1", np.float64),
+        ("b1", np.float64),
+        ("a2", np.float64),
+        ("b2", np.float64),
+        ("a3", np.float64),
+        ("b3", np.float64),
+        ("rmax", np.float64),
+    ], align=True)
+
+    SCATTER_PARAMS_DTYPE = np.dtype([
+        ("pot_model", "<U16"),
+        ("z1", np.uint32),
+        ("z2", np.uint32),
+        ("enorm", np.float64, (2,)),
+        ("rnorm", np.float64, (2,)),
+        ("dirfac", np.float64, (2,)),
+        ("denfac", np.float64, (2,)),
+        ("nlhlin_coefs", NLHLIN_COEFS_DTYPE, (4278,)),
+    ], align=True)
 
     scatter_params = np.recarray(1, dtype=SCATTER_PARAMS_DTYPE)[0]
     scatter_params["pot_model"] = pot_model

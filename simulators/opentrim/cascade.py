@@ -11,7 +11,7 @@ from .scatter import scatter
 from .estop import eloss
 from .geometry import is_inside_target
 from . import stats as statistics
-from mytypes import CASCADE_PARAMS_DTYPE
+
 
 def setup():
     """Setup module variables.
@@ -19,6 +19,12 @@ def setup():
     Returns:
         (CASCADE_PARAMS_DTYPE): The cascade parameters
     """
+
+    CASCADE_PARAMS_DTYPE = np.dtype([
+        ("emin", np.float64),
+        ("ed", np.float64),
+    ], align=True)
+
     cascade_params = np.recarray(1, dtype=CASCADE_PARAMS_DTYPE)[0]
 
     cascade_params.emin = 5.0  # eV

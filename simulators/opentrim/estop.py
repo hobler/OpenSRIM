@@ -10,7 +10,6 @@ Available functions:
 from math import sqrt
 import numpy as np
 from numba import jit
-from .mytypes import ESTOP_PARAMS_DTYPE
 
 
 def setup(corr_lindhard1, z1, m1, corr_lindhard2, z2, m2, density):
@@ -31,6 +30,11 @@ def setup(corr_lindhard1, z1, m1, corr_lindhard2, z2, m2, density):
         (z1**(2/3) + z2**(2/3))**(3/2) * sqrt(m1) ),
         corr_lindhard2 * 1.212 * z2**(7/6) * z2 / (
         (z2**(2/3) + z2**(2/3))**(3/2) * sqrt(m2) )])         # eV/A
+
+    ESTOP_PARAMS_DTYPE = np.dtype([
+        ("fac_lindhard", np.float64, (2,)),
+        ("density", np.float64),
+    ], align=True)
 
     estop_params = np.recarray(1, dtype=ESTOP_PARAMS_DTYPE)[0]
     estop_params["fac_lindhard"] = fac_lindhard

@@ -11,7 +11,6 @@ Available functions:
 from math import sqrt, sin, cos
 import numpy as np
 from numba import jit
-from .mytypes import RECOIL_PARAMS_DTYPE
 
 
 def setup(density):
@@ -23,6 +22,11 @@ def setup(density):
     Returns:
         (RECOIL_PARAMS_DTYPE): Recoil parameters
     """
+    RECOIL_PARAMS_DTYPE = np.dtype([
+        ("pmax", np.float64),
+        ("mean_free_path", np.float64),
+    ], align=True)
+
     recoil_params = np.recarray(1, dtype=RECOIL_PARAMS_DTYPE)[0]
     recoil_params["mean_free_path"] = density**(-1/3)
     recoil_params["pmax"] = recoil_params["mean_free_path"] / sqrt(np.pi)

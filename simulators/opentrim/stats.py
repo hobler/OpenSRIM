@@ -14,6 +14,8 @@ import numpy as np
 from numba.experimental import jitclass
 from numba.extending import overload, register_jitable
 from numba import int32, float64, jit
+from mytypes import STAT_PARAMS_DTYPE
+
 
 mom = None
 hist = None
@@ -230,17 +232,30 @@ def setup(nspec, nbin, limits):
         nspec(int): number of atom species
         nbin (int): number of bins
         limits (tuple[float]): (min, max) limits of the histogram (size 2)
+
+    Returns:
+        (STAT_PARAMS_DTYPE): Statistics parameters
     """
     global mom, hist
 
+    stat_params = np.recarray(1, dtype=STAT_PARAMS_DTYPE)[0]
+    stat_params["nspec"] = nspec
+    stat_params["nbin"] = nbin
+    stat_params["limits"] = np.array(limits)
+    print(f"{stat_params.limits=}")
+
+
     mom = Moment_1d(nvar=nspec, nmax=4)
-    hist = Histogram_1d(nspec, nbin, limits)
+    hist = Histogram_1d(stat_params.nspec, stat_params.nbin, (stat_params.limits[0], stat_params.limits[1]))
     
     mom.central_moments()
     mom.mean()
     mom.std()
     mom.skewness()
     mom.kurtosis()
+
+    return stat_params
+
 
 def print_results():
     """Print statistics of the scored projectiles."""

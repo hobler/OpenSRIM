@@ -7,25 +7,27 @@ Available functions:
     setup: setup module variables.
     trajectory: simulate one trajectory.
 """
+import numpy as np
+from numba import jit
 from .select_recoil import get_recoil_position
 from .scatter import scatter
 from .estop import eloss
 from .geometry import is_inside_target
-import numpy as np
-from numba import jit
 from . import stats as statistics
-
+from mytypes import CASCADE_PARAMS_DTYPE
 
 def setup():
     """Setup module variables.
     
     Returns:
-        (float): EMIN
-        (float): ED
+        (CASCADE_PARAMS_DTYPE): The cascade parameters
     """
-    emin = 5.0  # eV
-    ed = 15.0   # eV
-    return emin, ed
+    cascade_params = np.recarray(1, dtype=CASCADE_PARAMS_DTYPE)[0]
+
+    cascade_params.emin = 5.0  # eV
+    cascade_params.ed = 15.0   # eV
+    
+    return cascade_params
 
 
 @jit

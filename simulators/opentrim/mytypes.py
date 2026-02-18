@@ -44,7 +44,7 @@ GEOMETRY_PARAMS_DTYPE = np.dtype([
 ], align=True)
 
 ESTOP_PARAMS_DTYPE = np.dtype([
-    ("fac_linhard", np.float64, (2,)),
+    ("fac_lindhard", np.float64, (2,)),
     ("density", np.float64),
 ], align=True)
 
@@ -54,8 +54,8 @@ SCATTER_PARAMS_DTYPE = np.dtype([
     ("z2", np.uint32),
     ("enorm", np.float64, (2,)),
     ("rnorm", np.float64, (2,)),
-    ("dirfrac", np.float64, (2,)),
-    ("denfrac", np.float64, (2,)),
+    ("dirfac", np.float64, (2,)),
+    ("denfac", np.float64, (2,)),
     ("nlhlin_coefs", NLHLIN_COEFS_DTYPE, (4278,)),
 ], align=True)
 
@@ -122,7 +122,7 @@ else:
         return rec
 
 class SimParams:
-    def __init__(self, stat_tup=None, cascade_tup=None, recoil_tup=None, geometry_tup=None, estop_tup=None, scatter_tup=None, rng_seed=None):
+    def __init__(self, stat_params=None, cascade_params=None, recoil_params=None, geometry_params=None, estop_params=None, scatter_params=None, rng_seed=None):
         self.nspec = 0
         self.nbin = 0
         self.limits = (0.0, 0.0)
@@ -132,30 +132,43 @@ class SimParams:
         self.mean_free_path = 0.0
         self.zmin = 0.0
         self.zmax = 0.0
-        self.fac_linhard = np.zeros(2)
+        self.fac_lindhard = np.zeros(2)
         self.density = 0.0
         self.pot_model = ""
         self.z1 = 0.0
         self.z2 = 0.0
         self.enorm = np.zeros(2)
         self.rnorm = np.zeros(2)
-        self.dirfrac = np.zeros(2)
-        self.denfrac = np.zeros(2)
+        self.dirfac = np.zeros(2)
+        self.denfac = np.zeros(2)
         self.rng_seed = np.random.randint(2**31, dtype=np.uint32)
         self.nlhlin_coefs = np.zeros(4278, dtype=NLHLIN_COEFS_DTYPE)
         
-        if stat_tup is not None:
-            self.nspec, self.nbin, self.limits = stat_tup
-        if cascade_tup is not None:
-            self.emin, self.ed = cascade_tup 
-        if recoil_tup is not None:
-            self.pmax, self.mean_free_path = recoil_tup
-        if geometry_tup is not None:
-            self.zmin, self.zmax = geometry_tup     
-        if estop_tup is not None:
-            self.fac_linhard, self.density = estop_tup
-        if scatter_tup is not None:
-            self.pot_model, self.z1, self.z2, self.enorm, self.rnorm, self.dirfrac, self.denfrac, self.nlhlin_coefs = scatter_tup
+        if stat_params is not None:
+            self.nspec = stat_params.nspec
+            self.nbin = stat_params.nbin
+            self.limits = stat_params.limits
+        if cascade_params is not None:
+            self.emin = cascade_params.emin
+            self.ed = cascade_params.ed
+        if recoil_params is not None:
+            self.pmax = recoil_params.pmax
+            self.mean_free_path = recoil_params.mean_free_path
+        if geometry_params is not None:
+            self.zmin = geometry_params.zmin
+            self.zmax = geometry_params.zmax     
+        if estop_params is not None:
+            self.fac_lindhard = estop_params.fac_lindhard
+            self.density = estop_params.density
+        if scatter_params is not None:
+            self.pot_model = scatter_params.pot_model
+            self.z1 = scatter_params.z1
+            self.z2 = scatter_params.z2
+            self.enorm = scatter_params.enorm
+            self.rnorm = scatter_params.rnorm
+            self.dirfac = scatter_params.dirfac
+            self.denfac = scatter_params.denfac
+            self.nlhlin_coefs = scatter_params.nlhlin_coefs
         if rng_seed is not None:
             self.rng_seed = np.uint32(rng_seed)
 
@@ -170,15 +183,15 @@ class SimParams:
         rec['recoil']['mean_free_path'] = self.mean_free_path
         rec['geometry']['zmin'] = self.zmin
         rec['geometry']['zmax'] = self.zmax
-        rec['estop']['fac_linhard'] = self.fac_linhard
+        rec['estop']['fac_lindhard'] = self.fac_lindhard
         rec['estop']['density'] = self.density
         rec['scatter']['pot_model'] = self.pot_model
         rec['scatter']['z1'] = self.z1
         rec['scatter']['z2'] = self.z2
         rec['scatter']['enorm'] = self.enorm
         rec['scatter']['rnorm'] = self.rnorm
-        rec['scatter']['dirfrac'] = self.dirfrac
-        rec['scatter']['denfrac'] = self.denfrac
+        rec['scatter']['dirfac'] = self.dirfac
+        rec['scatter']['denfac'] = self.denfac
         rec['scatter']['nlhlin_coefs'] = self.nlhlin_coefs
         rec['rng_seed'] = self.rng_seed
         return rec

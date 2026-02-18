@@ -16,6 +16,7 @@ from .mytypes import SimParams
 from .nlhlin import read_coefs
 
 
+
 def init_params():
     """Initialize the simulation parameters.
 
@@ -35,23 +36,28 @@ def init_params():
     corr_lindhard1 = 1.5    # Correction factor to Lindhard stopping power (B->Si)
     corr_lindhard2 = 1.0    # Correction factor to Lindhard stopping power (Si->Si)
 
+    nspec = 2              # number of species to record (e.g. projectile and first recoil)
+    nbin = 40              # number of bins for depth distribution
+    limits = (0.0, 4000.0) # limits for depth distribution
+
     nlhlin_coefs = read_coefs()
     
-    recoil_tup = select_recoil.setup(density)
-    scatter_tup = scatter.setup(z1, m1, z2, m2, pot_model, nlhlin_coefs)
+    recoil_params = select_recoil.setup(density)
+    scatter_params = scatter.setup(z1, m1, z2, m2, pot_model, nlhlin_coefs)
     cm_scatter.setup(n_absc=4)
-    estop_tup = estop.setup(corr_lindhard1, z1, m1, corr_lindhard2, z2, m2, density)
-    geometry_tup = geometry.setup(zmin, zmax)
-    cascade_tup = cascade.setup()
+    estop_params = estop.setup(corr_lindhard1, z1, m1, corr_lindhard2, z2, m2, density)
+    geometry_params = geometry.setup(zmin, zmax)
+    cascade_params = cascade.setup()
+    stat_params = statistics.setup(nspec, nbin, limits)
 
     params = SimParams( rng_seed = np.random.randint(2**31, dtype=np.uint32),
-                            # Seed can be specified manually or generated automatically (default)
-                            stat_tup = (2, 40, (0.0, 4000.0)),
-                            cascade_tup = cascade_tup,
-                            recoil_tup = recoil_tup,
-                            geometry_tup = geometry_tup,
-                            estop_tup = estop_tup,
-                            scatter_tup = scatter_tup)
+                        # Seed can be specified manually or generated automatically (default)
+                        stat_params = stat_params,
+                        cascade_params = cascade_params,
+                        recoil_params = recoil_params,
+                        geometry_params = geometry_params,
+                        estop_params = estop_params,
+                        scatter_params = scatter_params)
 
     statistics.setup(nspec=params.nspec, nbin=params.nbin, limits=params.limits)
 

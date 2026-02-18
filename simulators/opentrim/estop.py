@@ -8,8 +8,9 @@ Available functions:
     eloss: calculate the electronic energy loss.
 """
 from math import sqrt
-from numba import jit
 import numpy as np
+from numba import jit
+from mytypes import ESTOP_PARAMS_DTYPE
 
 
 def setup(corr_lindhard1, z1, m1, corr_lindhard2, z2, m2, density):
@@ -31,8 +32,13 @@ def setup(corr_lindhard1, z1, m1, corr_lindhard2, z2, m2, density):
         (z1**(2/3) + z2**(2/3))**(3/2) * sqrt(m1) ),
         corr_lindhard2 * 1.212 * z2**(7/6) * z2 / (
         (z2**(2/3) + z2**(2/3))**(3/2) * sqrt(m2) )])         # eV/A
-    
-    return fac_lindhard, density
+
+    estop_params = np.recarray(1, dtype=ESTOP_PARAMS_DTYPE)[0]
+    estop_params['fac_lindhard'] = fac_lindhard
+    estop_params['density'] = density
+
+    return estop_params
+
 
 @jit(inline = 'always')
 def eloss(proj, free_path, estop):
@@ -46,7 +52,7 @@ def eloss(proj, free_path, estop):
     Returns:
         (float): energy loss (eV)
     """
-    dee = estop.fac_linhard[proj.ispec] * estop.density * sqrt(proj.e) * free_path
+    dee = estop.fac_lindhard[proj.ispec] * estop.density * sqrt(proj.e) * free_path
     if dee > proj.e:
         dee = proj.e
 

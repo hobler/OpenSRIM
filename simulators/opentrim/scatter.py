@@ -9,12 +9,13 @@ Available functions:
     setup: setup module variables.
     scatter: treat a scattering event.
 """
-
 import math
 from .zbl import magic
 from .cm_scatter import scatter_integrals
 import numpy as np
 from numba import jit
+from mytypes import SCATTER_PARAMS_DTYPE
+
 
 @jit(inline = 'always')
 def normalize_if_needed(vec, fallback):
@@ -67,8 +68,8 @@ def scatter(proj, p, dirp, screen_fun, scatter, is_magic):
     # scattering angle theta in the center-of-mass system
     enorm = scatter.enorm
     rnorm = scatter.rnorm
-    dirfrac = scatter.dirfrac
-    denfrac = scatter.denfrac
+    dirfac = scatter.dirfac
+    denfac = scatter.denfac
     
     ispec = proj.ispec
     proj_e = proj.e
@@ -85,7 +86,7 @@ def scatter(proj, p, dirp, screen_fun, scatter, is_magic):
         cos_half_theta = math.cos(0.5 * theta)
 
     # directions of the recoil and the projectile after the collision
-    recoil_dir = dirfrac[ispec] * sin_half_theta * (sin_half_theta*proj.dir[:] 
+    recoil_dir = dirfac[ispec] * sin_half_theta * (sin_half_theta*proj.dir[:] 
                                                  + cos_half_theta*dirp[:])
     dir_new = proj.dir[:] - recoil_dir[:]
     dir_new = normalize_if_needed(dir_new, proj['dir'][:])
@@ -95,7 +96,7 @@ def scatter(proj, p, dirp, screen_fun, scatter, is_magic):
     proj.dir[:] = dir_new
 
     # energy after scattering
-    recoil_e = denfrac[ispec] * proj_e * sin_half_theta**2
+    recoil_e = denfac[ispec] * proj_e * sin_half_theta**2
     proj.e -= recoil_e
 
     return recoil_dir[:], recoil_e
@@ -138,5 +139,15 @@ def setup(z1, m1, z2, m2, pot_model, nlhlin_coefs):
                 1))
     denfac = np.array((4 * m1_m2 / (1 + m1_m2)**2,
                 1))
-              
-    return pot_model, z1, z2, enorm, rnorm, dirfac, denfac, nlhlin_coefs
+
+    scatter_params = np.recarray(1, dtype=SCATTER_PARAMS_DTYPE)[0]
+    scatter_params['pot_model'] = pot_model
+    scatter_params['z1'] = z1
+    scatter_params['z2'] = z2
+    scatter_params['enorm'] = enorm
+    scatter_params['rnorm'] = rnorm
+    scatter_params['dirfac'] = dirfac
+    scatter_params['denfac'] = denfac
+    scatter_params['nlhlin_coefs'] = nlhlin_coefs
+
+    return scatter_params

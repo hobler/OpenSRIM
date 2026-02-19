@@ -1,19 +1,16 @@
 """Simulate projectile trajectories.
 
-The trajectory function may call itself recursively to follow recoil
-trajectories.
-
 Available functions:
     setup: setup module variables.
-    trajectory: simulate one trajectory.
+    cascade: simulate one cascade.
 """
+import numpy as np
+from numba import jit
 from .mytypes import PROJ_DTYPE
 from .select_recoil import get_recoil_position
 from .scatter import scatter
 from .estop import eloss
 from .geometry import is_inside_target
-import numpy as np
-from numba import jit
 from . import stats as statistics
 
 
@@ -21,21 +18,29 @@ def setup():
     """Setup module variables.
     
     Returns:
-        (float): EMIN
-        (float): ED
+        (CASCADE_PARAMS_DTYPE): The cascade parameters
     """
-    emin = 5.0  # eV
-    ed = 15.0   # eV
-    return emin, ed
+
+    CASCADE_PARAMS_DTYPE = np.dtype([
+        ("emin", np.float64),
+        ("ed", np.float64),
+    ], align=True)
+
+    cascade_params = np.recarray(1, dtype=CASCADE_PARAMS_DTYPE)[0]
+
+    cascade_params.emin = 5.0  # eV
+    cascade_params.ed = 15.0   # eV
+    
+    return cascade_params
 
 
 @jit
-def cascade(initial_proj, sim_params, screen_fun, follow_recoils=False, prealloc=400):
+def cascade(initial_proj, params, screen_fun, follow_recoils=False, prealloc=400):
     """Simulate one projectile trajectory.
     
     Parameters:
         initial_proj: (Projectile) the initial state of the first projectile
-        sim_params: (SimParams) Simulation parameters
+        params: (PARAMS_DTYPE) Simulation parameters
         screen_fun (object): Screening function
         follow_recoils: (bool) whether to follow recoil trajectories
         prealloc: (int) number of recoil projectiles to pre-allocate space for (for better performance)
@@ -50,12 +55,12 @@ def cascade(initial_proj, sim_params, screen_fun, follow_recoils=False, prealloc
     INITIAL_STACK_SIZE = 100
     INITIAL_RECOILS_SIZE = 5
     
-    emin = sim_params.cascade_params.emin
-    ed = sim_params.cascade_params.ed
-    is_magic = (sim_params.scatter_params.pot_model == 'ZBL_magic')
-    stat_params = sim_params.stat_params
-    hist = statistics.Histogram_1d(stat_params.nspec, stat_params.nbin, (stat_params.limits[0], stat_params.limits[1]))
-    mom = statistics.Moment_1d(stat_params.nspec, 4)
+    emin = params.cascade.emin
+    ed = params.cascade.ed
+    is_magic = (params.scatter.pot_model == "ZBL_magic")
+    stat = params.stat
+    hist = statistics.Histogram_1d(stat.nspec, stat.nbin, (stat.limits[0], stat.limits[1]))
+    mom = statistics.Moment_1d(stat.nspec, 4)
 
     # Fully simulated projectiles
     proj_lst = np.empty(1 if not follow_recoils else prealloc, dtype=PROJ_DTYPE)
@@ -75,17 +80,17 @@ def cascade(initial_proj, sim_params, screen_fun, follow_recoils=False, prealloc
         recoils_tail = 0
         
         while proj.e > emin:
-            free_path, p, dirp, recoil_pos = get_recoil_position(proj.pos[:], proj.dir[:], sim_params.recoil_params)
+            free_path, p, dirp, recoil_pos = get_recoil_position(proj.pos[:], proj.dir[:], params.recoil)
             
-            dee = eloss(proj, free_path, sim_params.estop_params)
+            dee = eloss(proj, free_path, params.estop)
             proj.e -= dee
             proj.pos += free_path * proj.dir[:]
             
-            if not is_inside_target(proj.pos[:], sim_params.geometry_params):
+            if not is_inside_target(proj.pos[:], params.geometry):
                 proj.is_inside = False
                 break
             
-            recoil_dir, recoil_e = scatter(proj, p, dirp[:], screen_fun, sim_params.scatter_params, is_magic)        
+            recoil_dir, recoil_e = scatter(proj, p, dirp[:], screen_fun, params.scatter, is_magic)        
             if follow_recoils and recoil_e > ed:
                 if recoils_tail >= recoils.size:
                     recoils = np.append(recoils, np.empty(int(GROWTH_FACTOR * recoils.size), dtype=PROJ_DTYPE))

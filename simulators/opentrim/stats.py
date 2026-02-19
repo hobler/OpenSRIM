@@ -15,6 +15,7 @@ from numba.experimental import jitclass
 from numba.extending import overload, register_jitable
 from numba import int32, float64, jit
 
+
 mom = None
 hist = None
 
@@ -185,7 +186,7 @@ class Histogram_1d:
     To calculate histograms, create an instance of this class with the
     desired number of variables, number of bins, and limits. Score data points
     using the score() method. The histogram counts can be accessed via the 
-    'counts' attribute.
+    "counts" attribute.
     
     Attributes:
         nvar (int): number variables for which histograms are desired
@@ -230,17 +231,41 @@ def setup(nspec, nbin, limits):
         nspec(int): number of atom species
         nbin (int): number of bins
         limits (tuple[float]): (min, max) limits of the histogram (size 2)
+
+    Returns:
+        (STAT_PARAMS_DTYPE): Statistics parameters
     """
     global mom, hist
 
+    #nspec = 1
+    #for material in input_params["layers"]["material"]:
+    #    nspec += len(material["symbol"])
+    #nbin = input_params["output"]["depth distribution"]["nbins"]
+    #limits = input_params["output"]["depth distribution"]["limits"]
+
+    STAT_PARAMS_DTYPE = np.dtype([
+        ("nspec", np.int32),
+        ("nbin", np.int32),
+        ("limits", np.float64, (2,)),
+    ], align=True)
+
+    stat_params = np.recarray(1, dtype=STAT_PARAMS_DTYPE)[0]
+    stat_params["nspec"] = nspec
+    stat_params["nbin"] = nbin
+    stat_params["limits"] = np.array(limits)
+
+
     mom = Moment_1d(nvar=nspec, nmax=4)
-    hist = Histogram_1d(nspec, nbin, limits)
+    hist = Histogram_1d(stat_params.nspec, stat_params.nbin, (stat_params.limits[0], stat_params.limits[1]))
     
     mom.central_moments()
     mom.mean()
     mom.std()
     mom.skewness()
     mom.kurtosis()
+
+    return stat_params
+
 
 def print_results():
     """Print statistics of the scored projectiles."""
@@ -281,12 +306,12 @@ def plot_results(log=False):
         plt.stairs(hist.counts[ivar,1:-1],
                    edges=np.linspace(hist.limits[0], hist.limits[1], 
                                      hist.nbin+1),
-                   label=f'Species {ivar}')
+                   label=f"Species {ivar}")
     if log:
-        plt.yscale('log')
-    plt.xlabel('Penetration depth (A)')
-    plt.ylabel('Counts')
-    plt.title('Histogram of Penetration Depths')
+        plt.yscale("log")
+    plt.xlabel("Penetration depth (A)")
+    plt.ylabel("Counts")
+    plt.title("Histogram of Penetration Depths")
     plt.legend()
     plt.show()
 

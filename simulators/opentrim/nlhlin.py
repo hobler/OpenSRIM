@@ -13,7 +13,7 @@ from numba.core.types import UniTuple, float64
 from numba.experimental import jitclass
 import numpy as np
 from .apsis import Apsis
-from .mytypes import NLHLIN_COEFS_DTYPE
+
 
 @jitclass
 class NLHlin_screen:
@@ -104,25 +104,41 @@ class NLHlin_screen:
         dscreen = np.where(mask, dscreen, 0.0)
         return screen, dscreen
 
+
 def read_coefs():
     """Read NLHlin screening coefficients from the data file.
 
     Returns:
         (recarray): A record array containing the coefficients.
     """
-    fname = os.path.join(os.path.dirname(__file__), 'dmol_coeffs_rmax.dat')
+    fname = os.path.join(os.path.dirname(__file__), "dmol_coeffs_rmax.dat")
     if not os.path.exists(fname):
-        print(f'NLHlin_screen: Coefficients file {fname} not found')
+        print(f"NLHlin_screen: Coefficients file {fname} not found")
         sys.exit()
     
     coef_rows = []
     with open(fname, "r") as f:
         for line in f:
-            if line[0] == '#':
+            if line[0] == "#":
                 continue
             coefs = line.split()[:-1]   # exclude "error" column
             coef_rows.append(tuple([float(c) for c in coefs]))
+
+    # TODO: Remove duplicate definition of SCATTER_PARAMS_DTYPE
+    NLHLIN_COEFS_DTYPE = np.dtype([
+        ("z1", np.uint32),
+        ("z2", np.uint32),
+        ("a1", np.float64),
+        ("b1", np.float64),
+        ("a2", np.float64),
+        ("b2", np.float64),
+        ("a3", np.float64),
+        ("b3", np.float64),
+        ("rmax", np.float64),
+    ], align=True)
+
     return np.array(coef_rows, dtype=NLHLIN_COEFS_DTYPE).view(np.recarray)
+
 
 def post_plot(p1, p2, Z2):
     """Do post-plot setup for NLHlin screening function plots.
@@ -140,38 +156,38 @@ def post_plot(p1, p2, Z2):
     cmap = mpl.cm.viridis
     norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
     plt.colorbar(mpl.cm.ScalarMappable(norm=norm, cmap=cmap), 
-                label=r'atomic number Z$_1$', 
+                label=r"atomic number Z$_1$", 
                 ax=plt.gca(),
                 ticks=ticks)
-    plt.yscale('log')
+    plt.yscale("log")
     if (p1, p2) == (0, 0):
         plt.xlim(0.0, 3.0)
     else:
         plt.xlim(0.0, 30.0)
     plt.ylim(1e-4, 1.0)
     if (p1, p2) == (0, 0):
-        text = ''
+        text = ""
     else:
-        text = r'a$_\mathrm{I}$=0.4685$\rm\AA$/'
+        text = r"a$_\mathrm{I}$=0.4685$\rm\AA$/"
         if p1 == 1:
-            text += fr'(Z$_1$+Z$_2$)'
+            text += fr"(Z$_1$+Z$_2$)"
         else:
-            text += fr'(Z$_1^{{{p1:.2f}}}$+Z$_2^{{{p1:.2f}}}$)'
+            text += fr"(Z$_1^{{{p1:.2f}}}$+Z$_2^{{{p1:.2f}}}$)"
         if p2 != 1:
-            text += fr'$^{{{p2:.2f}}}$'
-        text += '\n'
+            text += fr"$^{{{p2:.2f}}}$"
+        text += "\n"
     if Z2 is None:
-        text += f' Z$_2$=Z$_1$'
+        text += f" Z$_2$=Z$_1$"
     else:
-        text += f' Z$_2$={Z2}'
+        text += f" Z$_2$={Z2}"
     plt.text(0.95, 0.95, text, 
-             horizontalalignment='right', verticalalignment='top',
-             transform=plt.gca().transAxes, fontsize='medium')
+             horizontalalignment="right", verticalalignment="top",
+             transform=plt.gca().transAxes, fontsize="medium")
     if (p1, p2) == (0, 0):
-        plt.xlabel(r'distance ($\rm\AA$)')
+        plt.xlabel(r"distance ($\rm\AA$)")
     else:
-        plt.xlabel('reduced distance')
-    plt.ylabel('NLHlin screening function')
+        plt.xlabel("reduced distance")
+    plt.ylabel("NLHlin screening function")
     plt.tight_layout()
 
 
@@ -189,10 +205,10 @@ def plot_screen(p1, p2, z2=None):
     rmax_A  = 3.0
 
     plt.figure()
-    #cmap = mpl.cm.get_cmap('jet', 92)
-    cmap = mpl.cm.get_cmap('viridis', 92)
-    plt.rcParams.update({'font.size': 14})
-    #plt.gca().set_facecolor('darkgray')
+    #cmap = mpl.cm.get_cmap("jet", 92)
+    cmap = mpl.cm.get_cmap("viridis", 92)
+    plt.rcParams.update({"font.size": 14})
+    #plt.gca().set_facecolor("darkgray")
 
     coefs = read_coefs()
     for Z1 in range(1, 93):
@@ -213,13 +229,13 @@ def plot_screen(p1, p2, z2=None):
 
     if (p1, p2) == (0.23, 1):
         screen, _ = ZBL_screen().call(r)
-        plt.plot(r, screen, 'k--', label='ZBL', zorder=100)
-        plt.legend(loc='right')
+        plt.plot(r, screen, "k--", label="ZBL", zorder=100)
+        plt.legend(loc="right")
     # TODO uncomment
     # elif (p1, p2) == (1/2, 2/3):
     #     screen, _ = KrC_screen(r)
-    #     plt.plot(r, screen, 'k--', label='KrC', zorder=100)
-    #     plt.legend(loc='right')
+    #     plt.plot(r, screen, "k--", label="KrC", zorder=100)
+    #     plt.legend(loc="right")
 
     post_plot(p1, p2, Z2=z2)
 
@@ -240,10 +256,10 @@ def plot_ZBLscreen(p1, p2, z2=None):
     rmax_A  = 3.0
 
     plt.figure()
-    #cmap = mpl.cm.get_cmap('jet', 92)
-    cmap = mpl.cm.get_cmap('viridis', 92)
-    plt.rcParams.update({'font.size': 14})
-    #plt.gca().set_facecolor('darkgray')
+    #cmap = mpl.cm.get_cmap("jet", 92)
+    cmap = mpl.cm.get_cmap("viridis", 92)
+    plt.rcParams.update({"font.size": 14})
+    #plt.gca().set_facecolor("darkgray")
 
     for Z1 in range(1, 93):
         if z2 is None:
@@ -260,8 +276,8 @@ def plot_ZBLscreen(p1, p2, z2=None):
         screen, _ = ZBL_screen().call(r/a_ZBL)
         plt.plot(r/rnorm, screen, color=cmap((Z1-1)/92), zorder=Z1)
 
-    post_plot(p1, p2, Z2=r'Z$_1$')
-    plt.ylabel('ZBL screening function')
+    post_plot(p1, p2, Z2=r"Z$_1$")
+    plt.ylabel("ZBL screening function")
 
     plt.show()
 

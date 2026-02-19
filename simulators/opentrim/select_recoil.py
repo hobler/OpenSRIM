@@ -13,30 +13,37 @@ import numpy as np
 from numba import jit
 
 
-def setup(density):
+def setup(input_params):
     """Setup module variables depending on target density.
 
     Parameters:
-        density (float): target density (atoms/A^3)
+        input_params (dict): input parameters dictionary
 
     Returns:
-        (float): PMAX parameter
-        (float): MEAN_FREE_PATH parameter
+        (RECOIL_PARAMS_DTYPE): Recoil parameters
     """
-    mean_free_path = density**(-1/3)
-    pmax = mean_free_path / sqrt(np.pi)
+    density = input_params["layers"]["density"][0]
     
-    return pmax, mean_free_path
+    RECOIL_PARAMS_DTYPE = np.dtype([
+        ("pmax", np.float64),
+        ("mean_free_path", np.float64),
+    ], align=True)
+
+    recoil_params = np.recarray(1, dtype=RECOIL_PARAMS_DTYPE)[0]
+    recoil_params["mean_free_path"] = density**(-1/3)
+    recoil_params["pmax"] = recoil_params["mean_free_path"] / sqrt(np.pi)
+    
+    return recoil_params
 
 
 @jit
-def get_recoil_position(pos, dir, recoil_params):
+def get_recoil_position(pos, dir, params):
     """Get the recoil position based on the projectile position and direction.
 
     Parameters:
         pos (ndarray): position of the projectile (size 3)
         dir (ndarray): direction vector of the projectile (size 3)
-        recoil_params (np.recarray): Recoil parameters
+        params (RECOIL_PARAMS_DTYPE): Recoil parameters
 
     Returns:
         (float): free path length to the next collision (A)
@@ -45,10 +52,10 @@ def get_recoil_position(pos, dir, recoil_params):
         (ndarray): direction vector from collision point to recoil (size 3)
         (ndarray): position of the recoil (A, size 3)
     """
-    free_path = recoil_params.mean_free_path
+    free_path = params.mean_free_path
     collision_pos = pos[:] + free_path * dir[:]
 
-    p = recoil_params.pmax * sqrt(np.random.rand())
+    p = params.pmax * sqrt(np.random.rand())
     # Azimuthal angle fi
     fi = 2 * np.pi * np.random.rand()
     cos_fi = cos(fi)

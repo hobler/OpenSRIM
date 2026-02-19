@@ -6,30 +6,43 @@ Available functions:
     setup: setup module variables.
     is_inside_target: check if a given position is inside the target
 """
-
+import numpy as np
 from numba import jit
 
-def setup(zmin, zmax):
+
+def setup(input_params):
     """Define the geometry of the target.
     
     Parameters:
-        zmin (float): minimum z coordinate of the target (A)
-        zmax (float): maximum z coordinate of the target (A)
-    Returns:
-        (float): zmin
-        (float): zmax
-    """
-    return zmin, zmax
+        input_params (dict): input parameters
 
-@jit(inline = 'always')
-def is_inside_target(pos, geometry_params):
+    Returns:
+        (GEOMETRY_PARAMS_DTYPE): geometry parameters
+    """
+    zmin = 0.0
+    zmax = input_params["layers"]["width"][0]
+
+    GEOMETRY_PARAMS_DTYPE = np.dtype([
+        ("zmin", np.float64),
+        ("zmax", np.float64),
+    ], align=True)
+
+    geometry_params = np.recarray(1, dtype=GEOMETRY_PARAMS_DTYPE)[0]
+    geometry_params["zmin"] = zmin
+    geometry_params["zmax"] = zmax
+
+    return geometry_params
+
+
+@jit(inline = "always")
+def is_inside_target(pos, params):
     """Check if a given position is inside the target.
 
     Parameters:
         pos (ndarray): position to check (size 3)
-        geometry_params (np.recarray): Geometry parameters
+        params (GEOMETRY_PARAMS_DTYPE): Geometry parameters
 
     Returns:
         (bool): whether the position is inside the target
     """
-    return geometry_params.zmin <= pos[2] <= geometry_params.zmax
+    return params.zmin <= pos[2] <= params.zmax

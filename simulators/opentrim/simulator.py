@@ -49,11 +49,12 @@ def _simulate(nion, params, follow_recoils, sim_idx):
         0,
         True
     )
-    proj_dummy = np.full(1, proj_init)
-    proj_sim = [proj_dummy for _ in range(nion)]
-    z1 = params.scatter_params.z1
-    z2 = params.scatter_params.z2
-    nlhlin_coefs = params.scatter_params.nlhlin_coefs
+    proj_dummy_arr = np.empty(1, dtype=PROJ_DTYPE)
+    proj_sim = [proj_dummy_arr for _ in range(nion)]
+    proj_dummy_arr[0] = proj_init
+    z1 = params.scatter.z1
+    z2 = params.scatter.z2
+    nlhlin_coefs = params.scatter.nlhlin_coefs
 
     # Fixes weird Numba error by passing array instead of single record
     params_arr = np.full(1, params)
@@ -66,22 +67,23 @@ def _simulate(nion, params, follow_recoils, sim_idx):
     def _parallel_exec(screen_fun):
         for i in prange(nion):
             np.random.seed(params_arr[0].rng_seed + sim_idx + i)
-            proj_sim[i], hist_results[i], mom_results[i] = cascade.cascade(proj_dummy[0], params_arr, screen_fun, follow_recoils)
+            proj_sim[i], hist_results[i], mom_results[i] = cascade.cascade(
+                proj_dummy_arr[0], params_arr[0], screen_fun, follow_recoils)
     
     # Simulate the trajectories
-    if params.scatter_params.pot_model == 'NLHlin':
-        screen_fun_nlh = (NLHlin_screen(z1, z2, params.scatter_params.rnorm[0], nlhlin_coefs),
-                        NLHlin_screen(z2, z2, params.scatter_params.rnorm[1], nlhlin_coefs))
+    if params.scatter.pot_model == 'NLHlin':
+        screen_fun_nlh = (NLHlin_screen(z1, z2, params.scatter.rnorm[0], nlhlin_coefs),
+                        NLHlin_screen(z2, z2, params.scatter.rnorm[1], nlhlin_coefs))
         _parallel_exec(screen_fun_nlh)
 
-    elif params.scatter_params.pot_model == 'ZBL':
-        screen_fun_zbl = (ZBL_screen(z1, z2, params.scatter_params.rnorm[0], False),
-                        ZBL_screen(z2, z2, params.scatter_params.rnorm[1], False))
+    elif params.scatter.pot_model == 'ZBL':
+        screen_fun_zbl = (ZBL_screen(z1, z2, params.scatter.rnorm[0], False),
+                        ZBL_screen(z2, z2, params.scatter.rnorm[1], False))
         _parallel_exec(screen_fun_zbl)
 
     else:   # Defaults to 'ZBL_magic'
-        screen_fun_magic = (ZBL_screen(z1, z2, params.scatter_params.rnorm[0], True),
-                        ZBL_screen(z2, z2, params.scatter_params.rnorm[1], True))
+        screen_fun_magic = (ZBL_screen(z1, z2, params.scatter.rnorm[0], True),
+                        ZBL_screen(z2, z2, params.scatter.rnorm[1], True))
         _parallel_exec(screen_fun_magic)
     
     proj_count = 0

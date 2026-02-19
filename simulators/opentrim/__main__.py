@@ -27,8 +27,8 @@ if __package__ is None:
         sys.path.insert(0, project_root)
     __package__ = str(Path(__file__).parent.name)
 
+from . import config  # import config early to set up caching and parallel settings
 from . import stats as statistics
-from . import config
 from .init import init_params
 from .simulator import simulate, simulate_chunked, simulate_adaptive  # noqa: F401
 

@@ -103,7 +103,7 @@ def scatter(proj, p, dirp, screen_fun, scatter, is_magic):
     return recoil_dir[:], recoil_e
 
 
-def setup(z1, m1, z2, m2, pot_model, nlhlin_coefs):
+def setup(input_params, nlhlin_coefs):
     """Setup module variables depending on projectile and target species.
 
     Each of the module variables ENORM, RNORM, DIRFAC, and DENFAC is a tuple
@@ -111,16 +111,20 @@ def setup(z1, m1, z2, m2, pot_model, nlhlin_coefs):
     species 1. Currently we assume there is only on target atoms species.
 
     Parameters:
-        z1 (int): atomic number of projectile
-        m1 (float): mass of projectile (amu)
-        z2 (int): atomic number of target
-        m2 (float): mass of target (amu)
-        pot_model (str): potential model for scattering
+        input_params (dict): input parameters dictionary
         nlhlin_coefs (np.recarray): coefficients for NHLlin screening function
         
     Returns:
         (SCATTER_PARAMS_DTYPE): Scatter parameters
     """
+    z1 = input_params["beam"]["Z"]
+    m1 = input_params["beam"]["M"]
+    z2 = input_params["layers"]["material"][0]["Z"][0]
+    m2 = input_params["layers"]["material"][0]["M"][0]
+    pot_model = input_params["models"]["potential"]
+    if input_params["models"]["scattering integrals"]["algorithm"] == "magic":
+        pot_model += "_magic"
+
     m1_m2 = m1 / m2
     if pot_model.startswith("ZBL"):
         rnorm = (0.4685 / (z1**0.23 + z2**0.23),

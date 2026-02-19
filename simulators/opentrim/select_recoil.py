@@ -13,15 +13,17 @@ import numpy as np
 from numba import jit
 
 
-def setup(density):
+def setup(input_params):
     """Setup module variables depending on target density.
 
     Parameters:
-        density (float): target density (atoms/A^3)
+        input_params (dict): input parameters dictionary
 
     Returns:
         (RECOIL_PARAMS_DTYPE): Recoil parameters
     """
+    density = input_params["layers"]["density"][0]
+    
     RECOIL_PARAMS_DTYPE = np.dtype([
         ("pmax", np.float64),
         ("mean_free_path", np.float64),

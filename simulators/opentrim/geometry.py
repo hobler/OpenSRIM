@@ -10,15 +10,18 @@ import numpy as np
 from numba import jit
 
 
-def setup(zmin, zmax):
+def setup(input_params):
     """Define the geometry of the target.
     
     Parameters:
-        zmin (float): minimum z coordinate of the target (A)
-        zmax (float): maximum z coordinate of the target (A)
+        input_params (dict): input parameters
+
     Returns:
         (GEOMETRY_PARAMS_DTYPE): geometry parameters
     """
+    zmin = 0.0
+    zmax = input_params["layers"]["width"][0]
+
     GEOMETRY_PARAMS_DTYPE = np.dtype([
         ("zmin", np.float64),
         ("zmax", np.float64),

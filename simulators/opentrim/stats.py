@@ -237,6 +237,12 @@ def setup(nspec, nbin, limits):
     """
     global mom, hist
 
+    #nspec = 1
+    #for material in input_params["layers"]["material"]:
+    #    nspec += len(material["symbol"])
+    #nbin = input_params["output"]["depth distribution"]["nbins"]
+    #limits = input_params["output"]["depth distribution"]["limits"]
+
     STAT_PARAMS_DTYPE = np.dtype([
         ("nspec", np.int32),
         ("nbin", np.int32),
@@ -247,7 +253,6 @@ def setup(nspec, nbin, limits):
     stat_params["nspec"] = nspec
     stat_params["nbin"] = nbin
     stat_params["limits"] = np.array(limits)
-    print(f"{stat_params.limits=}")
 
 
     mom = Moment_1d(nvar=nspec, nmax=4)

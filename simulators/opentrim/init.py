@@ -122,17 +122,6 @@ def init_params():
     """
 
     # Example hardcoded parameters (to be replaced with file input)
-    zmin = 0.0              # minimum z coordinate of the target (A)
-    zmax = 4000.0           # maximum z coordinate of the target (A)
-    pot_model = "ZBL_magic"  # potential model for scattering
-    z1 = 5                  # atomic number of projectile
-    m1 = 11.009             # mass of projectile (amu)
-    z2 = 14                 # atomic number of target
-    m2 = 28.086             # mass of target atom (amu)
-    density = 0.04994       # target density (atoms/A^3)
-    corr_lindhard1 = 1.5    # Correction factor to Lindhard stopping power (B->Si)
-    corr_lindhard2 = 1.0    # Correction factor to Lindhard stopping power (Si->Si)
-
     nspec = 2              # number of species to record (e.g. projectile and first recoil)
     nbin = 40              # number of bins for depth distribution
     limits = (0.0, 4000.0) # limits for depth distribution

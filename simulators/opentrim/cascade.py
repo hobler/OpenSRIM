@@ -98,7 +98,7 @@ def cascade(initial_proj, params, screen_fun, follow_recoils=False, prealloc=400
                 recoils[recoils_tail].e = recoil_e
                 recoils[recoils_tail].pos[:] = recoil_pos
                 recoils[recoils_tail].dir[:] = recoil_dir
-                recoils[recoils_tail].ispec = 1
+                recoils[recoils_tail].ielem = 1
                 recoils[recoils_tail].is_inside = True
                 recoils_tail += 1
         
@@ -108,8 +108,8 @@ def cascade(initial_proj, params, screen_fun, follow_recoils=False, prealloc=400
         lst_tail+=1
         
         if proj.is_inside:
-            hist.score(proj.ispec, proj.pos[2])
-            mom.score(proj.ispec, proj.pos[2])
+            hist.score(proj.ielem, proj.pos[2])
+            mom.score(proj.ielem, proj.pos[2])
         
         for i in range(recoils_tail - 1, -1, -1):
             if stack_tail >= stack.size:

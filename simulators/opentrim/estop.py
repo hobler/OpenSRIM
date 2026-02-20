@@ -58,7 +58,7 @@ def eloss(proj, free_path, params):
     Returns:
         (float): energy loss (eV)
     """
-    dee = params.fac_lindhard[proj.ispec] * params.density * sqrt(proj.e) * free_path
+    dee = params.fac_lindhard[proj.ielem] * params.density * sqrt(proj.e) * free_path
     if dee > proj.e:
         dee = proj.e
 

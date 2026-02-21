@@ -23,18 +23,19 @@ def setup(input_params):
         (TARGET_PARAMS_DTYPE): target parameters
     """
     layers_params = input_params["layers"]
+    nlayers = len(layers_params["name"])
 
-    zmin = 0.0
-    zmax = layers_params["width"][0]
-
-    GEOMETRY_PARAMS_DTYPE = np.dtype([        
-        ("zmin", np.float64),
-        ("zmax", np.float64),
+    GEOMETRY_PARAMS_DTYPE = np.dtype([
+        ("nlayers", np.uint32),
+        ("z_intf", np.float64, (nlayers + 1,)),
     ], align=True)
 
     geometry_params = np.recarray(1, dtype=GEOMETRY_PARAMS_DTYPE)[0]
-    geometry_params.zmin = zmin
-    geometry_params.zmax = zmax
+    geometry_params.nlayers = nlayers
+    geometry_params.z_intf[0] = 0.0
+    for i in range(nlayers):
+        geometry_params.z_intf[i+1] = (
+            geometry_params.z_intf[i] + layers_params["width"][i])
 
     # Construct a list of more convenient material dictionaries.
     # Each material has the format
@@ -59,7 +60,7 @@ def setup(input_params):
     # But this would mean that the input file format would be more complex, so 
     # maybe it's better to keep it simple and do the conversion in code for now.
     materials = []
-    for ilayer in range(len(layers_params["name"])):
+    for ilayer in range(nlayers):
         mat_elements = []
         atomic_fractions = []
         displacement_energies = []
@@ -135,6 +136,7 @@ def setup(input_params):
         ("nelem", np.uint32),
         ("ielem", np.uint32, nelem),
         ("atomic_fraction", np.float64, nelem),
+        ("cumulative_fraction", np.float64, nelem),
         ("displacement_energy", np.float64, nelem),
     ], align=True)
 
@@ -148,6 +150,9 @@ def setup(input_params):
         materials_params[imat].ielem[:mat["nelem"]] = mat["ielem"]
         materials_params[imat].atomic_fraction[:mat["nelem"]] = (
             mat["atomic_fractions"])
+        materials_params[imat].cumulative_fraction[:mat["nelem"]] = (
+            np.cumsum(mat["atomic_fractions"]))
+        materials_params[imat].cumulative_fraction[mat["nelem"]] = 1.0
         materials_params[imat].displacement_energy[:mat["nelem"]] = (
             mat["displacement_energy"])
 
@@ -181,4 +186,50 @@ def is_inside_target(pos, geometry_params):
     Returns:
         (bool): whether the position is inside the target
     """
-    return geometry_params.zmin <= pos[2] <= geometry_params.zmax
+    return geometry_params.z_intf[0] <= pos[2] <= geometry_params.z_intf[-1]
+
+
+@jit(inline = "always")
+def get_layer_index(pos, geometry_params):
+    """Get the layer index for a given position.
+
+    For pos[2] < geometry_params.z_intf[0] return 0.
+    For pos[2] >= geometry_params.z_intf[-1], return the last layer index.
+
+    Note that material index = layer index.
+
+    Parameters:
+        pos (ndarray): position to check (size 3)
+        geometry_params (GEOMETRY_PARAMS_DTYPE): geometry parameters
+
+    Returns:
+        (int): layer index
+    """
+    for i in range(1, geometry_params.nlayers):
+        if pos[2] < geometry_params.z_intf[i]:
+            return i - 1    # return layer index to the left of the interface
+        
+    return geometry_params.nlayers - 1  # If not found in any layer, 
+                                        # return last layer index
+
+
+@jit(inline = "always")
+def get_element_index(ilayer, materials_params):
+    """Randomly select an element index for a given layer index.
+
+    Parameters:
+        ilayer (int): layer index
+        materials_params (MATERIALS_PARAMS_DTYPE): materials parameters
+
+    Returns:
+        (int): element index
+    """
+    mat = materials_params[ilayer]
+
+    r = np.random.rand() * sum(mat.atomic_fraction[:mat.nelem])
+    for ielem in range(mat.nelem - 1):
+        cumulative_fraction = mat.cumulative_fraction[ielem]
+        if r < cumulative_fraction:
+            return mat.ielem[ielem]
+    
+    return mat.ielem[mat.nelem - 1]

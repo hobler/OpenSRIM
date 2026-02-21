@@ -6,7 +6,7 @@ density to the power -1/3.
 
 Available functions:
     setup: setup module variables.
-    get_recoil_position: get the recoil position.
+    get_recoil_position_position: get the recoil position.
 """
 from math import sqrt, sin, cos
 import numpy as np
@@ -22,15 +22,16 @@ def setup(input_params):
     Returns:
         (RECOIL_PARAMS_DTYPE): Recoil parameters
     """
-    density = input_params["layers"]["density"][0]
+    densities = np.array(input_params["layers"]["density"])
+    nlayers = len(densities)
     
     RECOIL_PARAMS_DTYPE = np.dtype([
-        ("pmax", np.float64),
-        ("mean_free_path", np.float64),
+        ("pmax", np.float64, (nlayers,)),
+        ("mean_free_path", np.float64, (nlayers,)),
     ], align=True)
 
     recoil_params = np.recarray(1, dtype=RECOIL_PARAMS_DTYPE)[0]
-    recoil_params["mean_free_path"] = density**(-1/3)
+    recoil_params["mean_free_path"] = densities**(-1/3)
     recoil_params["pmax"] = recoil_params["mean_free_path"] / sqrt(np.pi)
     
     return recoil_params
@@ -38,7 +39,13 @@ def setup(input_params):
 
 @jit
 def get_recoil_position(pos, dir, params):
-    """Get the recoil position based on the projectile position and direction.
+    """Get the recoil hit after the next free flight path.
+
+    The recoil more precisely is a recoil candidate, since it is not guaranteed 
+    that the recoil has enough energy to leave its position.
+
+    The recoil position is determined by a deterministicrandom free path length 
+    and sampling a random impact parameter,
 
     Parameters:
         pos (ndarray): position of the projectile (size 3)
@@ -50,12 +57,12 @@ def get_recoil_position(pos, dir, params):
         (float): impact parameter = distance between collision point and 
             recoil (A)
         (ndarray): direction vector from collision point to recoil (size 3)
-        (ndarray): position of the recoil (A, size 3)
+        (Projectile): the recoil
     """
-    free_path = params.mean_free_path
+    free_path = params.recoil.mean_free_path[0]  # TODO: use the correct layer index
     collision_pos = pos[:] + free_path * dir[:]
 
-    p = params.pmax * sqrt(np.random.rand())
+    p = params.recoil.pmax[0] * sqrt(np.random.rand())  # TODO: use the correct layer index
     # Azimuthal angle fi
     fi = 2 * np.pi * np.random.rand()
     cos_fi = cos(fi)
@@ -79,7 +86,7 @@ def get_recoil_position(pos, dir, params):
     norm = np.linalg.norm(dirp)
     dirp /= norm
 
-    # position of the recoil
+    # recoil properties (except energy and direction)
     recoil_pos = collision_pos[:] + p * dirp[:]
 
-    return free_path, p, dirp[:], recoil_pos[:]
+    return free_path, p, dirp[:], recoil_pos

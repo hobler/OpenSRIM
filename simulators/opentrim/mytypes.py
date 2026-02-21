@@ -8,13 +8,14 @@ PROJ_DTYPE = np.dtype([
     ("pos", np.float64, (3,)),
     ("dir", np.float64, (3,)),
     ("ielem", np.int32),
+    ("ilayer", np.int32),
     ("is_inside", np.bool_)
 ], align=True)
 
 
 # Preserve compatibility with vanilla NumPy (with nuparams.scattermba disabled)
 if os.environ.get("NUMBA_DISABLE_JIT", "") == "1":
-    def Projectile(e, pos, dir, ielem=0, is_inside=True):
+    def Projectile(e, pos, dir, ielem=0, ilayer=0, is_inside=True):
         """Create a single numpy record with initial properties of a Projectile
         
         This implementation is used when Numba is disabled to preserve 
@@ -26,6 +27,7 @@ if os.environ.get("NUMBA_DISABLE_JIT", "") == "1":
             pos (np.ndarray[float]): Current position vector
             dir (np.ndarray[float]): Current direction vector
             ielem (int): Species index. Defaults to 0
+            ilayer (int): Layer index. Defaults to 0
             is_inside (bool): If the projectile is within the simulation area.
                 Defaults to True
         Returns:
@@ -36,11 +38,12 @@ if os.environ.get("NUMBA_DISABLE_JIT", "") == "1":
         rec["pos"] = pos    # copied
         rec["dir"] = dir    # copied
         rec["ielem"] = ielem
+        rec["ilayer"] = ilayer
         rec["is_inside"] = is_inside
         return rec
 else:
     @jit(inline = "always")
-    def Projectile(e, pos, dir, ielem=0, is_inside=True):
+    def Projectile(e, pos, dir, ielem=0, ilayer=0, is_inside=True):
         """Create a single numpy record with initial properties of a Projectile
         
         This implementation is supported by Numba and creates a
@@ -51,6 +54,7 @@ else:
             pos (np.ndarray[float]): Current position vector
             dir (np.ndarray[float]): Current direction vector
             ielem (int): Species index. Defaults to 0
+            ilayer (int): Layer index. Defaults to 0
             is_inside (bool): If the projectile is within the simulation area.
                 Defaults to True
         
@@ -62,6 +66,7 @@ else:
         rec["pos"] = pos    # copied
         rec["dir"] = dir    # copied
         rec["ielem"] = ielem
+        rec["ilayer"] = ilayer
         rec["is_inside"] = is_inside
         return rec
 

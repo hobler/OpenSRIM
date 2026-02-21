@@ -10,7 +10,7 @@ from .mytypes import PROJ_DTYPE
 from .select_recoil import get_recoil_position
 from .scatter import scatter
 from .estop import eloss
-from .geometry import is_inside_target
+from .target import is_inside_target
 from . import stats as statistics
 
 
@@ -35,7 +35,8 @@ def setup():
 
 
 @jit
-def cascade(initial_proj, params, screen_fun, follow_recoils=False, prealloc=400):
+def cascade(initial_proj, params, screen_fun, follow_recoils=False, 
+            prealloc=400):
     """Simulate one projectile trajectory.
     
     Parameters:
@@ -59,7 +60,8 @@ def cascade(initial_proj, params, screen_fun, follow_recoils=False, prealloc=400
     ed = params.cascade.ed
     is_magic = (params.scatter.pot_model == "ZBL_magic")
     stat = params.stat
-    hist = statistics.Histogram_1d(stat.nspec, stat.nbin, (stat.limits[0], stat.limits[1]))
+    hist = statistics.Histogram_1d(stat.nspec, stat.nbin, 
+                                   (stat.limits[0], stat.limits[1]))
     mom = statistics.Moment_1d(stat.nspec, 4)
 
     # Fully simulated projectiles
@@ -80,20 +82,24 @@ def cascade(initial_proj, params, screen_fun, follow_recoils=False, prealloc=400
         recoils_tail = 0
         
         while proj.e > emin:
-            free_path, p, dirp, recoil_pos = get_recoil_position(proj.pos[:], proj.dir[:], params.recoil)
+            free_path, p, dirp, recoil_pos = get_recoil_position(
+                proj.pos[:], proj.dir[:], params.recoil)
             
             dee = eloss(proj, free_path, params.estop)
             proj.e -= dee
             proj.pos += free_path * proj.dir[:]
             
-            if not is_inside_target(proj.pos[:], params.geometry):
+            if not is_inside_target(proj.pos[:], params.target.geometry):
                 proj.is_inside = False
                 break
             
-            recoil_dir, recoil_e = scatter(proj, p, dirp[:], screen_fun, params.scatter, is_magic)        
+            recoil_dir, recoil_e = scatter(proj, p, dirp[:], screen_fun, 
+                                           params.scatter, is_magic)        
             if follow_recoils and recoil_e > ed:
                 if recoils_tail >= recoils.size:
-                    recoils = np.append(recoils, np.empty(int(GROWTH_FACTOR * recoils.size), dtype=PROJ_DTYPE))
+                    recoils = np.append(
+                        recoils, np.empty(int(GROWTH_FACTOR * recoils.size), 
+                                          dtype=PROJ_DTYPE))
                 
                 recoils[recoils_tail].e = recoil_e
                 recoils[recoils_tail].pos[:] = recoil_pos

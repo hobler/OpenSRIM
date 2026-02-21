@@ -5,7 +5,7 @@
 - Calculate derived parameters.
 """
 import numpy as np
-from . import select_recoil
+from . import recoil
 from . import scatter
 from . import cm_scatter
 from . import estop
@@ -197,7 +197,7 @@ def init_params():
 
     nlhlin_coefs = read_coefs()
     
-    recoil_params = select_recoil.setup(input_params)
+    recoil_params = recoil.setup(input_params)
     scatter_params = scatter.setup(input_params, nlhlin_coefs)
     cm_scatter.setup(input_params["models"]["scattering integrals"]["n_absc"])
     estop_params = estop.setup(input_params)

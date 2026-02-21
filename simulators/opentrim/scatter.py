@@ -72,8 +72,8 @@ def scatter(proj, p, dirp, screen_fun, scatter, is_magic):
     dirfac = scatter.dirfac
     denfac = scatter.denfac
     
-    ielem = proj.ielem
-    proj_e = proj.e
+    ielem = proj["ielem"]
+    proj_e = proj["e"]
     if is_magic:
         cos_half_theta = magic(proj_e/enorm[ielem], 
                                p/rnorm[ielem],
@@ -87,18 +87,18 @@ def scatter(proj, p, dirp, screen_fun, scatter, is_magic):
         cos_half_theta = math.cos(0.5 * theta)
 
     # directions of the recoil and the projectile after the collision
-    recoil_dir = dirfac[ielem] * sin_half_theta * (sin_half_theta*proj.dir[:] 
+    recoil_dir = dirfac[ielem] * sin_half_theta * (sin_half_theta*proj["dir"][:] 
                                                  + cos_half_theta*dirp[:])
-    dir_new = proj.dir[:] - recoil_dir[:]
+    dir_new = proj["dir"][:] - recoil_dir[:]
     dir_new = normalize_if_needed(dir_new, proj["dir"][:])
     recoil_dir = normalize_if_needed(recoil_dir, proj["dir"][:])
 
     # Copy dir_new buffer content into proj.dir buffer
-    proj.dir[:] = dir_new
+    proj["dir"][:] = dir_new
 
     # energy after scattering
     recoil_e = denfac[ielem] * proj_e * sin_half_theta**2
-    proj.e -= recoil_e
+    proj["e"] -= recoil_e
 
     return recoil_dir[:], recoil_e
 

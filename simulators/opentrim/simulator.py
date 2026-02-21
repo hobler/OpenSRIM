@@ -47,6 +47,7 @@ def _simulate(nion, params, follow_recoils, sim_idx):
         np.array([0.0, 0.0, 0.0]),     # position (A)
         np.array([0.0, 0.0, 1.0]),     # direction (unit vector)
         0,
+        0,
         True
     )
     proj_dummy_arr = np.empty(1, dtype=PROJ_DTYPE)

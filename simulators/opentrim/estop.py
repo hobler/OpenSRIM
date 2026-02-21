@@ -47,19 +47,20 @@ def setup(input_params):
 
 
 @jit(inline = "always")
-def eloss(proj, free_path, params):
+def eloss(proj, free_path, estop_params):
     """Calculate the electronic energy loss over a given free path length.
 
     Parameters:
         proj (Projectile): state of the projectile before the free flight path
         free_path (float): free path length (A)
-        params (ESTOP_PARAMS_DTYPE): Estop parameters
+        estop_params (ESTOP_PARAMS_DTYPE): Estop parameters
 
     Returns:
         (float): energy loss (eV)
     """
-    dee = params.fac_lindhard[proj.ielem] * params.density * sqrt(proj.e) * free_path
-    if dee > proj.e:
-        dee = proj.e
-
+    dee = (estop_params.fac_lindhard[proj["ielem"]] * estop_params.density 
+           * sqrt(proj["e"]) * free_path)
+    if dee > proj["e"]:
+        dee = proj["e"]
+    
     return dee

@@ -5,11 +5,11 @@
 - Calculate derived parameters.
 """
 import numpy as np
-from . import select_recoil
+from . import recoil
 from . import scatter
 from . import cm_scatter
 from . import estop
-from . import geometry
+from . import target
 from . import cascade
 from . import stats as statistics
 from .nlhlin import read_coefs
@@ -52,9 +52,76 @@ def read_input():
                 "M": [28.086],       # mass of the target atoms (amu)
                 "stoichiometry": [1],   # stoichiometric ratio of the target atoms in the layer
                 "displacement_energy": [15.0],  # displacement energy of the target atoms (eV)
-                }
+                },
             ],
         },
+#
+# The layers part of the TOML file would look something like this:
+#
+# [layers]
+# name = ["Layer 1", ...]
+# width = [4000.0, ...]
+# density = [0.04994, ...]
+# compound_correction = [1.0, ...]
+# gas = [false, ...] 
+#
+# [[layers.material]]
+# symbol = ["Si", ...]
+# name = ["Silicon", ...]
+# Z = [14, ...]
+# M = [28.086, ...]
+# stoichiometry = [1, ...]
+# displacement_energy = [15.0, ...]
+#
+# [[layers.material]]
+# ...
+#
+# TODO: 
+#       "layer": [
+#           {
+#               "name": "Layer 1",
+#               "width": 4000.0,
+#               "density": 0.04994,
+#               "compound correction": 1.0,
+#               "gas": False,
+#               "element": [
+#                   {
+#                       "symbol": "Si",
+#                       "name": "Silicon",
+#                       "Z": 14,
+#                       "M": 28.086,
+#                       "stoichiometry": 1,
+#                       "displacement energy": 15.0,
+#                   },
+#                   ...
+#               ],
+#           },
+#           ...
+#       ],
+#
+# would maybe result in better readability of the TOML file:
+#
+# [[layer]]
+# name = "Layer 1"
+# width = 4000.0
+# density = 0.04994
+# compound_correction = 1.0
+# gas = false
+#
+# [[layer.element]]
+# symbol = "Si"
+# name = "Silicon"
+# Z = 14
+# M = 28.086
+# stoichiometry = 1
+# displacement_energy = 15.0
+#
+# [[layer.element]]
+# ...
+#
+# [[layer]]
+# ...
+#
         "models": {
             "potential": "ZBL",  # potential model for scattering
             "scattering integrals": {
@@ -121,29 +188,27 @@ def init_params():
         (PARAMS_DTYPE): A structured array containing all simulation parameters.
     """
 
-    # Example hardcoded parameters (to be replaced with file input)
-    nspec = 2              # number of species to record (e.g. projectile and first recoil)
-    nbin = 40              # number of bins for depth distribution
-    limits = (0.0, 4000.0) # limits for depth distribution
-
     input_params = read_input()
 
-    nlhlin_coefs = read_coefs()
-    
-    recoil_params = select_recoil.setup(input_params)
-    scatter_params = scatter.setup(input_params, nlhlin_coefs)
+    target_params = target.setup(input_params)
+    estop_params = estop.setup(input_params, target_params.elements)
+    recoil_params = recoil.setup(input_params)
+    scatter_params = scatter.setup(input_params, target_params.elements)
     cm_scatter.setup(input_params["models"]["scattering integrals"]["n_absc"])
-    estop_params = estop.setup(input_params)
-    geometry_params = geometry.setup(input_params)
     cascade_params = cascade.setup()
-    stat_params = statistics.setup(nspec, nbin, limits)  # TODO: use input_params as argument
+
+    # Example hardcoded parameters (to be replaced with file input)
+    nelem = len(target_params.elements)  # number of species to record
+    nbin = 40              # number of bins for depth distribution
+    limits = (0.0, 4000.0) # limits for depth distribution
+    stat_params = statistics.setup(nelem, nbin, limits)  # TODO: use input_params as argument
 
     PARAMS_DTYPE = np.dtype([
         ("rng_seed", np.uint64),    # 64 bits needed for alignment
         ("stat", stat_params.dtype),
         ("cascade", cascade_params.dtype),
         ("recoil", recoil_params.dtype),
-        ("geometry", geometry_params.dtype),
+        ("target", target_params.dtype),
         ("estop", estop_params.dtype),
         ("scatter", scatter_params.dtype),
     ], align=True)
@@ -152,7 +217,7 @@ def init_params():
     params["stat"] = stat_params
     params["cascade"] = cascade_params
     params["recoil"] = recoil_params
-    params["geometry"] = geometry_params
+    params["target"] = target_params
     params["estop"] = estop_params
     params["scatter"] = scatter_params
 

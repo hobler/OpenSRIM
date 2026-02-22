@@ -197,11 +197,12 @@ def init_params():
 
     nlhlin_coefs = read_coefs()
     
+    target_params = target.setup(input_params)
+    estop_params = estop.setup(input_params, target_params.elements)
+
     recoil_params = recoil.setup(input_params)
     scatter_params = scatter.setup(input_params, nlhlin_coefs)
     cm_scatter.setup(input_params["models"]["scattering integrals"]["n_absc"])
-    estop_params = estop.setup(input_params)
-    target_params = target.setup(input_params)
     cascade_params = cascade.setup()
     stat_params = statistics.setup(nspec, nbin, limits)  # TODO: use input_params as argument
 

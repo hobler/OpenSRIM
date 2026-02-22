@@ -91,7 +91,7 @@ def cascade(initial_proj, params, screen_fun, follow_recoils=False,
             free_path, p, dirp, recoil_pos = get_recoil_position(
                 proj["pos"], proj["dir"], params)
             
-            dee = eloss(proj, free_path, params.estop)
+            dee = eloss(proj, free_path, params.estop, params.target.materials)
             proj["e"] -= dee
             #print("dee", dee, "proj.e after eloss", proj["e"])
             proj["pos"] += free_path * proj["dir"]

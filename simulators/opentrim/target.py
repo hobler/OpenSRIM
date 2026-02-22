@@ -152,7 +152,7 @@ def setup(input_params):
             mat["atomic_fractions"])
         materials_params[imat].cumulative_fraction[:mat["nelem"]] = (
             np.cumsum(mat["atomic_fractions"]))
-        materials_params[imat].cumulative_fraction[mat["nelem"]] = 1.0
+        materials_params[imat].cumulative_fraction[mat["nelem"] - 1] = 1.0
         materials_params[imat].displacement_energy[:mat["nelem"]] = (
             mat["displacement_energy"])
 

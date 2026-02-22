@@ -4,8 +4,7 @@ import numpy as np
 from numba import jit, prange
 from . import cascade
 from .mytypes import Projectile, PROJ_DTYPE
-from .nlhlin import NLHlin_screen
-from .zbl import ZBL_screen
+
 
 def simulate(nion, params, follow_recoils=False, sim_idx=0):
     """Perform simulation on given number of projectiles
@@ -24,6 +23,7 @@ def simulate(nion, params, follow_recoils=False, sim_idx=0):
     """
     proj_count, hist_buf, mom_buf = _simulate(nion, params, follow_recoils, sim_idx)
     return proj_count, np.sum(hist_buf, axis=0, dtype=np.int32), np.sum(mom_buf, axis=0, dtype=np.float64)
+
 
 @jit(cache=config.ENABLE_CACHING, parallel=config.PARALLEL, nogil=config.PARALLEL)
 def _simulate(nion, params, follow_recoils, sim_idx):
@@ -53,9 +53,6 @@ def _simulate(nion, params, follow_recoils, sim_idx):
     proj_dummy_arr = np.empty(1, dtype=PROJ_DTYPE)
     proj_sim = [proj_dummy_arr for _ in range(nion)]
     proj_dummy_arr[0] = proj_init
-    z1 = params.scatter.z1
-    z2 = params.scatter.z2
-    nlhlin_coefs = params.scatter.nlhlin_coefs
 
     # Fixes weird Numba error by passing array instead of single record
     params_arr = np.full(1, params)
@@ -65,33 +62,18 @@ def _simulate(nion, params, follow_recoils, sim_idx):
     hist_results = [hist_dummy for _ in range(nion)]
     mom_results = [mom_dummy for _ in range(nion)]
     
-    def _parallel_exec(screen_fun):
-        for i in prange(nion):
-            np.random.seed(params_arr[0].rng_seed + sim_idx + i)
-            proj_sim[i], hist_results[i], mom_results[i] = cascade.cascade(
-                proj_dummy_arr[0], params_arr[0], screen_fun, follow_recoils)
-    
-    # Simulate the trajectories
-    if params.scatter.pot_model == 'NLHlin':
-        screen_fun_nlh = (NLHlin_screen(z1, z2, params.scatter.rnorm[0], nlhlin_coefs),
-                        NLHlin_screen(z2, z2, params.scatter.rnorm[1], nlhlin_coefs))
-        _parallel_exec(screen_fun_nlh)
-
-    elif params.scatter.pot_model == 'ZBL':
-        screen_fun_zbl = (ZBL_screen(z1, z2, params.scatter.rnorm[0], False),
-                        ZBL_screen(z2, z2, params.scatter.rnorm[1], False))
-        _parallel_exec(screen_fun_zbl)
-
-    else:   # Defaults to 'ZBL_magic'
-        screen_fun_magic = (ZBL_screen(z1, z2, params.scatter.rnorm[0], True),
-                        ZBL_screen(z2, z2, params.scatter.rnorm[1], True))
-        _parallel_exec(screen_fun_magic)
+    # Simulate the collision cascades in parallel
+    for i in prange(nion):
+        np.random.seed(params_arr[0].rng_seed + sim_idx + i)
+        proj_sim[i], hist_results[i], mom_results[i] = cascade.cascade(
+            proj_dummy_arr[0], params_arr[0], follow_recoils)
     
     proj_count = 0
     for proj_lst in proj_sim:
         proj_count += proj_lst.size
     
     return proj_count, hist_results, mom_results
+
 
 def simulate_adaptive(avg_chunk_time, nion, *args, **kwargs):
     """Adaptive, chunked simulation with each chunk taking around avg_sim_time seconds
@@ -143,6 +125,7 @@ def simulate_adaptive(avg_chunk_time, nion, *args, **kwargs):
         chunk_size = max(min_chunk_size, new_chunk)
     
     return total_proj_count, total_hist_buf, total_mom_buf
+
 
 def simulate_chunked(chunk_size, nion, *args, **kwargs):
     """Chunked simulation for nion projectiles

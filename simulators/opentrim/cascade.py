@@ -35,16 +35,14 @@ def setup():
     
     return cascade_params
 
-
+# TODO: Make follow_recoils an input parameter, passed via cascade_params
 @jit
-def cascade(initial_proj, params, screen_fun, follow_recoils=False, 
-            prealloc=400):
+def cascade(initial_proj, params, follow_recoils=False, prealloc=400):
     """Simulate one projectile trajectory.
     
     Parameters:
         initial_proj: (Projectile) the initial state of the first projectile
         params: (PARAMS_DTYPE) Simulation parameters
-        screen_fun (object): Screening function
         follow_recoils: (bool) whether to follow recoil trajectories
         prealloc: (int) number of recoil projectiles to pre-allocate space for (for better performance)
         
@@ -89,11 +87,11 @@ def cascade(initial_proj, params, screen_fun, follow_recoils=False,
     
         while proj["e"] > emin:
             free_path, p, dirp, recoil_pos = get_recoil_position(
-                proj["pos"], proj["dir"], params)
+                proj, params.recoil)
             
+            # step projectile forward and update energy
             dee = eloss(proj, free_path, params.estop, params.target.materials)
             proj["e"] -= dee
-            #print("dee", dee, "proj.e after eloss", proj["e"])
             proj["pos"] += free_path * proj["dir"]
             proj["ilayer"] = get_layer_index(proj["pos"], params.target.geometry)
             proj["is_inside"] = is_inside_target(proj["pos"], params.target.geometry)
@@ -101,14 +99,20 @@ def cascade(initial_proj, params, screen_fun, follow_recoils=False,
             if not proj["is_inside"]:
                 break
             
-            recoil_dir, recoil_e = scatter(proj, p, dirp, screen_fun, 
-                                           params.scatter, is_magic)        
-            # TODO: We may want to score the recoil energy even when it is below ed
+            # get chemical element of recoil
+            recoil_ilayer = get_layer_index(recoil_pos, 
+                                            params.target.geometry)
+            recoil_ielem = get_element_index(recoil_ilayer, 
+                                             params.target.materials)
+            
+            # scattering event
+            recoil_dir, recoil_e = scatter(proj, p, dirp, recoil_ielem,
+                                           params.scatter)
+            
+            # Create recoil projectile and add to recoils list
+            # TODO: We may want to score the recoil energy even when it is 
+            # below ed
             if follow_recoils and recoil_e > ed:
-                recoil_ilayer = get_layer_index(recoil_pos, 
-                                                params.target.geometry)
-                recoil_ielem = get_element_index(recoil_ilayer, 
-                                                 params.target.materials)
                 recoil_is_inside = is_inside_target(recoil_pos, 
                                                     params.target.geometry)
 
@@ -116,10 +120,9 @@ def cascade(initial_proj, params, screen_fun, follow_recoils=False,
                     #print("Growing recoils array from size", recoils.size)
                     recoils = np.append(
                         recoils, 
-                        np.empty(int((GROWTH_FACTOR - 1)* recoils.size), 
+                        np.empty(int((GROWTH_FACTOR - 1.0)* recoils.size), 
                                  dtype=PROJ_DTYPE))
                     #print("to size", recoils.size)
-                #print("recoils_tail", recoils_tail, "recoil_e", recoil_e, "recoil_pos", recoil_pos,)
                 recoils[recoils_tail]["e"] = recoil_e
                 recoils[recoils_tail]["pos"] = recoil_pos
                 recoils[recoils_tail]["dir"] = recoil_dir
@@ -130,7 +133,7 @@ def cascade(initial_proj, params, screen_fun, follow_recoils=False,
         
         if lst_tail >= proj_lst.size:
             proj_lst = np.append(
-                proj_lst, np.empty(int(GROWTH_FACTOR * proj_lst.size), 
+                proj_lst, np.empty(int((GROWTH_FACTOR - 1.0) * proj_lst.size), 
                                    dtype=PROJ_DTYPE))
         proj_lst[lst_tail] = proj
         lst_tail += 1

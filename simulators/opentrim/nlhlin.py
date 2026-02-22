@@ -71,7 +71,6 @@ class NLHlin_screen:
         Parameters:
             e (float): energy of projectile before the collision (ENORM)
             p (float): impact parameter (RNORM)
-            screen_fun (object): Screening function
 
         Returns:
             (float): Estimated apsis of the collision (RNORM)

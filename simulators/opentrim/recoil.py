@@ -11,6 +11,7 @@ Available functions:
 from math import sqrt, sin, cos
 import numpy as np
 from numba import jit
+from .mytypes import PROJ_DTYPE
 
 
 def setup(input_params):
@@ -38,31 +39,40 @@ def setup(input_params):
 
 
 @jit
-def get_recoil_position(pos, dir, params):
-    """Get the recoil hit after the next free flight path.
+def get_recoil_position(proj, recoil_params):
+    """Get the position of the recoil hit after the next free flight path.
 
     The recoil more precisely is a recoil candidate, since it is not guaranteed 
     that the recoil has enough energy to leave its position.
 
-    The recoil position is determined by a deterministicrandom free path length 
-    and sampling a random impact parameter,
+    The recoil position is determined by a deterministic free path length 
+    and sampling a random impact parameter.
+
+    We cannot return a recoil structured array here, since Numba apparently 
+    does not allow returning structured arrays from jit functions. Instead, we 
+    return the recoil position as a separate array, and the caller can 
+    construct the recoil structured array if needed.
 
     Parameters:
-        pos (ndarray): position of the projectile (size 3)
-        dir (ndarray): direction vector of the projectile (size 3)
-        params (RECOIL_PARAMS_DTYPE): Recoil parameters
+        proj (Projectile): state of the projectile
+        recoil_params (RECOIL_PARAMS_DTYPE): Recoil parameters
 
     Returns:
         (float): free path length to the next collision (A)
         (float): impact parameter = distance between collision point and 
             recoil (A)
         (ndarray): direction vector from collision point to recoil (size 3)
-        (Projectile): the recoil
+        (ndarray): the recoil position (size 3)
     """
-    free_path = params.recoil.mean_free_path[0]  # TODO: use the correct layer index
+    pos = proj["pos"][:]
+    dir = proj["dir"][:]
+    ilayer = proj["ilayer"]
+    
+    # free flight path and impact parameter
+    free_path = recoil_params.mean_free_path[ilayer]
     collision_pos = pos[:] + free_path * dir[:]
+    p = recoil_params.pmax[ilayer] * sqrt(np.random.rand())
 
-    p = params.recoil.pmax[0] * sqrt(np.random.rand())  # TODO: use the correct layer index
     # Azimuthal angle fi
     fi = 2 * np.pi * np.random.rand()
     cos_fi = cos(fi)
@@ -86,7 +96,7 @@ def get_recoil_position(pos, dir, params):
     norm = np.linalg.norm(dirp)
     dirp /= norm
 
-    # recoil properties (except energy and direction)
+    # recoil position
     recoil_pos = collision_pos[:] + p * dirp[:]
 
     return free_path, p, dirp[:], recoil_pos

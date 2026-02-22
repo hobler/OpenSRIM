@@ -52,7 +52,7 @@ def read_input():
                 "M": [28.086],       # mass of the target atoms (amu)
                 "stoichiometry": [1],   # stoichiometric ratio of the target atoms in the layer
                 "displacement_energy": [15.0],  # displacement energy of the target atoms (eV)
-                }
+                },
             ],
         },
 #
@@ -188,23 +188,20 @@ def init_params():
         (PARAMS_DTYPE): A structured array containing all simulation parameters.
     """
 
-    # Example hardcoded parameters (to be replaced with file input)
-    nspec = 2              # number of species to record (e.g. projectile and first recoil)
-    nbin = 40              # number of bins for depth distribution
-    limits = (0.0, 4000.0) # limits for depth distribution
-
     input_params = read_input()
 
-    nlhlin_coefs = read_coefs()
-    
     target_params = target.setup(input_params)
     estop_params = estop.setup(input_params, target_params.elements)
-
     recoil_params = recoil.setup(input_params)
-    scatter_params = scatter.setup(input_params, nlhlin_coefs)
+    scatter_params = scatter.setup(input_params, target_params.elements)
     cm_scatter.setup(input_params["models"]["scattering integrals"]["n_absc"])
     cascade_params = cascade.setup()
-    stat_params = statistics.setup(nspec, nbin, limits)  # TODO: use input_params as argument
+
+    # Example hardcoded parameters (to be replaced with file input)
+    nelem = len(target_params.elements)  # number of species to record
+    nbin = 40              # number of bins for depth distribution
+    limits = (0.0, 4000.0) # limits for depth distribution
+    stat_params = statistics.setup(nelem, nbin, limits)  # TODO: use input_params as argument
 
     PARAMS_DTYPE = np.dtype([
         ("rng_seed", np.uint64),    # 64 bits needed for alignment

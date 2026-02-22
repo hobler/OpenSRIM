@@ -11,6 +11,7 @@ from numba.experimental import jitclass
 import numpy as np
 from .table1d import Table1D
 
+
 @jitclass
 class Apsis:
     """Calculate apsis of collision for arbitrary screening function.

@@ -13,7 +13,8 @@ from numba.core.types import UniTuple
 import numpy as np
 from numba.experimental import jitclass
 from numba.extending import overload, register_jitable
-from numba import int32, float64, jit
+from numba import int32, float64, jit, from_dtype
+from .mytypes import HIST_CONFIG_DTYPE, create_histogram_configs
 
 
 mom = None
@@ -126,7 +127,6 @@ class Moment_1d:
         self._mom = new
 
 
-
     def central_moments(self):
         """Compute central moments up to order 2*nmax."""
         self.count = self._mom[:,0]
@@ -175,53 +175,90 @@ class Moment_1d:
 
 @jitclass(spec = [
     ("nvar", int32),
-    ("nbin", int32),
-    ("limits", UniTuple(float64, 2)),
-    ("counts", int32[:,:]),
-    ("bin_width", float64)
+    ("n_hist", int32),
+    ("hist_configs", from_dtype(HIST_CONFIG_DTYPE)[:]),
+    ("flat_counts", int32[:]),
+    ("total_counts_size", int32)
 ])
 class Histogram_1d:
-    """Calculate 1D histograms.
+    """Calculate multiple 1D histograms with different parameters.
 
     To calculate histograms, create an instance of this class with the
-    desired number of variables, number of bins, and limits. Score data points
-    using the score() method. The histogram counts can be accessed via the 
-    "counts" attribute.
+    desired number of variables, and an array of histogram configurations.
+    Score data points using the score() method, which updates all histogram
+    buffers simultaneously. Individual histogram counts can be extracted
+    using the get_histogram_counts() method.
     
+    This class supports multiple histogram buffers with different binning
+    schemes and limits while maintaining Numba JIT cache compatibility.
+
     Attributes:
         nvar (int): number variables for which histograms are desired
-        nbin (int): number of bins
-        limits (tuple[float]): (min, max) limits of the histogram (size 2)
-        counts (ndarray[int]): counts per bin including 
-            underflow and overflow bins (shape (nvar,nbin+2))
-        results: (ndarray[float]) A public getter / setter for `counts`
-        bin_width (float): width of each bin
+        n_hist (int): number of histogram configurations
+        hist_configs (ndarray): structured array of histogram configurations
+        flat_counts (ndarray[int]): flattened counts for all histograms
     """
-    def __init__(self, nvar, nbin, limits):
+    def __init__(self, nvar, hist_configs):
         self.nvar = nvar
-        self.nbin = nbin
-        self.limits = limits
-        self.bin_width = (self.limits[1] - self.limits[0]) / self.nbin
-        self.counts = np.zeros((nvar, nbin+2), dtype=np.int32)
+        self.n_hist = len(hist_configs)
+        self.hist_configs = hist_configs
+        self.total_counts_size = hist_configs["counts_size"].sum()
+        self.flat_counts = np.zeros(self.total_counts_size, dtype=np.int32)
 
     def score(self, ivar, value):
-        """Score a new data point to the histogram of variable ivar."""
-        if value < self.limits[0]:
-            ibin = 0                # underflow bin
-        elif value >= self.limits[1]:
-            ibin = -1               # overflow bin
-        else:
-            ibin = int((value - self.limits[0]) / self.bin_width) + 1
+        """Score a new data point into ALL histogram buffers.
         
-        self.counts[ivar,ibin] += 1
+        Parameters:
+            ivar: Variable index (species)
+            value: Data point value to score
+        """
+        for ihist in range(self.n_hist):
+            config = self.hist_configs[ihist]
+            nbin = config["nbin"]
+            limits_min = config["limits_min"]
+            limits_max = config["limits_max"]
+            bin_width = config["bin_width"]
+            offset = config["offset"]
+            
+            # Calculate bin index
+            if value < limits_min:
+                ibin = 0
+            elif value >= limits_max:
+                ibin = -1
+            else:
+                ibin = int((value - limits_min) / bin_width) + 1
+            
+            # Calculate index in flattened array
+            flat_idx = offset + ivar * (nbin + 2) + ibin
+            if ibin == -1:
+                flat_idx = offset + ivar * (nbin + 2) + (nbin + 1)
+            
+            self.flat_counts[flat_idx] += 1
+    
+    def get_histogram_counts(self, ihist):
+        """Extract counts for a specific histogram.
+        
+        Parameters:
+            ihist: Histogram index (0 to n_hist-1)
+        
+        Returns:
+            np.ndarray: Counts of shape (nvar, nbin+2) for the specified histogram
+        """
+        config = self.hist_configs[ihist]
+        offset = config["offset"]
+        nbin = config["nbin"]
+        counts_size = config["counts_size"]
+        
+        counts = self.flat_counts[offset:offset+counts_size].copy()
+        return counts.reshape(self.nvar, nbin + 2)
     
     @property
     def results(self):
-        return self.counts
+        return self.flat_counts
         
     @results.setter
     def results(self, new):
-        self.counts = new
+        self.flat_counts = new
 
 
 def setup(nspec, nbin, limits):
@@ -230,18 +267,12 @@ def setup(nspec, nbin, limits):
     Parameters:
         nspec(int): number of atom species
         nbin (int): number of bins
-        limits (tuple[float]): (min, max) limits of the histogram (size 2)
+        limits (float[2]): [min, max] limits of the histogram (size 2)
 
     Returns:
         (STAT_PARAMS_DTYPE): Statistics parameters
     """
     global mom, hist
-
-    #nspec = 1
-    #for material in input_params["layers"]["material"]:
-    #    nspec += len(material["symbol"])
-    #nbin = input_params["output"]["depth distribution"]["nbins"]
-    #limits = input_params["output"]["depth distribution"]["limits"]
 
     STAT_PARAMS_DTYPE = np.dtype([
         ("nspec", np.int32),
@@ -254,9 +285,16 @@ def setup(nspec, nbin, limits):
     stat_params["nbin"] = nbin
     stat_params["limits"] = np.array(limits)
 
+    # Create single histogram configuration for backward compatibility
+    hist_configs, flat_size = create_histogram_configs(
+        np.array([nbin], dtype=np.int32),
+        np.array([limits[0]], dtype=np.float64),
+        np.array([limits[1]], dtype=np.float64),
+        nspec
+    )
 
     mom = Moment_1d(nvar=nspec, nmax=4)
-    hist = Histogram_1d(stat_params.nspec, stat_params.nbin, (stat_params.limits[0], stat_params.limits[1]))
+    hist = Histogram_1d(nspec, hist_configs)
     
     mom.central_moments()
     mom.mean()
@@ -298,15 +336,22 @@ def print_results():
 
 
 def plot_results(log=False):
-    """Plot the histogram using matplotlib."""
+    """Plot the histogram using matplotlib.
+    
+    For multiple histograms, this will plot all configurations.
+    """
     import matplotlib.pyplot as plt
     assert hist is not None
 
-    for ivar in range(hist.nvar):
-        plt.stairs(hist.counts[ivar,1:-1],
-                   edges=np.linspace(hist.limits[0], hist.limits[1], 
-                                     hist.nbin+1),
-                   label=f"Species {ivar}")
+    for ihist in range(hist.n_hist):
+        for ivar in range(hist.nvar):
+            counts = hist.get_histogram_counts(ihist)
+            config = hist.hist_configs[ihist]
+            
+            plt.stairs(counts[ivar,1:-1],
+                      edges=np.linspace(config["limits_min"], config["limits_max"], 
+                                        config["nbin"]+1),
+                      label=f"Species {ivar}, Hist {ihist}")
     if log:
         plt.yscale("log")
     plt.xlabel("Penetration depth (A)")

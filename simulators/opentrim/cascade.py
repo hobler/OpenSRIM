@@ -60,9 +60,7 @@ def cascade(initial_proj, params, hist_configs, screen_fun, follow_recoils=False
     ed = params.cascade.ed
     is_magic = (params.scatter.pot_model == "ZBL_magic")
     stat = params.stat
-    hist_flat_size = hist_configs["counts_size"].sum()
-    
-    hist = statistics.Histogram_1d(stat.nspec, hist_configs, hist_flat_size)
+    hist = statistics.Histogram_1d(stat.nspec, hist_configs)
     mom = statistics.Moment_1d(stat.nspec, 4)
 
     # Fully simulated projectiles

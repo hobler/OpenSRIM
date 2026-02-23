@@ -3,16 +3,19 @@ from . import config
 import numpy as np
 from numba import jit, prange
 from . import cascade
-from .mytypes import Projectile, PROJ_DTYPE
+from .mytypes import Projectile, PROJ_DTYPE, HIST_CONFIG_DTYPE, create_histogram_configs
 from .nlhlin import NLHlin_screen
 from .zbl import ZBL_screen
 
-def simulate(nion, params, follow_recoils=False, sim_idx=0):
+
+def simulate(nion, params, hist_configs=None, follow_recoils=False, sim_idx=0):
     """Perform simulation on given number of projectiles
     
     Parameters:
         nion: (int) Total number of projectiles to simulate
         params: (PARAMS_DTYPE) Simulation parameters
+        hist_configs: (ndarray) Structured array of histogram configurations.
+                     If None, creates single histogram from params.stat
         follow_recoils: (bool) If the simulation should be performed for recoils aswell
         sim_idx: (int) Simulation index (for chunked simulations)
         
@@ -22,25 +25,47 @@ def simulate(nion, params, follow_recoils=False, sim_idx=0):
             Result buffers for `Histogram_1d` class,
             Result buffers for `Moments_1d` class
     """
-    proj_count, hist_buf, mom_buf = _simulate(nion, params, follow_recoils, sim_idx)
-    return proj_count, np.sum(hist_buf, axis=0, dtype=np.int32), np.sum(mom_buf, axis=0, dtype=np.float64)
+    # Create default histogram configuration if not provided
+    hist_config_was_none = hist_configs is None
+    if hist_config_was_none:
+        hist_configs, _ = create_histogram_configs(
+            np.array([params.stat.nbin], dtype=np.int32),
+            np.array([params.stat.limits[0]], dtype=np.float64),
+            np.array([params.stat.limits[1]], dtype=np.float64),
+            params.stat.nspec
+        )
+    assert hist_configs is not None
+    
+    proj_count, flat_hist_buf_list, mom_buf_list = _simulate(
+        nion, params, hist_configs, follow_recoils, sim_idx
+    )
+    
+    # Aggregate histogram buffers across all projectiles
+    flat_hist_aggregated = np.sum(flat_hist_buf_list, axis=0, dtype=np.int32)
+    mom_aggregated = np.sum(mom_buf_list, axis=0, dtype=np.float64)
+    
+    return proj_count, flat_hist_aggregated, mom_aggregated
 
 @jit(cache=config.ENABLE_CACHING, parallel=config.PARALLEL, nogil=config.PARALLEL)
-def _simulate(nion, params, follow_recoils, sim_idx):
+def _simulate(nion, params, hist_configs, follow_recoils, sim_idx):
     """Perform simulation on given number of projectiles
     
     Parameters:
         nion: (int) Total number of projectiles to simulate
-        sim_params_tup: (tuple) Simulation parameters (provided by `SimParams.to_tuple()`)
+        params: (PARAMS_DTYPE) Simulation parameters
+        hist_configs: (ndarray) Structured array of histogram configurations
         follow_recoils: (bool) If the simulation should be performed for recoils aswell
         sim_idx: (int) Simulation index (for chunked simulations)
         
     Returns:
-        tuple[int, list[np.ndarray], list[np.ndarray]]:
-            Total number of simulated projectiles,
-            List of result buffers for `Histogram_1d` class (for each `nion`),
-            List of result buffers for `Moments_1d` class (for each `nion`)
+         tuple[int, np.ndarray, np.ndarray]:
+             Total number of simulated projectiles,
+             2D array of flattened histogram result buffers (shape: nion x flat_counts_size),
+             2D array of moment result buffers (shape: nion x mom_size)
     """
+    # Calculate total buffer size for histograms
+    flat_counts_size = hist_configs["counts_size"].sum()
+    
     # Initial conditions of the projectile
     proj_init = Projectile(
         50000.0,                         # energy (eV)
@@ -52,6 +77,8 @@ def _simulate(nion, params, follow_recoils, sim_idx):
     proj_dummy_arr = np.empty(1, dtype=PROJ_DTYPE)
     proj_sim = [proj_dummy_arr for _ in range(nion)]
     proj_dummy_arr[0] = proj_init
+    proj_sim = [proj_dummy_arr for _ in range(nion)]
+    
     z1 = params.scatter.z1
     z2 = params.scatter.z2
     nlhlin_coefs = params.scatter.nlhlin_coefs
@@ -59,16 +86,20 @@ def _simulate(nion, params, follow_recoils, sim_idx):
     # Fixes weird Numba error by passing array instead of single record
     params_arr = np.full(1, params)
     
-    hist_dummy = np.empty((1, 1), dtype=np.int32)
-    mom_dummy = np.empty((1, 1), dtype=np.float64)
-    hist_results = [hist_dummy for _ in range(nion)]
-    mom_results = [mom_dummy for _ in range(nion)]
+    # Pre-allocate 2D arrays for histogram and moment results (fixes Numba type inference)
+    mom_size = params.stat.nspec * 9  # nvar * (2*nmax+1)
+    hist_results_2d = np.zeros((nion, flat_counts_size), dtype=np.int32)
+    mom_results_2d = np.zeros((nion, mom_size), dtype=np.float64)
     
     def _parallel_exec(screen_fun):
-        for i in prange(nion):
+        for i in prange(nion):  # ty:ignore[not-iterable]
             np.random.seed(params_arr[0].rng_seed + sim_idx + i)
-            proj_sim[i], hist_results[i], mom_results[i] = cascade.cascade(
-                proj_dummy_arr[0], params_arr[0], screen_fun, follow_recoils)
+            proj_sim[i], hist_flat, mom_flat = cascade.cascade(
+                proj_dummy_arr[0], params_arr[0], hist_configs, screen_fun, follow_recoils)
+            
+            # Store histogram and moment results in pre-allocated 2D arrays
+            hist_results_2d[i, :] = hist_flat.reshape(flat_counts_size)
+            mom_results_2d[i, :] = mom_flat.reshape(mom_size)
     
     # Simulate the trajectories
     if params.scatter.pot_model == 'NLHlin':
@@ -90,7 +121,7 @@ def _simulate(nion, params, follow_recoils, sim_idx):
     for proj_lst in proj_sim:
         proj_count += proj_lst.size
     
-    return proj_count, hist_results, mom_results
+    return proj_count, hist_results_2d, mom_results_2d
 
 def simulate_adaptive(avg_chunk_time, nion, *args, **kwargs):
     """Adaptive, chunked simulation with each chunk taking around avg_sim_time seconds

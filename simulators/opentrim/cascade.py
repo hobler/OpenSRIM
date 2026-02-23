@@ -35,12 +35,13 @@ def setup():
 
 
 @jit
-def cascade(initial_proj, params, screen_fun, follow_recoils=False, prealloc=400):
+def cascade(initial_proj, params, hist_configs, screen_fun, follow_recoils=False, prealloc=400):
     """Simulate one projectile trajectory.
     
     Parameters:
         initial_proj: (Projectile) the initial state of the first projectile
         params: (PARAMS_DTYPE) Simulation parameters
+        hist_configs: (ndarray[HIST_CONFIGS_DTYPE]) Structured array of histogram configurations
         screen_fun (object): Screening function
         follow_recoils: (bool) whether to follow recoil trajectories
         prealloc: (int) number of recoil projectiles to pre-allocate space for (for better performance)
@@ -48,8 +49,8 @@ def cascade(initial_proj, params, screen_fun, follow_recoils=False, prealloc=400
     Returns:
         tuple[ndarray[Projectile], ndarray[int32], ndarray[float64]]:
             list of final projectile states,
-            results buffer of Histogram_1d class,
-            results buffer of Moment_1d class
+            flattened results buffer for Histogram_1d class,
+            results buffer for Moment_1d class
     """
     GROWTH_FACTOR = 1.5
     INITIAL_STACK_SIZE = 100
@@ -59,7 +60,9 @@ def cascade(initial_proj, params, screen_fun, follow_recoils=False, prealloc=400
     ed = params.cascade.ed
     is_magic = (params.scatter.pot_model == "ZBL_magic")
     stat = params.stat
-    hist = statistics.Histogram_1d(stat.nspec, stat.nbin, (stat.limits[0], stat.limits[1]))
+    hist_flat_size = hist_configs["counts_size"].sum()
+    
+    hist = statistics.Histogram_1d(stat.nspec, hist_configs, hist_flat_size)
     mom = statistics.Moment_1d(stat.nspec, 4)
 
     # Fully simulated projectiles

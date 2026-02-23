@@ -65,3 +65,49 @@ else:
         rec["is_inside"] = is_inside
         return rec
 
+
+HIST_CONFIG_DTYPE = np.dtype([
+    ("nbin", np.int32),
+    ("limits_min", np.float64),
+    ("limits_max", np.float64),
+    ("bin_width", np.float64),
+    ("offset", np.int32),
+    ("counts_size", np.int32)
+], align=True)
+
+
+@jit(nopython=True)
+def create_histogram_configs(nbin_list, limits_min_list, limits_max_list, nvar):
+    """
+    Create structured array of histogram configurations.
+    
+    Parameters:
+        nbin_list: Array of integers, number of bins per histogram
+        limits_min_list: Array of minimum limits per histogram
+        limits_max_list: Array of maximum limits per histogram
+        nvar: Number of variables (species)
+    
+    Returns:
+        tuple: (configs, total_size)
+            configs: Structured array of configurations
+            total_size: Total size of flattened counts array
+    """
+    n_hist = len(nbin_list)
+    configs = np.zeros(n_hist, dtype=HIST_CONFIG_DTYPE)
+    
+    offset = 0
+    for i in range(n_hist):
+        nbin = nbin_list[i]
+        lmin = limits_min_list[i]
+        lmax = limits_max_list[i]
+        
+        configs[i]["nbin"] = nbin
+        configs[i]["limits_min"] = lmin
+        configs[i]["limits_max"] = lmax
+        configs[i]["bin_width"] = (lmax - lmin) / nbin
+        configs[i]["offset"] = offset
+        configs[i]["counts_size"] = nvar * (nbin + 2)
+        offset += configs[i]["counts_size"]
+    
+    return configs, offset
+

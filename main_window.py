@@ -5,13 +5,15 @@ import os
 import sys
 from typing import Optional, Callable
 
-from PyQt6.QtCore import Qt, QTimer, QObject, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, QObject, QEvent, pyqtSignal, QLocale
+from PyQt6.QtGui import QKeyEvent
 from PyQt6.QtWidgets import (
     QMainWindow,
     QTabWidget,
     QFileDialog,
     QInputDialog,
     QMessageBox,
+    QApplication,
 )
 
 # Support BOTH:
@@ -53,9 +55,34 @@ class _LogBridge(QObject):
         self.message.connect(handler)
 
 
+class _CommaToDotFilter(QObject):
+    """Application-wide event filter that replaces comma key presses with dots
+    in ALL widgets (QLineEdit, QSpinBox, QDoubleSpinBox, QTableWidget editors, etc.)."""
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.KeyPress:
+            try:
+                text = event.text()
+            except Exception:
+                text = ""
+            if text == ",":
+                dot_event = QKeyEvent(
+                    QEvent.Type.KeyPress,
+                    Qt.Key.Key_Period,
+                    event.modifiers(),
+                    ".",
+                )
+                QApplication.sendEvent(obj, dot_event)
+                return True
+        return False
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        # Force dot as decimal separator globally (independent of OS locale).
+        QLocale.setDefault(QLocale(QLocale.Language.C))
+
         self.setWindowTitle("KORAL / MC Simulation")
 
         self.state = AppState()
@@ -104,6 +131,11 @@ class MainWindow(QMainWindow):
         self._on_tab_changed(self.tab_widget.currentIndex())
 
         self._apply_startup_geometry()
+
+        self._comma_filter = _CommaToDotFilter(self)
+        app = QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self._comma_filter)
 
         self._log_bridge = _LogBridge(self._on_page_log, parent=self)
         subscribe_logs(self._receive_external_log)
@@ -299,6 +331,9 @@ class MainWindow(QMainWindow):
 def main():
     import sys
     from PyQt6.QtWidgets import QApplication
+    from PyQt6.QtCore import QLocale
+
+    QLocale.setDefault(QLocale(QLocale.Language.C))
 
     app = QApplication(sys.argv)
     win = MainWindow()

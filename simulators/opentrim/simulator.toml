@@ -1,0 +1,15 @@
+format_version = 1
+
+id = "opentrim"
+display_name = "OpenTRIM"
+simulator_kind = "mc"
+is_mc = true
+
+# High-level capability hints (currently informational)
+supported_outputs = [
+  "trajectories",
+  "range_distributions",
+  "lateral_distributions",
+  "backscattered",
+  "transmitted",
+]

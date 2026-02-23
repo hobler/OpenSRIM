@@ -164,17 +164,18 @@ class MCSetupPage(QWidget):
 
         layers = []
         layer_rows = max(self.layers_table.rowCount() - 1, 0) if hasattr(self, "layers_table") else 0
+        global_width_unit = self.width_unit_combo.currentText() if hasattr(self, "width_unit_combo") else ""
+        global_density_unit = self.density_unit_combo.currentText() if hasattr(self, "density_unit_combo") else "g/cm³"
         for row in range(layer_rows):
-            unit_widget = self.layers_table.cellWidget(row, 3)
-            unit = unit_widget.currentText() if isinstance(unit_widget, QComboBox) else ""
             gas_widget = self.layers_table.cellWidget(row, 6)
             gas_checkbox = gas_widget.findChild(QCheckBox) if gas_widget else None
             entries = self.layer_elements[row] if row < len(self.layer_elements) else []
             layer = {
                 "name": (self.layers_table.item(row, 1).text() if self.layers_table.item(row, 1) else ""),
                 "width": (self.layers_table.item(row, 2).text() if self.layers_table.item(row, 2) else ""),
-                "unit": unit,
+                "unit": global_width_unit,
                 "density": (self.layers_table.item(row, 4).text() if self.layers_table.item(row, 4) else ""),
+                "density_unit": global_density_unit,
                 "compound_corr": (self.layers_table.item(row, 5).text() if self.layers_table.item(row, 5) else ""),
                 "gas": gas_checkbox.isChecked() if gas_checkbox else False,
                 "elements": [
@@ -250,6 +251,21 @@ class MCSetupPage(QWidget):
         layers = payload.get("layers") or []
         self.layers_table.setRowCount(0)
         self.layer_elements = []
+
+        # Set global unit combos from the first layer's data (if available).
+        if layers:
+            first = layers[0]
+            if hasattr(self, "width_unit_combo"):
+                unit = first.get("unit", "Ång")
+                idx = self.width_unit_combo.findText(unit)
+                if idx >= 0:
+                    self.width_unit_combo.setCurrentIndex(idx)
+            if hasattr(self, "density_unit_combo"):
+                dunit = first.get("density_unit", "g/cm³")
+                didx = self.density_unit_combo.findText(dunit)
+                if didx >= 0:
+                    self.density_unit_combo.setCurrentIndex(didx)
+
         for idx, layer_data in enumerate(layers):
             self.layers_table.insertRow(idx)
             self.seed_layer_row(idx)
@@ -310,11 +326,8 @@ class MCSetupPage(QWidget):
                 continue
             self.layers_table.setItem(row, col, QTableWidgetItem(str(data.get(key, ""))))
 
-        unit_widget = self.layers_table.cellWidget(row, 3)
-        if isinstance(unit_widget, QComboBox):
-            idx = unit_widget.findText(data.get("unit", "Ång"))
-            if idx >= 0:
-                unit_widget.setCurrentIndex(idx)
+        # Apply global width unit from first layer's data (done once in apply_simulation_config).
+        # No per-row unit widget needed anymore.
 
         gas_widget = self.layers_table.cellWidget(row, 6)
         gas_checkbox = gas_widget.findChild(QCheckBox) if gas_widget else None
@@ -383,6 +396,7 @@ class MCSetupPage(QWidget):
         grid.addWidget(QLabel("Atomic Number"), 0, 3, Qt.AlignmentFlag.AlignLeft)
         grid.addWidget(QLabel("Mass (amu)"), 0, 4, Qt.AlignmentFlag.AlignLeft)
         grid.addWidget(QLabel("Energy (keV)"), 0, 5, Qt.AlignmentFlag.AlignLeft)
+        grid.addWidget(QLabel("Tilt (°)"), 0, 6, Qt.AlignmentFlag.AlignLeft)
 
         self.ion_symbol = QLineEdit()
         self.ion_symbol.setReadOnly(True)
@@ -421,23 +435,26 @@ class MCSetupPage(QWidget):
         self.ion_energy.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         grid.addWidget(self.ion_energy, 1, 5, Qt.AlignmentFlag.AlignLeft)
 
-        # Advanced: angle of incidence moved to Advanced Options
+        # Tilt (angle of incidence) — visible next to Energy
         self.ion_angle = QDoubleSpinBox()
         self.ion_angle.setRange(0.0, 90.0)
         self.ion_angle.setDecimals(1)
         self.ion_angle.setSuffix(" °")
         self.ion_angle.setValue(0.0)
+        self.ion_angle.setMaximumWidth(120)
+        self.ion_angle.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        grid.addWidget(self.ion_angle, 1, 6, Qt.AlignmentFlag.AlignLeft)
 
         ion_settings_btn = QToolButton(box)
         ion_settings_btn.setText("⚙")
         ion_settings_btn.setToolTip("Open ion advanced options")
         ion_settings_btn.clicked.connect(lambda: self.advanced_requested.emit("ion_selection_mc"))
-        grid.addWidget(ion_settings_btn, 1, 6, Qt.AlignmentFlag.AlignLeft)
+        grid.addWidget(ion_settings_btn, 1, 7, Qt.AlignmentFlag.AlignLeft)
 
         # Force extra horizontal space to the far right (keeps fields packed on the left)
-        for c in range(0, 7):
+        for c in range(0, 8):
             grid.setColumnStretch(c, 0)
-        grid.setColumnStretch(7, 1)
+        grid.setColumnStretch(8, 1)
         v.addLayout(grid)
         return box
 
@@ -482,8 +499,9 @@ class MCSetupPage(QWidget):
         # Extra last row is reserved for the "Add layer" action.
         self.layers_table = QTableWidget(2, 7)
         self.layers_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.layers_table.setHorizontalHeaderLabels(["", "Layer", "Width", "Units", "Density (g/cm³)", "Compound Corr", "Gas"])
-        self.layers_table.setHorizontalHeader(_WrapHeaderView(self.layers_table))
+        self.layers_table.setHorizontalHeaderLabels(["", "Layer", "Width", "", "Density", "Compound Corr", "Gas"])
+        layers_hdr = _WrapHeaderView(self.layers_table)
+        self.layers_table.setHorizontalHeader(layers_hdr)
         hdr = self.layers_table.horizontalHeader()
         hdr.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         try:
@@ -491,10 +509,23 @@ class MCSetupPage(QWidget):
         except Exception:
             pass
         self.layers_table.setColumnWidth(0, 28)
+        # Hide the old per-row "Units" column (col 3) — unit is now in the Width header.
+        self.layers_table.setColumnHidden(3, True)
         self.layers_table.verticalHeader().setVisible(False)
         self.layers_table.setAlternatingRowColors(True)
         self.layers_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.layers_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
+        # Embed unit combo boxes directly inside the header cells
+        self.width_unit_combo = QComboBox()
+        self.width_unit_combo.addItems(self.state.unit_options)
+        self.width_unit_combo.setCurrentText("Ång")
+        layers_hdr.set_header_widget(2, self.width_unit_combo)  # "Width" column
+
+        self.density_unit_combo = QComboBox()
+        self.density_unit_combo.addItems(["g/cm³", "kg/m³", "atoms/cm³"])
+        self.density_unit_combo.setCurrentText("g/cm³")
+        layers_hdr.set_header_widget(4, self.density_unit_combo)  # "Density" column
 
         self.seed_layer_row(0)
         self._ensure_layers_action_row()
@@ -570,8 +601,7 @@ class MCSetupPage(QWidget):
 
         self.layers_table.setItem(r, 1, QTableWidgetItem(f"Layer {r + 1}"))
         self.layers_table.setItem(r, 2, QTableWidgetItem("10000" if r == 0 else ""))
-        unit_combo = QComboBox(); unit_combo.addItems(self.state.unit_options); unit_combo.setCurrentText("Ång")
-        self.layers_table.setCellWidget(r, 3, unit_combo)
+        # Column 3 (units) is hidden; global unit combo is used instead.
         self.layers_table.setItem(r, 4, QTableWidgetItem("1.0" if r == 0 else ""))
         self.layers_table.setItem(r, 5, QTableWidgetItem("0"))
         gas_chk = QCheckBox()
@@ -874,112 +904,64 @@ class MCSetupPage(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
 
-        # Use a grid with “invisible” columns:
-        #   col 0 = section label
-        #   col 1 = options (checkboxes)
-        #   col 2 = right-side actions (working directory)
         content = QWidget(scroll)
         grid = QGridLayout(content)
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(12)
         grid.setVerticalSpacing(8)
-        # Layout: left column (main output groups) + right column (back/trans) + actions.
-        grid.setColumnStretch(0, 3)
-        grid.setColumnStretch(1, 2)
-        grid.setColumnStretch(2, 1)
 
-        def _opts_row(*checkboxes: QCheckBox) -> QWidget:
-            w = QWidget(content)
-            h = QHBoxLayout(w)
-            h.setContentsMargins(0, 0, 0, 0)
-            h.setSpacing(10)
-            for cb in checkboxes:
-                h.addWidget(cb)
-            h.addStretch(1)
-            return w
+        # Columns: 0=left label, 1-3=left checkboxes, 4=separator, 5=right label, 6-7=right checkboxes, 8=actions
+        grid.setColumnStretch(3, 1)    # push left group tight
+        grid.setColumnStretch(4, 0)    # separator
+        grid.setColumnStretch(8, 1)    # push right group tight
 
-        def _label_opts_row(label_text: str, *checkboxes: QCheckBox) -> QWidget:
-            w = QWidget(content)
-            h = QHBoxLayout(w)
-            h.setContentsMargins(0, 0, 0, 0)
-            h.setSpacing(10)
-            h.addWidget(QLabel(label_text, w))
-            for cb in checkboxes:
-                h.addWidget(cb)
-            h.addStretch(1)
-            return w
-
-        # Right-side action button placed in its own (third) column.
+        # Right-side action button.
         set_wd_btn = QPushButton("Set working directory", content)
         set_wd_btn.setToolTip("Select the working directory used for outputs")
         set_wd_btn.clicked.connect(self._choose_working_directory)
 
-        # Row 0
+        # --- Row 0: Trajectories (left) | working directory button (right) ---
         self.chk_traj_start = QCheckBox("Start")
         self.chk_traj_end = QCheckBox("End")
         self.chk_traj_coll = QCheckBox("Collisions")
-        grid.addWidget(
-            _label_opts_row("Trajectories:", self.chk_traj_start, self.chk_traj_end, self.chk_traj_coll),
-            0,
-            0,
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
-        )
+        grid.addWidget(QLabel("Trajectories:"), 0, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        grid.addWidget(self.chk_traj_start, 0, 1, Qt.AlignmentFlag.AlignLeft)
+        grid.addWidget(self.chk_traj_end, 0, 2, Qt.AlignmentFlag.AlignLeft)
+        grid.addWidget(self.chk_traj_coll, 0, 3, Qt.AlignmentFlag.AlignLeft)
+        grid.addWidget(set_wd_btn, 0, 5, 1, 4, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
 
-        self.chk_backscattered_energy = QCheckBox("Energy")
-        self.chk_backscattered_angle = QCheckBox("Angle")
-        grid.addWidget(
-            _label_opts_row("Backscattered:", self.chk_backscattered_energy, self.chk_backscattered_angle),
-            0,
-            1,
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
-        )
-        grid.addWidget(set_wd_btn, 0, 2, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
-
-        # Row 1
+        # --- Row 1: Range Distributions (left) | Backscattered (right) ---
         self.chk_range_ion_recoil = QCheckBox("Ion/Recoil")
         self.chk_range_phonons = QCheckBox("Phonons")
         self.chk_range_ionization = QCheckBox("Ionization")
-        grid.addWidget(
-            _label_opts_row(
-                "Range Distributions:",
-                self.chk_range_ion_recoil,
-                self.chk_range_phonons,
-                self.chk_range_ionization,
-            ),
-            1,
-            0,
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
-        )
+        grid.addWidget(QLabel("Range Distributions:"), 1, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        grid.addWidget(self.chk_range_ion_recoil, 1, 1, Qt.AlignmentFlag.AlignLeft)
+        grid.addWidget(self.chk_range_phonons, 1, 2, Qt.AlignmentFlag.AlignLeft)
+        grid.addWidget(self.chk_range_ionization, 1, 3, Qt.AlignmentFlag.AlignLeft)
 
-        self.chk_transmitted_energy = QCheckBox("Energy")
-        self.chk_transmitted_angle = QCheckBox("Angle")
-        grid.addWidget(
-            _label_opts_row("Transmitted:", self.chk_transmitted_energy, self.chk_transmitted_angle),
-            1,
-            1,
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
-        )
+        self.chk_backscattered_energy = QCheckBox("Energy")
+        self.chk_backscattered_angle = QCheckBox("Angle")
+        grid.addWidget(QLabel("Backscattered:"), 1, 5, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        grid.addWidget(self.chk_backscattered_energy, 1, 6, Qt.AlignmentFlag.AlignLeft)
+        grid.addWidget(self.chk_backscattered_angle, 1, 7, Qt.AlignmentFlag.AlignLeft)
 
-        # Row 2
+        # --- Row 2: Lateral Range Distributions (left) | Transmitted (right) ---
         self.chk_lateral_ion_recoil = QCheckBox("Ion/Recoil")
         self.chk_lateral_phonons = QCheckBox("Phonons")
         self.chk_lateral_ionization = QCheckBox("Ionization")
-        grid.addWidget(
-            _label_opts_row(
-                "Lateral Range Distributions:",
-                self.chk_lateral_ion_recoil,
-                self.chk_lateral_phonons,
-                self.chk_lateral_ionization,
-            ),
-            2,
-            0,
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
-        )
+        grid.addWidget(QLabel("Lateral Range Distributions:"), 2, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        grid.addWidget(self.chk_lateral_ion_recoil, 2, 1, Qt.AlignmentFlag.AlignLeft)
+        grid.addWidget(self.chk_lateral_phonons, 2, 2, Qt.AlignmentFlag.AlignLeft)
+        grid.addWidget(self.chk_lateral_ionization, 2, 3, Qt.AlignmentFlag.AlignLeft)
 
-        r = 3
+        self.chk_transmitted_energy = QCheckBox("Energy")
+        self.chk_transmitted_angle = QCheckBox("Angle")
+        grid.addWidget(QLabel("Transmitted:"), 2, 5, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        grid.addWidget(self.chk_transmitted_energy, 2, 6, Qt.AlignmentFlag.AlignLeft)
+        grid.addWidget(self.chk_transmitted_angle, 2, 7, Qt.AlignmentFlag.AlignLeft)
 
         # Spacer to keep things anchored at the top.
-        grid.setRowStretch(r, 1)
+        grid.setRowStretch(3, 1)
 
         scroll.setWidget(content)
         v.addWidget(scroll, 1)
@@ -1363,7 +1345,11 @@ class MCSetupPage(QWidget):
 
 
 class _WrapHeaderView(QHeaderView):
-    """QHeaderView that wraps header text instead of eliding it."""
+    """QHeaderView that wraps header text instead of eliding it.
+
+    Optionally supports embedding QComboBox widgets below the text of specific
+    header sections via ``set_header_widget(logical_index, widget)``.
+    """
 
     def __init__(self, parent=None):
         super().__init__(Qt.Orientation.Horizontal, parent)
@@ -1371,9 +1357,18 @@ class _WrapHeaderView(QHeaderView):
         self.setTextElideMode(Qt.TextElideMode.ElideNone)
 
         self._sync_scheduled = False
+        self._header_widgets: dict[int, QWidget] = {}  # logical_index -> widget
+
         # Recompute after geometry changes so Stretch-mode columns are accounted for.
         self.geometriesChanged.connect(self._schedule_sync)
         self.sectionResized.connect(lambda *_: self._schedule_sync())
+
+    # --- public API for embedding widgets in headers ---
+    def set_header_widget(self, logical_index: int, widget: QWidget) -> None:
+        """Place *widget* inside the header section at *logical_index*."""
+        widget.setParent(self.viewport())
+        self._header_widgets[logical_index] = widget
+        self._schedule_sync()
 
     def _bold_font(self):
         f = self.font()
@@ -1390,9 +1385,27 @@ class _WrapHeaderView(QHeaderView):
         self._sync_scheduled = False
         h = self.sizeHint().height()
         if h > 0:
-            # Fix height to computed minimum; prevents the persistent "two-line" look.
             self.setMinimumHeight(h)
             self.setMaximumHeight(h)
+        self._reposition_header_widgets()
+
+    def _reposition_header_widgets(self) -> None:
+        """Move overlay widgets to their correct position inside the header."""
+        for col, widget in self._header_widgets.items():
+            if self.isSectionHidden(col):
+                widget.setVisible(False)
+                continue
+            widget.setVisible(True)
+            # x position: section position minus offset
+            x = self.sectionPosition(col) - self.offset()
+            w = self.sectionSize(col)
+            total_h = self.height()
+
+            # Reserve top portion for text, bottom for widget
+            widget_h = widget.sizeHint().height()
+            padding = 2
+            widget_y = total_h - widget_h - padding
+            widget.setGeometry(x + padding, widget_y, w - 2 * padding, widget_h)
 
     def _header_text(self, logical_index: int) -> str:
         model = self.model()
@@ -1401,35 +1414,40 @@ class _WrapHeaderView(QHeaderView):
         value = model.headerData(logical_index, self.orientation(), Qt.ItemDataRole.DisplayRole)
         return "" if value is None else str(value)
 
+    def _text_height_for_section(self, logical_index: int) -> int:
+        """Return the text height for a given section."""
+        text = self._header_text(logical_index)
+        if not text:
+            return 0
+        bold = self._bold_font()
+        doc = QTextDocument()
+        doc.setDefaultFont(bold)
+        doc.setDocumentMargin(0)
+        option = QTextOption()
+        option.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        option.setWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
+        doc.setDefaultTextOption(option)
+        doc.setPlainText(text)
+        width = max(40, self.sectionSize(logical_index))
+        doc.setTextWidth(float(width))
+        return int(doc.size().height())
+
     def sizeHint(self):
         base = super().sizeHint()
         model = self.model()
         if model is None:
             return base
 
-        bold = self._bold_font()
-        fm_h = bold.metrics().height() if hasattr(bold, "metrics") else None
-
         height = 0
         for i in range(model.columnCount()):
             if self.isSectionHidden(i):
                 continue
-            text = self._header_text(i)
-            if not text:
-                continue
-            doc = QTextDocument()
-            doc.setDefaultFont(bold)
-            doc.setDocumentMargin(0)
-            option = QTextOption()
-            option.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            option.setWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
-            doc.setDefaultTextOption(option)
-            doc.setPlainText(text)
-            width = max(40, self.sectionSize(i))
-            doc.setTextWidth(float(width))
-            height = max(height, int(doc.size().height()))
+            th = self._text_height_for_section(i)
+            extra = 0
+            if i in self._header_widgets:
+                extra = self._header_widgets[i].sizeHint().height() + 4
+            height = max(height, th + extra)
         if height:
-            # Tight padding; QTextDocument already accounts for line height.
             base.setHeight(max(base.height(), height + 8))
         return base
 
@@ -1448,6 +1466,11 @@ class _WrapHeaderView(QHeaderView):
 
         text_rect = self.style().subElementRect(QStyle.SubElement.SE_HeaderLabel, opt, self)
         text = self._header_text(logicalIndex)
+
+        # If this section has an embedded widget, only use the top portion for text
+        if logicalIndex in self._header_widgets:
+            widget_h = self._header_widgets[logicalIndex].sizeHint().height() + 4
+            text_rect.setHeight(max(text_rect.height() - widget_h, 10))
 
         doc = QTextDocument()
         doc.setDefaultFont(self._bold_font())

@@ -5,13 +5,19 @@ import os
 import sys
 from typing import Optional, Callable
 
-from PyQt6.QtCore import Qt, QTimer, QObject, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, QObject, QEvent, pyqtSignal, QLocale
+from PyQt6.QtGui import QKeyEvent
 from PyQt6.QtWidgets import (
     QMainWindow,
     QTabWidget,
     QFileDialog,
     QInputDialog,
     QMessageBox,
+    QLineEdit,
+    QDoubleSpinBox,
+    QSpinBox,
+    QAbstractSpinBox,
+    QApplication,
 )
 
 # Support BOTH:
@@ -51,9 +57,36 @@ class _LogBridge(QObject):
         self.message.connect(handler)
 
 
+class _CommaToDotFilter(QObject):
+    """Application-wide event filter that replaces comma key presses with dots
+    in ALL widgets (QLineEdit, QSpinBox, QDoubleSpinBox, QTableWidget editors, etc.)."""
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.KeyPress:
+            try:
+                text = event.text()
+            except Exception:
+                text = ""
+            if text == ",":
+                # Forward a '.' key press instead of the comma
+                dot_event = QKeyEvent(
+                    QEvent.Type.KeyPress,
+                    Qt.Key.Key_Period,
+                    event.modifiers(),
+                    ".",
+                )
+                QApplication.sendEvent(obj, dot_event)
+                return True  # eat the comma
+        return False  # don't call super — just pass through
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        # Ensure C locale is active (dot decimal separator) even if
+        # MainWindow is instantiated outside of main().
+        QLocale.setDefault(QLocale(QLocale.Language.C))
+
         self.setWindowTitle("KORAL / MC Simulation")
 
         self.state = AppState()
@@ -79,6 +112,12 @@ class MainWindow(QMainWindow):
 
         self._apply_startup_geometry()
 
+        # Install global comma-to-dot filter for ALL widgets
+        self._comma_filter = _CommaToDotFilter(self)
+        app = QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self._comma_filter)
+
         self._log_bridge = _LogBridge(self._on_page_log, parent=self)
         subscribe_logs(self._receive_external_log)
 
@@ -101,7 +140,7 @@ class MainWindow(QMainWindow):
         screen = self.screen() or (self.windowHandle().screen() if self.windowHandle() else None)
         avail = screen.availableGeometry() if screen else None
 
-        base_w, base_h = 1366, 768
+        base_w, base_h = 1280, 768
         # Minimum should never exceed available screen size (otherwise cannot fit on small displays)
         if avail:
             min_w = min(base_w, avail.width())
@@ -216,6 +255,11 @@ class MainWindow(QMainWindow):
 def main():
     import sys
     from PyQt6.QtWidgets import QApplication
+    from PyQt6.QtCore import QLocale
+
+    # Force C locale globally so all QDoubleSpinBox / QSpinBox use dot
+    # as decimal separator instead of the system locale (e.g. comma in DE)
+    QLocale.setDefault(QLocale(QLocale.Language.C))
 
     app = QApplication(sys.argv)
     win = MainWindow()

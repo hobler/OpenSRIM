@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
     QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QTableWidget, QTableWidgetItem,
     QHeaderView, QStackedWidget, QCheckBox, QPushButton, QMessageBox, QDialog,
     QListWidget, QDialogButtonBox,
+    QRadioButton, QButtonGroup,
     QFileDialog,
     QSplitter, QScrollArea,
     QFrame,
@@ -34,7 +35,12 @@ except ModuleNotFoundError:  # pragma: no cover
     from OpenSRIM.ui.logging import log as emit_log  # type: ignore
 
 try:
-    from koral_calculation.interface import discover_models, load_model, filter_outputs, load_ui_parameters
+    from simulators.koral_interface import (
+        discover_models,
+        filter_outputs,
+        load_model,
+        load_ui_parameters,
+    )
 except Exception:  # pragma: no cover
     discover_models = None  # type: ignore
     load_model = None  # type: ignore
@@ -53,7 +59,7 @@ class _KoralWorker(QObject):
 
     def run(self) -> None:
         if load_model is None:
-            self.error.emit("koral_calculation loader not available")
+            self.error.emit("KORAL interface not available")
             return
 
         requested_outputs = self._request.get("output", {}).get("requested")
@@ -98,11 +104,17 @@ class KoralPage(QWidget):
         self._available_models: list[str] = []
         self._primary_models: list[str] = []
 
+        self._discovered_models: list[object] = []
+        self._model_supported_outputs: dict[str, set[str]] = {}
+        self._model_display_label: dict[str, str] = {}
+
         self.latest_log_button = None
         self._logs_dialog = None
         self._logs_list_widget = None
         self.koral_progress = None
         self.run_button = None
+
+        self._output_option_widgets: dict[str, list[QWidget]] = {}
 
         # Hints (KORAL-only)
         self._hint_system: Optional[HintSystem] = None
@@ -159,10 +171,12 @@ class KoralPage(QWidget):
         # Models: allow running without opening the selection dialog first.
         self._refresh_available_models()
         if not self._selected_models and self._primary_models:
-            self._selected_models = list(self._primary_models)
+            # Enforce single-model selection.
+            self._selected_models = [str(self._primary_models[0])]
         self._update_selected_models_label()
         self._capture_base_ui_param_specs()
         self._apply_selected_models_ui_param_specs()
+        self._apply_selected_model_supported_outputs()
 
     def _ui_param_widgets(self) -> dict[str, object]:
         widgets: dict[str, object] = {}
@@ -326,12 +340,12 @@ class KoralPage(QWidget):
     def _update_selected_models_label(self) -> None:
         if not hasattr(self, "selected_models_label"):
             return
-        if self._selected_models:
-            self.selected_models_label.setText(
-                "Selected Models:\n" + "\n".join(f"• {m}" for m in self._selected_models)
-            )
+        mid = self._selected_models[0] if self._selected_models else ""
+        if mid:
+            label = self._model_display_label.get(mid) or str(mid)
+            self.selected_models_label.setText("Selected Model:\n" + label)
         else:
-            self.selected_models_label.setText("Selected Models:\nNone")
+            self.selected_models_label.setText("Selected Model:\nNone")
 
     # --- logging bridge (same pattern as MC Setup) ---
     def update_latest_log(self, entry: str) -> None:
@@ -1425,9 +1439,9 @@ class KoralPage(QWidget):
         # Header (title + hint button)
         layout.addWidget(self._groupbox_header("Model Selection", hint_id="model", parent=box))
 
-        self.model_button = QPushButton("Select Models")
+        self.model_button = QPushButton("Select Model")
         self.model_button.clicked.connect(self._open_model_selection_dialog)
-        self.selected_models_label = QLabel("Selected Models:\nNone")
+        self.selected_models_label = QLabel("Selected Model:\nNone")
         self.selected_models_label.setWordWrap(True)
 
         layout.addWidget(self.model_button)
@@ -1439,22 +1453,48 @@ class KoralPage(QWidget):
     def _refresh_available_models(self) -> None:
         self._available_models = []
         self._primary_models = []
+        self._discovered_models = []
+        self._model_supported_outputs = {}
+        self._model_display_label = {}
         if discover_models is None:
             return
         try:
             discovered = discover_models()
         except Exception:
             discovered = []
-        self._available_models = [m.id for m in discovered]
-        self._primary_models = [m.id for m in discovered if m.is_primary]
+        self._discovered_models = list(discovered)
+
+        avail: list[str] = []
+        primary: list[str] = []
+        for m in discovered:
+            mid = getattr(m, "id", None)
+            if not isinstance(mid, str) or not mid.strip():
+                continue
+            avail.append(mid)
+            if bool(getattr(m, "is_primary", False)):
+                primary.append(mid)
+
+            pkg = getattr(m, "package_display_name", None) or getattr(m, "package_id", None) or ""
+            mdl = getattr(m, "model_display_name", None) or getattr(m, "model_id", None) or mid
+            if isinstance(pkg, str) and pkg.strip():
+                self._model_display_label[mid] = f"{pkg.strip()}: {str(mdl).strip()}"
+            else:
+                self._model_display_label[mid] = str(mdl).strip()
+
+            outs = getattr(m, "supported_outputs", None)
+            if isinstance(outs, (list, tuple)):
+                self._model_supported_outputs[mid] = {str(x) for x in outs if str(x).strip()}
+
+        self._available_models = avail
+        self._primary_models = primary
 
     def _open_model_selection_dialog(self):
         self._refresh_available_models()
 
         dialog = QDialog(self)
-        dialog.setWindowTitle("Select Models")
+        dialog.setWindowTitle("Select Model")
         dialog.setModal(True)
-        dialog.resize(300, 300)  # Adjust height to display all models
+        dialog.resize(380, 380)
 
         layout = QVBoxLayout(dialog)
         scroll_area = QScrollArea(dialog)
@@ -1462,22 +1502,46 @@ class KoralPage(QWidget):
         scroll_content = QWidget()
         scroll_layout = QVBoxLayout(scroll_content)
 
-        self.model_checkboxes = []
+        radio_group = QButtonGroup(dialog)
+        radio_group.setExclusive(True)
+        self._model_radio_buttons: list[QRadioButton] = []
 
         if not self._available_models:
-            scroll_layout.addWidget(QLabel("No models found in 'koral_calculation/'."))
+            scroll_layout.addWidget(QLabel("No KORAL models found."))
         else:
-            # Preselect: either current selection, or primary models if nothing selected yet.
-            if self._selected_models:
-                preselected = set(self._selected_models)
-            else:
-                preselected = set(self._primary_models)
+            # Group models by package display name.
+            packages: dict[str, list[object]] = {}
+            for m in (self._discovered_models or []):
+                pkg = getattr(m, "package_display_name", None) or getattr(m, "package_id", None) or "KORAL"
+                packages.setdefault(str(pkg), []).append(m)
 
-            for model in self._available_models:
-                checkbox = QCheckBox(model)
-                checkbox.setChecked(model in preselected)
-                self.model_checkboxes.append(checkbox)
-                scroll_layout.addWidget(checkbox)
+            # Determine which model should be selected when opening.
+            current = self._selected_models[0] if self._selected_models else ""
+            if current and current in self._available_models:
+                preselect_id = current
+            elif self._primary_models:
+                preselect_id = str(self._primary_models[0])
+            else:
+                preselect_id = str(self._available_models[0])
+
+            for pkg_name in sorted(packages.keys()):
+                pkg_label = QLabel(str(pkg_name))
+                pkg_label.setStyleSheet("font-weight: 600;")
+                scroll_layout.addWidget(pkg_label)
+
+                for m in packages[pkg_name]:
+                    mid = getattr(m, "id", None)
+                    if not isinstance(mid, str) or not mid.strip():
+                        continue
+                    model_display = getattr(m, "model_display_name", None) or getattr(m, "model_id", None) or mid
+                    rb = QRadioButton(str(model_display))
+                    rb.setProperty("koral_model_id", mid)
+                    rb.setChecked(mid == preselect_id)
+                    radio_group.addButton(rb)
+                    self._model_radio_buttons.append(rb)
+                    scroll_layout.addWidget(rb)
+
+                scroll_layout.addSpacing(6)
 
         scroll_content.setLayout(scroll_layout)
         scroll_area.setWidget(scroll_content)
@@ -1496,11 +1560,43 @@ class KoralPage(QWidget):
         dialog.exec()
 
     def _update_selected_models(self, dialog: QDialog):
-        selected_models = [cb.text() for cb in self.model_checkboxes if cb.isChecked()]
-        self._selected_models = list(selected_models)
+        selected: list[str] = []
+        for rb in getattr(self, "_model_radio_buttons", []) or []:
+            if rb.isChecked():
+                mid = rb.property("koral_model_id")
+                if isinstance(mid, str) and mid.strip():
+                    selected = [mid]
+                break
+        self._selected_models = selected
         self._update_selected_models_label()
         self._apply_selected_models_ui_param_specs()
+        self._apply_selected_model_supported_outputs()
         dialog.accept()
+
+    def _apply_selected_model_supported_outputs(self) -> None:
+        """Hide output options that the selected model does not support."""
+
+        if not self._output_option_widgets:
+            return
+
+        mid = self._selected_models[0] if self._selected_models else ""
+        supported = self._model_supported_outputs.get(str(mid)) if mid else None
+        if not supported:
+            # If unknown, do not hide anything.
+            for widgets in self._output_option_widgets.values():
+                for w in widgets:
+                    w.setVisible(True)
+            return
+
+        for out_id, widgets in self._output_option_widgets.items():
+            visible = out_id in supported
+            for w in widgets:
+                w.setVisible(bool(visible))
+            # If hidden, also uncheck (avoid "invisible selected" outputs).
+            if not visible:
+                for w in widgets:
+                    if isinstance(w, QCheckBox):
+                        w.setChecked(False)
 
     # -------- configuration persistence ----------
     def collect_config(self) -> dict:
@@ -1514,11 +1610,8 @@ class KoralPage(QWidget):
             "angle": float(self.get_ion_angle()),
         }
 
-        # Selected models: prefer stored list; fall back to parsing label
+        # Selected model (single-choice)
         models = list(self._selected_models)
-        if not models and hasattr(self, "selected_models_label"):
-            txt = self.selected_models_label.text().splitlines()
-            models = [line.replace("•", "").strip() for line in txt if line.strip().startswith("•")]
 
         elements = []
         for entry in getattr(self, "element_entries", []):
@@ -1607,9 +1700,25 @@ class KoralPage(QWidget):
 
         models = payload.get("models") or []
         if isinstance(models, list):
-            self._selected_models = [str(m) for m in models if isinstance(m, (str, int, float))]
+            # Enforce single-model selection and migrate old IDs like "ZBL" -> "koral:ZBL".
+            self._refresh_available_models()
+            cand = [str(m) for m in models if isinstance(m, (str, int, float)) and str(m).strip()]
+            chosen = cand[0] if cand else ""
+            if chosen and ":" not in chosen:
+                namespaced = f"koral:{chosen}"
+                if namespaced in self._available_models:
+                    chosen = namespaced
+
+            if chosen and self._available_models and chosen not in self._available_models:
+                chosen = ""
+
+            if not chosen and self._primary_models:
+                chosen = str(self._primary_models[0])
+
+            self._selected_models = [chosen] if chosen else []
             self._update_selected_models_label()
             self._apply_selected_models_ui_param_specs()
+            self._apply_selected_model_supported_outputs()
 
         # elements table
         if hasattr(self, "element_entries"):
@@ -1816,6 +1925,9 @@ class KoralPage(QWidget):
     def build_input_elements(self) -> QGroupBox:
         box = QGroupBox("")
         v = QVBoxLayout(box)
+        # Keep header close to the top edge (like Ion Selection).
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(6)
 
         # Header row: title + hint + (Add Element | Compound Dictionary)
         header = QWidget(box)
@@ -2125,6 +2237,10 @@ class KoralPage(QWidget):
         v = QVBoxLayout(box)
         v.setSpacing(6)
 
+        # Map of output-id -> widgets to show/hide together.
+        # Keys match the engine output ids used in requests/results.
+        self._output_option_widgets = {}
+
         # Header (title + hint button)
         v.addWidget(self._groupbox_header("Output Options", hint_id="output", parent=box))
 
@@ -2137,6 +2253,7 @@ class KoralPage(QWidget):
         row_prange.addStretch(1)
         row_prange.addWidget(self.cmb_prange)
         v.addLayout(row_prange)
+        self._output_option_widgets["prange"] = [self.chk_prange, self.cmb_prange]
 
         row_long = QHBoxLayout()
         self.chk_long_strag = QCheckBox("Long. Straggling")
@@ -2147,6 +2264,7 @@ class KoralPage(QWidget):
         row_long.addStretch(1)
         row_long.addWidget(self.cmb_long_strag)
         v.addLayout(row_long)
+        self._output_option_widgets["long_strag"] = [self.chk_long_strag, self.cmb_long_strag]
 
         row_lat = QHBoxLayout()
         self.chk_lat_strag = QCheckBox("Lat. Straggling")
@@ -2157,6 +2275,7 @@ class KoralPage(QWidget):
         row_lat.addStretch(1)
         row_lat.addWidget(self.cmb_lat_strag)
         v.addLayout(row_lat)
+        self._output_option_widgets["lat_strag"] = [self.chk_lat_strag, self.cmb_lat_strag]
 
         row_nucl = QHBoxLayout()
         self.chk_nucl_strag = QCheckBox("Nuclear Stopping")
@@ -2177,6 +2296,7 @@ class KoralPage(QWidget):
         )
         row_nucl.addWidget(self.cmb_nucl_stop_unit)
         v.addLayout(row_nucl)
+        self._output_option_widgets["nucl_stop"] = [self.chk_nucl_strag, self.cmb_nucl_stop_unit]
 
         row_elect = QHBoxLayout()
         self.chk_elec_hop = QCheckBox("Electron Stopping")
@@ -2197,6 +2317,7 @@ class KoralPage(QWidget):
         )
         row_elect.addWidget(self.cmb_elec_stop_unit)
         v.addLayout(row_elect)
+        self._output_option_widgets["elec_stop"] = [self.chk_elec_hop, self.cmb_elec_stop_unit]
 
         # Compound correction input
         row_corr = QHBoxLayout()
@@ -2240,7 +2361,8 @@ class KoralPage(QWidget):
         # Toggle all checkboxes between checked and unchecked based on all_none_chk
         new_state = self.all_none_chk.isChecked()
         for checkbox in [self.chk_prange, self.chk_long_strag, self.chk_lat_strag, self.chk_nucl_strag, self.chk_elec_hop]:
-            checkbox.setChecked(new_state)
+            if checkbox.isVisible():
+                checkbox.setChecked(new_state)
 
     def _build_koral_plot_list_section(self) -> QGroupBox:
         box = QGroupBox("")

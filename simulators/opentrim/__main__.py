@@ -30,12 +30,10 @@ if __package__ is None:
 from . import config  # import config early to set up caching and parallel settings
 from . import stats as statistics
 from .init import init_params
-from .simulator import simulate, simulate_chunked, simulate_adaptive  # noqa: F401
-
-
-params = init_params()
+from .simulator import simulate, simulate_chunked  # noqa: F401
 
 start = time.time()
+params = init_params()
 
 if __name__ == "__main__":
     if not config.ENABLE_CACHING:

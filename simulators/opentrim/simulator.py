@@ -4,8 +4,6 @@ import numpy as np
 from numba import jit, prange
 from . import cascade
 from .mytypes import Projectile, PROJ_DTYPE, HIST_CONFIG_DTYPE, create_histogram_configs
-from .nlhlin import NLHlin_screen
-from .zbl import ZBL_screen
 
 
 def simulate(nion, params, hist_configs=None, follow_recoils=False, sim_idx=0):
@@ -46,6 +44,7 @@ def simulate(nion, params, hist_configs=None, follow_recoils=False, sim_idx=0):
     
     return proj_count, flat_hist_aggregated, mom_aggregated.reshape(-1, 9)  # TODO get rid of reshape
 
+
 @jit(cache=config.ENABLE_CACHING, parallel=config.PARALLEL, nogil=config.PARALLEL)
 def _simulate(nion, params, hist_configs, follow_recoils, sim_idx):
     """Perform simulation on given number of projectiles
@@ -72,16 +71,12 @@ def _simulate(nion, params, hist_configs, follow_recoils, sim_idx):
         np.array([0.0, 0.0, 0.0]),     # position (A)
         np.array([0.0, 0.0, 1.0]),     # direction (unit vector)
         0,
+        0,
         True
     )
     proj_dummy_arr = np.empty(1, dtype=PROJ_DTYPE)
     proj_sim = [proj_dummy_arr for _ in range(nion)]
     proj_dummy_arr[0] = proj_init
-    proj_sim = [proj_dummy_arr for _ in range(nion)]
-    
-    z1 = params.scatter.z1
-    z2 = params.scatter.z2
-    nlhlin_coefs = params.scatter.nlhlin_coefs
 
     # Fixes weird Numba error by passing array instead of single record
     params_arr = np.full(1, params)
@@ -91,37 +86,21 @@ def _simulate(nion, params, hist_configs, follow_recoils, sim_idx):
     hist_results_2d = np.zeros((nion, flat_counts_size), dtype=np.int32)
     mom_results_2d = np.zeros((nion, mom_size), dtype=np.float64)
     
-    def _parallel_exec(screen_fun):
-        for i in prange(nion):  # ty:ignore[not-iterable]
-            np.random.seed(params_arr[0].rng_seed + sim_idx + i)
-            proj_sim[i], hist_flat, mom_flat = cascade.cascade(
-                proj_dummy_arr[0], params_arr[0], hist_configs, screen_fun, follow_recoils)
-            
-            # Store histogram and moment results in pre-allocated 2D arrays
-            hist_results_2d[i, :] = hist_flat.reshape(flat_counts_size)
-            mom_results_2d[i, :] = mom_flat.reshape(mom_size)
-    
-    # Simulate the trajectories
-    if params.scatter.pot_model == 'NLHlin':
-        screen_fun_nlh = (NLHlin_screen(z1, z2, params.scatter.rnorm[0], nlhlin_coefs),
-                        NLHlin_screen(z2, z2, params.scatter.rnorm[1], nlhlin_coefs))
-        _parallel_exec(screen_fun_nlh)
-
-    elif params.scatter.pot_model == 'ZBL':
-        screen_fun_zbl = (ZBL_screen(z1, z2, params.scatter.rnorm[0], False),
-                        ZBL_screen(z2, z2, params.scatter.rnorm[1], False))
-        _parallel_exec(screen_fun_zbl)
-
-    else:   # Defaults to 'ZBL_magic'
-        screen_fun_magic = (ZBL_screen(z1, z2, params.scatter.rnorm[0], True),
-                        ZBL_screen(z2, z2, params.scatter.rnorm[1], True))
-        _parallel_exec(screen_fun_magic)
+    for i in prange(nion):  # ty:ignore[not-iterable]
+        np.random.seed(params_arr[0].rng_seed + sim_idx + i)
+        proj_sim[i], hist_flat, mom_flat = cascade.cascade(
+            proj_dummy_arr[0], params_arr[0], hist_configs, follow_recoils)
+        
+        # Store histogram and moment results in pre-allocated 2D arrays
+        hist_results_2d[i, :] = hist_flat.reshape(flat_counts_size)
+        mom_results_2d[i, :] = mom_flat.reshape(mom_size)
     
     proj_count = 0
     for proj_lst in proj_sim:
         proj_count += proj_lst.size
     
     return proj_count, hist_results_2d, mom_results_2d
+
 
 def simulate_adaptive(avg_chunk_time, nion, *args, **kwargs):
     """Adaptive, chunked simulation with each chunk taking around avg_sim_time seconds
@@ -173,6 +152,7 @@ def simulate_adaptive(avg_chunk_time, nion, *args, **kwargs):
         chunk_size = max(min_chunk_size, new_chunk)
     
     return total_proj_count, total_hist_buf, total_mom_buf
+
 
 def simulate_chunked(chunk_size, nion, *args, **kwargs):
     """Chunked simulation for nion projectiles

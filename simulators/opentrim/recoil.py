@@ -6,11 +6,12 @@ density to the power -1/3.
 
 Available functions:
     setup: setup module variables.
-    get_recoil_position: get the recoil position.
+    get_recoil_position_position: get the recoil position.
 """
 from math import sqrt, sin, cos
 import numpy as np
 from numba import jit
+from .mytypes import PROJ_DTYPE
 
 
 def setup(input_params):
@@ -22,40 +23,56 @@ def setup(input_params):
     Returns:
         (RECOIL_PARAMS_DTYPE): Recoil parameters
     """
-    density = input_params["layers"]["density"][0]
+    densities = np.array(input_params["layers"]["density"])
+    nlayers = len(densities)
     
     RECOIL_PARAMS_DTYPE = np.dtype([
-        ("pmax", np.float64),
-        ("mean_free_path", np.float64),
+        ("pmax", np.float64, (nlayers,)),
+        ("mean_free_path", np.float64, (nlayers,)),
     ], align=True)
 
     recoil_params = np.recarray(1, dtype=RECOIL_PARAMS_DTYPE)[0]
-    recoil_params["mean_free_path"] = density**(-1/3)
+    recoil_params["mean_free_path"] = densities**(-1/3)
     recoil_params["pmax"] = recoil_params["mean_free_path"] / sqrt(np.pi)
     
     return recoil_params
 
 
 @jit
-def get_recoil_position(pos, dir, params):
-    """Get the recoil position based on the projectile position and direction.
+def get_recoil_position(proj, recoil_params):
+    """Get the position of the recoil hit after the next free flight path.
+
+    The recoil more precisely is a recoil candidate, since it is not guaranteed 
+    that the recoil has enough energy to leave its position.
+
+    The recoil position is determined by a deterministic free path length 
+    and sampling a random impact parameter.
+
+    We cannot return a recoil structured array here, since Numba apparently 
+    does not allow returning structured arrays from jit functions. Instead, we 
+    return the recoil position as a separate array, and the caller can 
+    construct the recoil structured array if needed.
 
     Parameters:
-        pos (ndarray): position of the projectile (size 3)
-        dir (ndarray): direction vector of the projectile (size 3)
-        params (RECOIL_PARAMS_DTYPE): Recoil parameters
+        proj (Projectile): state of the projectile
+        recoil_params (RECOIL_PARAMS_DTYPE): Recoil parameters
 
     Returns:
         (float): free path length to the next collision (A)
         (float): impact parameter = distance between collision point and 
             recoil (A)
         (ndarray): direction vector from collision point to recoil (size 3)
-        (ndarray): position of the recoil (A, size 3)
+        (ndarray): the recoil position (size 3)
     """
-    free_path = params.mean_free_path
+    pos = proj["pos"][:]
+    dir = proj["dir"][:]
+    ilayer = proj["ilayer"]
+    
+    # free flight path and impact parameter
+    free_path = recoil_params.mean_free_path[ilayer]
     collision_pos = pos[:] + free_path * dir[:]
+    p = recoil_params.pmax[ilayer] * sqrt(np.random.rand())
 
-    p = params.pmax * sqrt(np.random.rand())
     # Azimuthal angle fi
     fi = 2 * np.pi * np.random.rand()
     cos_fi = cos(fi)
@@ -79,7 +96,7 @@ def get_recoil_position(pos, dir, params):
     norm = np.linalg.norm(dirp)
     dirp /= norm
 
-    # position of the recoil
+    # recoil position
     recoil_pos = collision_pos[:] + p * dirp[:]
 
-    return free_path, p, dirp[:], recoil_pos[:]
+    return free_path, p, dirp[:], recoil_pos

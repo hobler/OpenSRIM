@@ -35,7 +35,6 @@ def KORAL(working_directory_path: str) -> int:
     E = np.geomspace(toml['params']['start_energy'],
                      toml['params']['stop_energy'],
                      toml['params']['nr_values'])
-    E_0 = E[0]
     
     s_e_targets:    list[Callable[[list[float]], list[float]]] = []
     s_n_targets:    list[Callable[[list[float]], list[float]]] = []

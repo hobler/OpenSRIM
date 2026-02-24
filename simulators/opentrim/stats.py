@@ -9,7 +9,7 @@ There are two module-level attributes:
     hist: Histogram_1d instance for calculating histograms.
 """
 import math
-from numba.core.types import UniTuple
+from numba.core.types import UniTuple, namedtuple
 import numpy as np
 from numba.experimental import jitclass
 from numba.extending import overload, register_jitable
@@ -243,17 +243,23 @@ def setup(nspec, nbin, limits):
     #nbin = input_params["output"]["depth distribution"]["nbins"]
     #limits = input_params["output"]["depth distribution"]["limits"]
 
-    STAT_PARAMS_DTYPE = np.dtype([
-        ("nspec", np.int32),
-        ("nbin", np.int32),
-        ("limits", np.float64, (2,)),
-    ], align=True)
+    #STAT_PARAMS_DTYPE = np.dtype([
+    #    ("nspec", np.int32),
+    #    ("nbin", np.int32),
+    #    ("limits", np.float64, (2,)),
+    #], align=True)
 
-    stat_params = np.recarray(1, dtype=STAT_PARAMS_DTYPE)[0]
-    stat_params["nspec"] = nspec
-    stat_params["nbin"] = nbin
-    stat_params["limits"] = np.array(limits)
+    #stat_params = np.recarray(1, dtype=STAT_PARAMS_DTYPE)[0]
+    #stat_params["nspec"] = nspec
+    #stat_params["nbin"] = nbin
+    #stat_params["limits"] = np.array(limits)
 
+    StatParams = namedtuple("StatParams", ["nspec", "nbin", "limits"])
+    stat_params = StatParams(
+        nspec = nspec,
+        nbin = nbin,
+        limits = np.array(limits),
+    )
 
     mom = Moment_1d(nvar=nspec, nmax=4)
     hist = Histogram_1d(stat_params.nspec, stat_params.nbin, (stat_params.limits[0], stat_params.limits[1]))

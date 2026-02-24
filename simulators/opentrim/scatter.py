@@ -11,6 +11,7 @@ Available functions:
 """
 import os
 import math
+from collections import namedtuple
 import numpy as np
 from numba import jit
 from .zbl import magic
@@ -45,7 +46,7 @@ def _get_nlhlin_coefs(z1, z2):
                      f"not found in {fname}")
 
 
-def setup(input_params, elements_params):
+def setup(input_params, nelem, elements_params):
     """Setup module variables depending on projectile and target species.
 
     Each of the module variables ENORM, RNORM, DIRFAC, and DENFAC is a tuple
@@ -54,6 +55,7 @@ def setup(input_params, elements_params):
 
     Parameters:
         input_params (dict): input parameters dictionary
+        nelem (int): number of elements
         elements_params (ELEMENT_PARAMS_DTYPE): parameters of chemical elements 
             in the target
             
@@ -64,11 +66,12 @@ def setup(input_params, elements_params):
     if input_params["models"]["scattering integrals"]["algorithm"] == "magic":
         pot_model += "_magic"
 
-    nelem = len(elements_params)
-    rnorm = np.empty((nelem, nelem), dtype=np.float64)
-    enorm = np.empty((nelem, nelem), dtype=np.float64)
-    dirfac = np.empty((nelem, nelem), dtype=np.float64)
-    denfac = np.empty((nelem, nelem), dtype=np.float64)
+    #nelem = len(elements_params)
+    NELEM = 5
+    rnorm = np.empty((NELEM, NELEM), dtype=np.float64)
+    enorm = np.empty((NELEM, NELEM), dtype=np.float64)
+    dirfac = np.empty((NELEM, NELEM), dtype=np.float64)
+    denfac = np.empty((NELEM, NELEM), dtype=np.float64)
 
     if pot_model == "NLHlin":
         NLHLIN_COEFS_DTYPE = np.dtype([
@@ -82,14 +85,14 @@ def setup(input_params, elements_params):
             ("d", np.float64),
             ("rmax", np.float64),
         ], align=True)
-        nlhlin_coefs = np.empty((nelem, nelem), dtype=NLHLIN_COEFS_DTYPE)
+        nlhlin_coefs = np.empty((NELEM, NELEM), dtype=NLHLIN_COEFS_DTYPE)
 
     for ielem1 in range(nelem):
         for ielem2 in range(nelem):
-            z1 = elements_params[ielem1]["Z"]
-            z2 = elements_params[ielem2]["Z"]
-            m1 = elements_params[ielem1]["M"]
-            m2 = elements_params[ielem2]["M"]
+            z1 = elements_params[ielem1].Z
+            z2 = elements_params[ielem2].Z
+            m1 = elements_params[ielem1].M
+            m2 = elements_params[ielem2].M
             m1_m2 = m1 / m2
 
             if pot_model.startswith("ZBL"):
@@ -121,26 +124,38 @@ def setup(input_params, elements_params):
                 nlhlin_coefs[ielem1, ielem2]["d"] = d
                 nlhlin_coefs[ielem1, ielem2]["rmax"] = rmax 
 
-    SCATTER_PARAMS_DTYPE = np.dtype([
-        ("pot_model", "<U16"),
-        ("enorm", np.float64, (nelem, nelem)),
-        ("rnorm", np.float64, (nelem, nelem)),
-        ("dirfac", np.float64, (nelem, nelem)),
-        ("denfac", np.float64, (nelem, nelem)),
-    ], align=True)
-    if pot_model == "NLHlin":
-        SCATTER_PARAMS_DTYPE = np.dtype(SCATTER_PARAMS_DTYPE.descr + [
-            ("nlhlin_coefs", NLHLIN_COEFS_DTYPE, (nelem, nelem)),
-        ], align=True)
+    #SCATTER_PARAMS_DTYPE = np.dtype([
+    #    ("pot_model", "<U16"),
+    #    ("enorm", np.float64, (nelem, nelem)),
+    #    ("rnorm", np.float64, (nelem, nelem)),
+    #    ("dirfac", np.float64, (nelem, nelem)),
+    #    ("denfac", np.float64, (nelem, nelem)),
+    #], align=True)
+    #if pot_model == "NLHlin":
+    #    SCATTER_PARAMS_DTYPE = np.dtype(SCATTER_PARAMS_DTYPE.descr + [
+    #        ("nlhlin_coefs", NLHLIN_COEFS_DTYPE, (nelem, nelem)),
+    #    ], align=True)
 
-    scatter_params = np.recarray(1, dtype=SCATTER_PARAMS_DTYPE)[0]
-    scatter_params["pot_model"] = pot_model
-    scatter_params["enorm"] = enorm
-    scatter_params["rnorm"] = rnorm
-    scatter_params["dirfac"] = dirfac
-    scatter_params["denfac"] = denfac
-    if pot_model == "NLHlin":
-        scatter_params["nlhlin_coefs"] = nlhlin_coefs
+    #scatter_params = np.recarray(1, dtype=SCATTER_PARAMS_DTYPE)[0]
+    #scatter_params["pot_model"] = pot_model
+    #scatter_params["enorm"] = enorm
+    #scatter_params["rnorm"] = rnorm
+    #scatter_params["dirfac"] = dirfac
+    #scatter_params["denfac"] = denfac
+    #if pot_model == "NLHlin":
+    #    scatter_params["nlhlin_coefs"] = nlhlin_coefs
+
+    ScatterParams = namedtuple("ScatterParams", [
+        "pot_model", "enorm", "rnorm", "dirfac", "denfac", "nlhlin_coefs",
+    ])
+    scatter_params = ScatterParams(
+        pot_model = pot_model,
+        enorm = enorm,
+        rnorm = rnorm,
+        dirfac = dirfac,
+        denfac = denfac,
+        nlhlin_coefs = nlhlin_coefs if pot_model == "NLHlin" else None,
+    )
 
     return scatter_params
 

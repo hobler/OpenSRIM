@@ -66,8 +66,8 @@ def KORAL(working_directory_path: str) -> int:
             a_u_target = misc.a_ZBL(toml['params']['z_ion'], z_target)
         elif toml['params']['method'] == 'NLH':
             a_u_target = misc.a_NLH(toml['params']['z_ion'], z_target)
-            sn_nlh_params = misc.get_sn_nlh_params(input_params.z_ion, z_target)
-            qn_nlh_params = misc.get_qn_nlh_params(input_params.z_ion, z_target)
+            sn_nlh_params = misc.get_sn_nlh_params(toml['params']['z_ion'], z_target)
+            qn_nlh_params = misc.get_qn_nlh_params(toml['params']['z_ion'], z_target)
         else:
             return -1 # TODO: Handle unknown method
 

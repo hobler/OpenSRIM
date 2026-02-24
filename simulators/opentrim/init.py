@@ -4,6 +4,7 @@
   hardcoded).
 - Calculate derived parameters.
 """
+#from collections import namedtuple
 import numpy as np
 from . import recoil
 from . import scatter
@@ -190,15 +191,15 @@ def init_params():
 
     input_params = read_input()
 
-    target_params = target.setup(input_params)
-    estop_params = estop.setup(input_params, target_params.elements)
+    geometry_params, elements_params, materials_params = target.setup(input_params)
+    estop_params = estop.setup(input_params, elements_params)
     recoil_params = recoil.setup(input_params)
-    scatter_params = scatter.setup(input_params, target_params.elements)
+    scatter_params = scatter.setup(input_params, elements_params)
     cm_scatter.setup(input_params["models"]["scattering integrals"]["n_absc"])
     cascade_params = cascade.setup()
 
     # Example hardcoded parameters (to be replaced with file input)
-    nelem = len(target_params.elements)  # number of species to record
+    nelem = len(elements_params)  # number of species to record
     nbin = 40              # number of bins for depth distribution
     limits = (0.0, 4000.0) # limits for depth distribution
     stat_params = statistics.setup(nelem, nbin, limits)  # TODO: use input_params as argument
@@ -208,7 +209,9 @@ def init_params():
         ("stat", stat_params.dtype),
         ("cascade", cascade_params.dtype),
         ("recoil", recoil_params.dtype),
-        ("target", target_params.dtype),
+        ("geometry", geometry_params.dtype),
+        ("elements", elements_params.dtype, nelem),
+        ("materials", materials_params.dtype, len(materials_params)),
         ("estop", estop_params.dtype),
         ("scatter", scatter_params.dtype),
     ], align=True)
@@ -217,8 +220,23 @@ def init_params():
     params["stat"] = stat_params
     params["cascade"] = cascade_params
     params["recoil"] = recoil_params
-    params["target"] = target_params
+    params["geometry"] = geometry_params
+    params["elements"] = elements_params
+    params["materials"] = materials_params
     params["estop"] = estop_params
     params["scatter"] = scatter_params
+
+#    Params = namedtuple("Params", ["stat", "cascade", "recoil", "geometry", "elements", "materials", "estop", "scatter", "rng_seed"])
+#    params = Params(
+#        rng_seed = input_params["simulation"]["rng_seed"],
+#        stat = stat_params,
+#        cascade = cascade_params,
+#        recoil = recoil_params,
+#        geometry = geometry_params,
+#        elements = elements_params,
+#        materials = materials_params,
+#        estop = estop_params,
+#        scatter = scatter_params,
+#    )
 
     return params

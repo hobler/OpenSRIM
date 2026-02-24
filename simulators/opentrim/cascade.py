@@ -90,20 +90,20 @@ def cascade(initial_proj, params, follow_recoils=False, prealloc=400):
                 proj, params.recoil)
             
             # step projectile forward and update energy
-            dee = eloss(proj, free_path, params.estop, params.target.materials)
+            dee = eloss(proj, free_path, params.estop, params.materials)
             proj["e"] -= dee
             proj["pos"] += free_path * proj["dir"]
-            proj["ilayer"] = get_layer_index(proj["pos"], params.target.geometry)
-            proj["is_inside"] = is_inside_target(proj["pos"], params.target.geometry)
+            proj["ilayer"] = get_layer_index(proj["pos"], params.geometry)
+            proj["is_inside"] = is_inside_target(proj["pos"], params.geometry)
             
             if not proj["is_inside"]:
                 break
             
             # get chemical element of recoil
             recoil_ilayer = get_layer_index(recoil_pos, 
-                                            params.target.geometry)
+                                            params.geometry)
             recoil_ielem = get_element_index(recoil_ilayer, 
-                                             params.target.materials)
+                                             params.materials)
             
             # scattering event
             recoil_dir, recoil_e = scatter(proj, p, dirp, recoil_ielem,
@@ -114,7 +114,7 @@ def cascade(initial_proj, params, follow_recoils=False, prealloc=400):
             # below ed
             if follow_recoils and recoil_e > ed:
                 recoil_is_inside = is_inside_target(recoil_pos, 
-                                                    params.target.geometry)
+                                                    params.geometry)
 
                 if recoils_tail >= recoils.size:
                     #print("Growing recoils array from size", recoils.size)

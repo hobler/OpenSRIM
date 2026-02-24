@@ -172,7 +172,7 @@ def setup(input_params):
     print(f"target_params.materials={target_params.materials}")
     #exit()
 
-    return target_params
+    return geometry_params, elements_params, materials_params
 
 
 @jit(inline = "always")

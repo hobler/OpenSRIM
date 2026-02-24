@@ -21,6 +21,9 @@ def simulate(nion, params, follow_recoils=False, sim_idx=0):
             Result buffers for `Histogram_1d` class,
             Result buffers for `Moments_1d` class
     """
+    #print(f"params is C contiguous = {params.flags.c_contiguous}")
+    #print(f"Size of params: {params.nbytes/1024:.3f} kB")
+
     proj_count, hist_buf, mom_buf = _simulate(nion, params, follow_recoils, sim_idx)
     return proj_count, np.sum(hist_buf, axis=0, dtype=np.int32), np.sum(mom_buf, axis=0, dtype=np.float64)
 

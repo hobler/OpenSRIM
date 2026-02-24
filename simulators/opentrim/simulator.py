@@ -23,6 +23,7 @@ def simulate(nion, params, follow_recoils=False, sim_idx=0):
     """
     #print(f"params is C contiguous = {params.flags.c_contiguous}")
     #print(f"Size of params: {params.nbytes/1024:.3f} kB")
+    print(type(params))
 
     proj_count, hist_buf, mom_buf = _simulate(nion, params, follow_recoils, sim_idx)
     return proj_count, np.sum(hist_buf, axis=0, dtype=np.int32), np.sum(mom_buf, axis=0, dtype=np.float64)
@@ -58,7 +59,7 @@ def _simulate(nion, params, follow_recoils, sim_idx):
     proj_dummy_arr[0] = proj_init
 
     # Fixes weird Numba error by passing array instead of single record
-    params_arr = np.full(1, params)
+    #params_arr = np.full(1, params)
     
     hist_dummy = np.empty((1, 1), dtype=np.int32)
     mom_dummy = np.empty((1, 1), dtype=np.float64)
@@ -67,9 +68,9 @@ def _simulate(nion, params, follow_recoils, sim_idx):
     
     # Simulate the collision cascades in parallel
     for i in prange(nion):
-        np.random.seed(params_arr[0].rng_seed + sim_idx + i)
+        np.random.seed(params.rng_seed + sim_idx + i)
         proj_sim[i], hist_results[i], mom_results[i] = cascade.cascade(
-            proj_dummy_arr[0], params_arr[0], follow_recoils)
+            proj_dummy_arr[0], params, follow_recoils)
     
     proj_count = 0
     for proj_lst in proj_sim:

@@ -9,6 +9,7 @@ Available functions:
     get_recoil_position_position: get the recoil position.
 """
 from math import sqrt, sin, cos
+from collections import namedtuple
 import numpy as np
 from numba import jit
 from .mytypes import PROJ_DTYPE
@@ -26,15 +27,21 @@ def setup(input_params):
     densities = np.array(input_params["layers"]["density"])
     nlayers = len(densities)
     
-    RECOIL_PARAMS_DTYPE = np.dtype([
-        ("pmax", np.float64, (nlayers,)),
-        ("mean_free_path", np.float64, (nlayers,)),
-    ], align=True)
+    #RECOIL_PARAMS_DTYPE = np.dtype([
+    #    ("pmax", np.float64, (nlayers,)),
+    #    ("mean_free_path", np.float64, (nlayers,)),
+    #], align=True)
 
-    recoil_params = np.recarray(1, dtype=RECOIL_PARAMS_DTYPE)[0]
-    recoil_params["mean_free_path"] = densities**(-1/3)
-    recoil_params["pmax"] = recoil_params["mean_free_path"] / sqrt(np.pi)
-    
+    #recoil_params = np.recarray(1, dtype=RECOIL_PARAMS_DTYPE)[0]
+    #recoil_params["mean_free_path"] = densities**(-1/3)
+    #recoil_params["pmax"] = recoil_params["mean_free_path"] / sqrt(np.pi)
+
+    RecoilParams = namedtuple("RecoilParams", ["pmax", "mean_free_path"])
+    recoil_params = RecoilParams(
+        pmax = densities**(-1/3) / sqrt(np.pi),
+        mean_free_path = densities**(-1/3),
+    )
+
     return recoil_params
 
 

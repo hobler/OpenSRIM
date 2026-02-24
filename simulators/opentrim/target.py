@@ -6,6 +6,7 @@ Available functions:
     setup: setup module variables.
     is_inside_target: check if a given position is inside the target
 """
+from collections import namedtuple
 import numpy as np
 from numba import jit
 
@@ -25,17 +26,30 @@ def setup(input_params):
     layers_params = input_params["layers"]
     nlayers = len(layers_params["name"])
 
-    GEOMETRY_PARAMS_DTYPE = np.dtype([
-        ("nlayers", np.uint32),
-        ("z_intf", np.float64, (nlayers + 1,)),
-    ], align=True)
+    #GEOMETRY_PARAMS_DTYPE = np.dtype([
+    #    ("nlayers", np.uint32),
+    #    ("z_intf", np.float64, (nlayers + 1,)),
+    #], align=True)
 
-    geometry_params = np.recarray(1, dtype=GEOMETRY_PARAMS_DTYPE)[0]
-    geometry_params.nlayers = nlayers
-    geometry_params.z_intf[0] = 0.0
+    #geometry_params = np.recarray(1, dtype=GEOMETRY_PARAMS_DTYPE)[0]
+    #geometry_params.nlayers = nlayers
+    #geometry_params.z_intf[0] = 0.0
+    #for i in range(nlayers):
+    #    geometry_params.z_intf[i+1] = (
+    #        geometry_params.z_intf[i] + layers_params["width"][i])
+
+    NLAYERS = 5
+    z_intf = np.empty(NLAYERS + 1, dtype=np.float64)
+    z_intf[0] = 0.0
     for i in range(nlayers):
-        geometry_params.z_intf[i+1] = (
-            geometry_params.z_intf[i] + layers_params["width"][i])
+        z_intf[i+1] = z_intf[i] + layers_params["width"][i]
+
+    GeometryParams = namedtuple("GeometryParams", ["nlayers", "z_intf"])
+    
+    geometry_params = GeometryParams(
+        nlayers = nlayers,
+        z_intf = z_intf,
+    )
 
     # Construct a list of more convenient material dictionaries.
     # Each material has the format
@@ -105,6 +119,7 @@ def setup(input_params):
                              # materials
 
     nelem = len(elements)
+    nmat = len(materials)
     # Test:
     print(f"Number of distinct chemical elements: {nelem}")
     print("Elements:")
@@ -114,65 +129,98 @@ def setup(input_params):
     for mat in materials:
         print(mat)
 
-    ELEMENTS_PARAMS_DTYPE = np.dtype([
-        ("symbol", "<U2"),
-        ("name", "<U12"),
-        ("Z", np.uint32),
-        ("M", np.float64),
-    ], align=True)
+    #ELEMENTS_PARAMS_DTYPE = np.dtype([
+    #    ("symbol", "<U2"),
+    #    ("name", "<U12"),
+    #    ("Z", np.uint32),
+    #    ("M", np.float64),
+    #], align=True)
 
-    elements_params = np.recarray(nelem, dtype=ELEMENTS_PARAMS_DTYPE)
+    #elements_params = np.recarray(nelem, dtype=ELEMENTS_PARAMS_DTYPE)
+    #for ielem, elem in enumerate(elements):
+    #    elements_params[ielem].symbol = elem["symbol"]
+    #    elements_params[ielem].name = elem["name"]
+    #    elements_params[ielem].Z = elem["Z"]
+    #    elements_params[ielem].M = elem["M"]
+
+    ElementParams = namedtuple("ElementParams", ["symbol", "name", "Z", "M"])
+    
+    NELEM = 5
+    elements_params = np.empty(NELEM, dtype=ElementParams)
     for ielem, elem in enumerate(elements):
-        elements_params[ielem].symbol = elem["symbol"]
-        elements_params[ielem].name = elem["name"]
-        elements_params[ielem].Z = elem["Z"]
-        elements_params[ielem].M = elem["M"]
+        elements_params[ielem] = ElementParams(
+            symbol = elem["symbol"],
+            name = elem["name"],
+            Z = elem["Z"],
+            M = elem["M"],
+        )
+    print(f"elements_params={elements_params}")
 
-    MATERIALS_PARAMS_DTYPE = np.dtype([
-        ("name", "<U16"),
-        ("density", np.float64),
-        ("compound_correction", np.float64),
-        ("gas", np.bool_),
-        ("nelem", np.uint32),
-        ("ielem", np.uint32, nelem),
-        ("atomic_fraction", np.float64, nelem),
-        ("cumulative_fraction", np.float64, nelem),
-        ("displacement_energy", np.float64, nelem),
-    ], align=True)
+    #MATERIALS_PARAMS_DTYPE = np.dtype([
+    #    ("name", "<U16"),
+    #    ("density", np.float64),
+    #    ("compound_correction", np.float64),
+    #    ("gas", np.bool_),
+    #    ("nelem", np.uint32),
+    #    ("ielem", np.uint32, nelem),
+    #    ("atomic_fraction", np.float64, nelem),
+    #    ("cumulative_fraction", np.float64, nelem),
+    #    ("displacement_energy", np.float64, nelem),
+    #], align=True)
 
-    materials_params = np.recarray(len(materials), dtype=MATERIALS_PARAMS_DTYPE)
-    for imat, mat in enumerate(materials):
-        materials_params[imat].name = mat["name"]
-        materials_params[imat].density = mat["density"]
-        materials_params[imat].compound_correction = mat["compound_correction"]
-        materials_params[imat].gas = mat["gas"]
-        materials_params[imat].nelem = mat["nelem"]
-        materials_params[imat].ielem[:mat["nelem"]] = mat["ielem"]
-        materials_params[imat].atomic_fraction[:mat["nelem"]] = (
-            mat["atomic_fractions"])
-        materials_params[imat].cumulative_fraction[:mat["nelem"]] = (
-            np.cumsum(mat["atomic_fractions"]))
-        materials_params[imat].cumulative_fraction[mat["nelem"] - 1] = 1.0
-        materials_params[imat].displacement_energy[:mat["nelem"]] = (
-            mat["displacement_energy"])
+    #materials_params = np.recarray(len(materials), dtype=MATERIALS_PARAMS_DTYPE)
+    #for imat, mat in enumerate(materials):
+    #    materials_params[imat].name = mat["name"]
+    #    materials_params[imat].density = mat["density"]
+    #    materials_params[imat].compound_correction = mat["compound_correction"]
+    #    materials_params[imat].gas = mat["gas"]
+    #    materials_params[imat].nelem = mat["nelem"]
+    #    materials_params[imat].ielem[:mat["nelem"]] = mat["ielem"]
+    #    materials_params[imat].atomic_fraction[:mat["nelem"]] = (
+    #        mat["atomic_fractions"])
+    #    materials_params[imat].cumulative_fraction[:mat["nelem"]] = (
+    #        np.cumsum(mat["atomic_fractions"]))
+    #    materials_params[imat].cumulative_fraction[mat["nelem"] - 1] = 1.0
+    #    materials_params[imat].displacement_energy[:mat["nelem"]] = (
+    #        mat["displacement_energy"])
 
-    TARGET_PARAMS_DTYPE = np.dtype([
-        ("geometry", GEOMETRY_PARAMS_DTYPE),
-        ("elements", ELEMENTS_PARAMS_DTYPE, nelem),
-        ("materials", MATERIALS_PARAMS_DTYPE, len(materials)),
-    ], align=True)
+    MaterialParams = namedtuple("MaterialParams", [
+        "name", "density", "compound_correction", "gas", "nelem",
+        "ielem", "atomic_fraction", "cumulative_fraction", "displacement_energy",
+    ])
 
-    target_params = np.recarray(1, dtype=TARGET_PARAMS_DTYPE)[0]
-    target_params.geometry = geometry_params
-    target_params.elements = elements_params
-    target_params.materials = materials_params
+    NMAT = 5
+    materials_params = np.empty(NMAT, dtype=MaterialParams)
+    for imat in range(nmat):
+        materials_params[imat] = MaterialParams(
+            name = materials[imat]["name"],
+            density = materials[imat]["density"],
+            compound_correction = materials[imat]["compound_correction"],
+            gas = materials[imat]["gas"],
+            nelem = materials[imat]["nelem"],
+            ielem = materials[imat]["ielem"],
+            atomic_fraction = materials[imat]["atomic_fractions"],
+            cumulative_fraction = np.cumsum(materials[imat]["atomic_fractions"]),
+            displacement_energy = materials[imat]["displacement_energy"],
+        )
 
-    print(f"target_params.geometry={target_params.geometry}")
-    print(f"target_params.elements={target_params.elements}")
-    print(f"target_params.materials={target_params.materials}")
+    #TARGET_PARAMS_DTYPE = np.dtype([
+    #    ("geometry", GEOMETRY_PARAMS_DTYPE),
+    #    ("elements", ELEMENTS_PARAMS_DTYPE, nelem),
+    #    ("materials", MATERIALS_PARAMS_DTYPE, len(materials)),
+    #], align=True)
+
+    #target_params = np.recarray(1, dtype=TARGET_PARAMS_DTYPE)[0]
+    #target_params.geometry = geometry_params
+    #target_params.elements = elements_params
+    #target_params.materials = materials_params
+
+    #print(f"target_params.geometry={target_params.geometry}")
+    #print(f"target_params.elements={target_params.elements}")
+    #print(f"target_params.materials={target_params.materials}")
     #exit()
 
-    return geometry_params, elements_params, materials_params
+    return geometry_params, nelem, elements_params, nmat, materials_params
 
 
 @jit(inline = "always")

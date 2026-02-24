@@ -5,6 +5,7 @@ Available functions:
     cascade: simulate one cascade.
 """
 import os
+from collections import namedtuple
 
 import numpy as np
 from numba import jit
@@ -23,16 +24,22 @@ def setup():
         (CASCADE_PARAMS_DTYPE): The cascade parameters
     """
 
-    CASCADE_PARAMS_DTYPE = np.dtype([
-        ("emin", np.float64),
-        ("ed", np.float64),
-    ], align=True)
+    #CASCADE_PARAMS_DTYPE = np.dtype([
+    #    ("emin", np.float64),
+    #    ("ed", np.float64),
+    #], align=True)
 
-    cascade_params = np.recarray(1, dtype=CASCADE_PARAMS_DTYPE)[0]
+    #cascade_params = np.recarray(1, dtype=CASCADE_PARAMS_DTYPE)[0]
 
-    cascade_params.emin = 5.0  # eV
-    cascade_params.ed = 15.0   # eV
-    
+    #cascade_params.emin = 5.0  # eV
+    #cascade_params.ed = 15.0   # eV
+
+    CascadeParams = namedtuple("CascadeParams", ["emin", "ed"])
+    cascade_params = CascadeParams(
+        emin = 5.0,  # eV
+        ed = 15.0,   # eV
+    )
+
     return cascade_params
 
 # TODO: Make follow_recoils an input parameter, passed via cascade_params

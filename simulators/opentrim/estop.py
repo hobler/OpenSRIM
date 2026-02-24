@@ -8,15 +8,17 @@ Available functions:
     eloss: calculate the electronic energy loss.
 """
 from math import sqrt
+from collections import namedtuple
 import numpy as np
 from numba import jit
 
 
-def setup(input_params, elements_params):
+def setup(input_params, nelem, elements_params):
     """Setup module variables for electronic stopping.
 
     Parameters:
         input_params (dict): input parameters
+        nelem (int): number of elements
         elements_params (ELEMENTS_PARAMS_DTYPE): element parameters
 
     Returns:
@@ -27,34 +29,39 @@ def setup(input_params, elements_params):
         raise ValueError(f"Unsupported electronic stopping model: {model}")
 
     # correction factors to Lindhard stopping power
-    nelem = len(elements_params)
+    #nelem = len(elements_params)
     corr_lindhard = np.ones((nelem, nelem))  # default = 1.0
     for corr in input_params["models"]["Lindhard correction"]:
         elem1, elem2 = corr.split("->")
         for ielem1 in range(nelem):
             for ielem2 in range(nelem):
-                if (elements_params[ielem1]["symbol"].strip() == elem1 and 
-                    elements_params[ielem2]["symbol"].strip() == elem2):
+                if (elements_params[ielem1].symbol.strip() == elem1 and 
+                    elements_params[ielem2].symbol.strip() == elem2):
                     corr_lindhard[ielem1, ielem2] = (
                         input_params["models"]["Lindhard correction"][corr])
 
     # Prefactor for Lindhard stopping (sqrt(eV)*A^2)
     fac_lindhard = np.empty((nelem, nelem))
     for ielem1 in range(nelem):
-        z1 = elements_params[ielem1]["Z"]
-        m1 = elements_params[ielem1]["M"]
+        z1 = elements_params[ielem1].Z
+        m1 = elements_params[ielem1].M
         for ielem2 in range(nelem):
-            z2 = elements_params[ielem2]["Z"]
+            z2 = elements_params[ielem2].Z
             fac_lindhard[ielem1, ielem2] = (
                 corr_lindhard[ielem1, ielem2] * 1.212 * z1**(7/6) * z2 
                 / ((z1**(2/3) + z2**(2/3))**(3/2) * sqrt(m1)) )
 
-    ESTOP_PARAMS_DTYPE = np.dtype([
-        ("fac_lindhard", np.float64, (nelem, nelem)),
-    ], align=True)
+    #ESTOP_PARAMS_DTYPE = np.dtype([
+    #    ("fac_lindhard", np.float64, (nelem, nelem)),
+    #], align=True)
 
-    estop_params = np.recarray(1, dtype=ESTOP_PARAMS_DTYPE)[0]
-    estop_params["fac_lindhard"] = fac_lindhard
+    #estop_params = np.recarray(1, dtype=ESTOP_PARAMS_DTYPE)[0]
+    #estop_params["fac_lindhard"] = fac_lindhard
+
+    EstopParams = namedtuple("EstopParams", ["fac_lindhard"])
+    estop_params = EstopParams(
+        fac_lindhard = fac_lindhard,
+    )
 
     return estop_params
 

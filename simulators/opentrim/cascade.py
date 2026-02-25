@@ -1,7 +1,6 @@
 """Simulate projectile trajectories.
 
 Available functions:
-    setup: setup module variables.
     cascade: simulate one cascade.
 """
 import os
@@ -16,31 +15,6 @@ from .estop import eloss
 from .target import get_layer_index, get_element_index, is_inside_target
 from . import stats as statistics
 
-
-def setup():
-    """Setup module variables.
-    
-    Returns:
-        (CASCADE_PARAMS_DTYPE): The cascade parameters
-    """
-
-    #CASCADE_PARAMS_DTYPE = np.dtype([
-    #    ("emin", np.float64),
-    #    ("ed", np.float64),
-    #], align=True)
-
-    #cascade_params = np.recarray(1, dtype=CASCADE_PARAMS_DTYPE)[0]
-
-    #cascade_params.emin = 5.0  # eV
-    #cascade_params.ed = 15.0   # eV
-
-    CascadeParams = namedtuple("CascadeParams", ["emin", "ed"])
-    cascade_params = CascadeParams(
-        emin = 5.0,  # eV
-        ed = 15.0,   # eV
-    )
-
-    return cascade_params
 
 # TODO: Make follow_recoils an input parameter, passed via cascade_params
 @jit
@@ -65,7 +39,9 @@ def cascade(initial_proj, params, follow_recoils=False, prealloc=400):
     
     emin = params.cascade.emin
     ed = params.cascade.ed
-    is_magic = (params.scatter.pot_model == "ZBL_magic")
+    #emin = 5.0
+    #ed = 15.0
+    
     stat = params.stat
     hist = statistics.Histogram_1d(stat.nspec, stat.nbin, 
                                    (stat.limits[0], stat.limits[1]))
@@ -95,6 +71,7 @@ def cascade(initial_proj, params, follow_recoils=False, prealloc=400):
         while proj["e"] > emin:
             free_path, p, dirp, recoil_pos = get_recoil_position(
                 proj, params.recoil)
+            #print(f"Trajectory start: proj_e={proj['e']:.2f} eV")
             
             # step projectile forward and update energy
             dee = eloss(proj, free_path, params.estop, params.materials)
@@ -103,6 +80,9 @@ def cascade(initial_proj, params, follow_recoils=False, prealloc=400):
             proj["ilayer"] = get_layer_index(proj["pos"], params.geometry)
             proj["is_inside"] = is_inside_target(proj["pos"], params.geometry)
             
+            #print(f"geometry_params={params.geometry}")
+            #print(f"proj_e={proj['e']:.2f} eV, proj_pos={proj['pos']}, is_inside={proj['is_inside']}")
+
             if not proj["is_inside"]:
                 break
             
@@ -115,7 +95,6 @@ def cascade(initial_proj, params, follow_recoils=False, prealloc=400):
             # scattering event
             recoil_dir, recoil_e = scatter(proj, p, dirp, recoil_ielem,
                                            params.scatter)
-            
             # Create recoil projectile and add to recoils list
             # TODO: We may want to score the recoil energy even when it is 
             # below ed

@@ -237,40 +237,14 @@ def setup(nspec, nbin, limits):
     """
     global mom, hist
 
-    #nspec = 1
-    #for material in input_params["layers"]["material"]:
-    #    nspec += len(material["symbol"])
-    #nbin = input_params["output"]["depth distribution"]["nbins"]
-    #limits = input_params["output"]["depth distribution"]["limits"]
-
-    #STAT_PARAMS_DTYPE = np.dtype([
-    #    ("nspec", np.int32),
-    #    ("nbin", np.int32),
-    #    ("limits", np.float64, (2,)),
-    #], align=True)
-
-    #stat_params = np.recarray(1, dtype=STAT_PARAMS_DTYPE)[0]
-    #stat_params["nspec"] = nspec
-    #stat_params["nbin"] = nbin
-    #stat_params["limits"] = np.array(limits)
-
-    StatParams = namedtuple("StatParams", ["nspec", "nbin", "limits"])
-    stat_params = StatParams(
-        nspec = nspec,
-        nbin = nbin,
-        limits = np.array(limits),
-    )
-
     mom = Moment_1d(nvar=nspec, nmax=4)
-    hist = Histogram_1d(stat_params.nspec, stat_params.nbin, (stat_params.limits[0], stat_params.limits[1]))
+    hist = Histogram_1d(nspec, nbin, (limits[0], limits[1]))
     
     mom.central_moments()
     mom.mean()
     mom.std()
     mom.skewness()
     mom.kurtosis()
-
-    return stat_params
 
 
 def print_results():

@@ -10,19 +10,9 @@ import numpy as np
 from scipy.special import roots_legendre
 from .zbl import zbl_screen, estimate_apsis
 
-ROOTS_LEGENDRE = None
-
-def setup(n_absc):
-    """Setup Gauss-Legendre abscissae and weights.
-
-    Parameters:
-        n_absc (int): Number of abscissae.
-    """
-    global ROOTS_LEGENDRE
-
-    # TODO: Put ROOTS_LEGENDRE into params, since global variables might not
-    # work with cached jit functions.
-    ROOTS_LEGENDRE = roots_legendre(n_absc)
+# TODO: Put ROOTS_LEGENDRE into params, since global variables might not
+# work with cached jit functions.
+ROOTS_LEGENDRE = roots_legendre(4)
 
 
 @jit
@@ -54,7 +44,7 @@ def scatter_integrals(e, p, pot_model):
 
     The calculation uses Gauss-Legendre quadrature with a fixed number of
     abscissae given by ROOTS_LEGENDRE. The abscrissae and weights must have 
-    been set up before calling this function using setup().
+    been set up before calling this function.
 
     Parameters:
         e (float): Reduced energy.

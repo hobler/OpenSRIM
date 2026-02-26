@@ -14,7 +14,7 @@ from collections import namedtuple
 import numpy as np
 from numba import jit
 from .zbl import magic
-from .cm_scatter import scatter_integrals
+#from .cm_scatter import scatter_integrals
 
 
 @jit(inline = "always")
@@ -84,9 +84,10 @@ def scatter(proj, p, dirp, ielem2, scatter_params):
     elif pot_model.endswith("magic"):
         raise ValueError(f"Unknown potential model {pot_model}")
     else:
-        theta, _ = scatter_integrals(proj_e/enorm, p/rnorm, pot_model)
-        sin_half_theta = math.sin(0.5 * theta)
-        cos_half_theta = math.cos(0.5 * theta)
+        raise ValueError(f"Potential model {pot_model} deactivated for now")
+#        theta, _ = scatter_integrals(proj_e/enorm, p/rnorm, pot_model)
+#        sin_half_theta = math.sin(0.5 * theta)
+#        cos_half_theta = math.cos(0.5 * theta)
 
     # directions of the recoil and the projectile after the collision
     recoil_dir = dirfac * sin_half_theta * (

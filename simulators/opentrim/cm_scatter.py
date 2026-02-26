@@ -16,7 +16,7 @@ ROOTS_LEGENDRE = roots_legendre(4)
 
 
 @jit
-def calc_phi_chi(u, r0, screen_fun):
+def calc_phi_chi(u, r0):#, screen_fun):
     """Calculate the screening function and chi at the given u values.
 
     phi is evaluated at r0/(1-u**2).
@@ -32,8 +32,10 @@ def calc_phi_chi(u, r0, screen_fun):
         (float): Value of chi function.
     """
     # u = np.asarray(u)
-    phi0, dphi0 = screen_fun(r0)
-    phi, _ = screen_fun(r0/(1-u**2))
+#    phi0, dphi0 = screen_fun(r0)
+#    phi, _ = screen_fun(r0/(1-u**2))
+    phi0, dphi0 = zbl_screen(r0)
+    phi, _ = zbl_screen(r0/(1-u**2))
     chi = np.where(u < 3e-4, phi0 - r0*dphi0, (phi0 - phi*(1-u**2)) / u**2)
     return phi, chi
 
@@ -56,7 +58,7 @@ def scatter_integrals(e, p, pot_model):
         (float): Time integral (RNORM).
     """
     if pot_model.startswith("ZBL"):
-        screen_fun = zbl_screen
+        # screen_fun = zbl_screen
         rmax = np.inf
     elif pot_model.startswith("NLHlin"):
         raise NotImplementedError("NLHlin potential not implemented yet")
@@ -76,7 +78,7 @@ def scatter_integrals(e, p, pot_model):
                                   "potential model")
 
     def integrands(u):
-        phi, chi = calc_phi_chi(u, r0, screen_fun)
+        phi, chi = calc_phi_chi(u, r0)#, screen_fun)
         rho = r0 / (e*p**2)
         g = np.sqrt(rho*chi + (2-u**2))
         integrand_theta = 1 / g

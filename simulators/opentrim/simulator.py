@@ -71,6 +71,7 @@ def _simulate(nion, params, follow_recoils, sim_idx):
     for i in prange(nion):
         np.random.seed(params.rng_seed + sim_idx + i)
         proj_sim[i], hist_results[i], mom_results[i] = cascade.cascade(
+#        proj_sim[i] = cascade.cascade(
             proj_dummy_arr[0], params, follow_recoils)
     
     proj_count = 0

@@ -13,7 +13,7 @@ import os
 from collections import namedtuple
 from math import sqrt
 import numpy as np
-from . import cm_scatter
+#from . import cm_scatter
 from . import stats as statistics
 from .nlhlin import read_coefs
 

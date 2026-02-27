@@ -30,30 +30,30 @@ if __package__ is None:
 
 from . import config  # import config early to set up caching and parallel settings
 from . import stats as statistics
+start = time.time()
 from .init import params  # defines the params named tuple
 from .simulator import simulate, simulate_chunked, simulate_adaptive  # noqa: F401
 
 print("params is in globals():", "params" in globals())
 
-@jit
+@jit(cache=config.ENABLE_CACHING, parallel=config.PARALLEL, nogil=config.PARALLEL)
 def test_params(params):
     print("Testing params:")
 #    print("params:", params)
-    print("params.stat:", params.stat)
-    print("params.cascade:", params.cascade)
-    print("params.recoil:", params.recoil)
-    print("params.geometry:", params.geometry)
-    print("params.elements:", params.elements)
-    print("params.materials:", params.materials)
-    print("params.estop:", params.estop)
-    print("params.scatter:", params.scatter)
-    print("params.rng_seed:", params.rng_seed)
-    for _ in prange(5):
-        print("params.nelem:", params.nelem)
+    for _ in prange(2):
+        print("params[0].rng_seed:", params[0].rng_seed)
+        print("params[0].stat:", params[0].stat)
+        print("params[0].cascade:", params[0].cascade)
+        print("params[0].recoil:", params[0].recoil)
+        print("params[0].geometry:", params[0].geometry)
+        print("params[0].elements:", params[0].elements)
+        print("params[0].materials:", params[0].materials)
+        print("params[0].estop:", params[0].estop)
+        print("params[0].scatter:", params[0].scatter)
+        print("params[0].nelem:", params[0].nelem)
+        print("Finished!")
 
 #test_params(params); exit()
-
-start = time.time()
 
 if __name__ == "__main__":
     if not config.ENABLE_CACHING:
@@ -67,7 +67,7 @@ if __name__ == "__main__":
     
     print("Startup time:", time.time() - start)
     iter_cnt = 1
-    counts = [100] #[10000]
+    counts = [10000] #[10000]
     chunk_size = 100
     # avg_chunk_time = 0.1    # seconds
     
@@ -77,11 +77,15 @@ if __name__ == "__main__":
     for _ in range(iter_cnt):
         for i, c in enumerate(counts):
             # empty stats for each nion count
-            statistics.setup(nspec=params.stat.nspec, nbin=params.stat.nbin, limits=params.stat.limits)
+            statistics.setup(nspec=params[0].stat.nspec, 
+                             nbin=params[0].stat.nbin, 
+                             limits=params[0].stat.limits)
             
             start_time = time.time()
             # proj_count, hist_buf, mom_buf = simulate_adaptive(avg_chunk_time, c, params, follow_recoils=True)
-            proj_count, hist_buf, mom_buf = simulate_chunked(chunk_size, c, params, follow_recoils=True)
+            proj_count, hist_buf, mom_buf = simulate_chunked(chunk_size, c, 
+                                                             params, 
+                                                             follow_recoils=True)
             # proj_count, hist_buf, mom_buf = simulate(c, params, follow_recoils=True, sim_idx=0)
             if statistics.hist is not None:
                 statistics.hist.results = hist_buf

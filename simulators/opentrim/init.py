@@ -218,21 +218,23 @@ input_params = read_input()
 layers_params = input_params["layers"]
 nlayers = len(layers_params["name"])
 
-NLAYERS = 5
-#NLAYERS = nlayers
+#NLAYERS = 5
+NLAYERS = nlayers
 z_intf = np.empty(NLAYERS + 1, dtype=np.float64)
 z_intf[0] = 0.0
 for i in range(nlayers):
     z_intf[i+1] = z_intf[i] + layers_params["width"][i]
 
 GEOMETRY_PARAMS_DTYPE = np.dtype([
-    ("nlayers", np.int32),
+    ("nlayers", np.int64),
     ("z_intf", np.float64, (NLAYERS+1,)),
 ], align=True)
 
-geometry_params = np.recarray(1, dtype=GEOMETRY_PARAMS_DTYPE)[0]
-geometry_params.nlayers = nlayers
-geometry_params.z_intf = z_intf
+geometry_params = np.recarray(1, dtype=GEOMETRY_PARAMS_DTYPE)
+# NOTE: Do not do "geometry_params = geometry_params[0]", since this would 
+# create a structured scalar, which causes issues with parallelization in Numba.
+geometry_params[0].nlayers = nlayers
+geometry_params[0].z_intf = z_intf
 
 # Extract information about the target materials and construct a more 
 # convenient data structure.
@@ -320,19 +322,19 @@ for mat in materials:
 ELEMENT_PARAMS_DTYPE = np.dtype([
     ("symbol", "<U2"),
     ("name", "<U12"),
-    ("Z", np.int32),
+    ("Z", np.int64),
     ("M", np.float64),
 ], align=True)
 
-NELEM = 5
-#NELEM = nelem
+#NELEM = 5
+NELEM = nelem
 
 elements_params = np.recarray(NELEM, dtype=ELEMENT_PARAMS_DTYPE)
 for ielem, elem in enumerate(elements):
-    elements_params.symbol[ielem] = elem["symbol"]
-    elements_params.name[ielem] = elem["name"]
-    elements_params.Z[ielem] = elem["Z"]
-    elements_params.M[ielem] = elem["M"]
+    elements_params[ielem].symbol = elem["symbol"]
+    elements_params[ielem].name = elem["name"]
+    elements_params[ielem].Z = elem["Z"]
+    elements_params[ielem].M = elem["M"]
 print(f"elements_params={elements_params}")
 
 # Define the materials parameters
@@ -342,29 +344,29 @@ MATERIALS_PARAMS_DTYPE = np.dtype([
     ("density", np.float64),
     ("compound_correction", np.float64),
     ("gas", bool),
-    ("nelem", np.int32),
-    ("ielem", np.int32, (NELEM,)),
+    ("nelem", np.int64),
+    ("ielem", np.int64, (NELEM,)),
     ("atomic_fraction", np.float64, (NELEM,)),
     ("cumulative_fraction", np.float64, (NELEM,)),
     ("displacement_energy", np.float64, (NELEM,)),
 ], align=True)
 
-NMAT = 5
-#NMAT = nmat
+#NMAT = 5
+NMAT = nmat
 
 materials_params = np.recarray(NMAT, dtype=MATERIALS_PARAMS_DTYPE)
 for imat, mat in enumerate(materials):
-    materials_params.name[imat] = mat["name"]
-    materials_params.density[imat] = mat["density"]
-    materials_params.compound_correction[imat] = mat["compound_correction"]
-    materials_params.gas[imat] = mat["gas"]
-    materials_params.nelem[imat] = mat["nelem"]
+    materials_params[imat].name = mat["name"]
+    materials_params[imat].density = mat["density"]
+    materials_params[imat].compound_correction = mat["compound_correction"]
+    materials_params[imat].gas = mat["gas"]
+    materials_params[imat].nelem = mat["nelem"]
     for ielem in range(mat["nelem"]):
-        materials_params.ielem[imat, ielem] = mat["ielem"][ielem]
-        materials_params.atomic_fraction[imat, ielem] = mat["atomic_fractions"][ielem]
-        materials_params.cumulative_fraction[imat, ielem] = (
+        materials_params[imat].ielem[ielem] = mat["ielem"][ielem]
+        materials_params[imat].atomic_fraction[ielem] = mat["atomic_fractions"][ielem]
+        materials_params[imat].cumulative_fraction[ielem] = (
             np.sum(mat["atomic_fractions"][:ielem+1]))
-        materials_params.displacement_energy[imat, ielem] = (
+        materials_params[imat].displacement_energy[ielem] = (
             mat["displacement_energy"][ielem])
 print(f"materials_params={materials_params}")
 
@@ -379,18 +381,18 @@ for corr in input_params["models"]["Lindhard correction"]:
     elem1, elem2 = corr.split("->")
     for ielem1 in range(nelem):
         for ielem2 in range(nelem):
-            if (elements_params.symbol[ielem1].strip() == elem1 and 
-                elements_params.symbol[ielem2].strip() == elem2):
+            if (elements_params[ielem1].symbol.strip() == elem1 and 
+                elements_params[ielem2].symbol.strip() == elem2):
                 corr_lindhard[ielem1, ielem2] = (
                     input_params["models"]["Lindhard correction"][corr])
 
 # Prefactor for Lindhard stopping (sqrt(eV)*A^2)
 fac_lindhard = np.empty((NELEM, NELEM))
 for ielem1 in range(nelem):
-    z1 = elements_params.Z[ielem1]
-    m1 = elements_params.M[ielem1]
+    z1 = elements_params[ielem1].Z
+    m1 = elements_params[ielem1].M
     for ielem2 in range(nelem):
-        z2 = elements_params.Z[ielem2]
+        z2 = elements_params[ielem2].Z
         fac_lindhard[ielem1, ielem2] = (
             corr_lindhard[ielem1, ielem2] * 1.212 * z1**(7/6) * z2 
             / ((z1**(2/3) + z2**(2/3))**(3/2) * sqrt(m1)) )
@@ -400,8 +402,8 @@ ESTOP_PARAMS_DTYPE = np.dtype([
     ("fac_lindhard", np.float64, (NELEM, NELEM)),
 ], align=True)
 
-estop_params = np.recarray(1, dtype=ESTOP_PARAMS_DTYPE)[0]
-estop_params.fac_lindhard = fac_lindhard
+estop_params = np.recarray(1, dtype=ESTOP_PARAMS_DTYPE)
+estop_params[0].fac_lindhard = fac_lindhard
 
 # Initialize the recoiling parameters
 densities = np.array(input_params["layers"]["density"])
@@ -411,9 +413,9 @@ RECOIL_PARAMS_DTYPE = np.dtype([
     ("mean_free_path", np.float64, (NMAT)),
 ], align=True)
 
-recoil_params = np.recarray(1, dtype=RECOIL_PARAMS_DTYPE)[0]
-recoil_params.pmax = densities**(-1/3) / sqrt(np.pi)
-recoil_params.mean_free_path = densities**(-1/3)
+recoil_params = np.recarray(1, dtype=RECOIL_PARAMS_DTYPE)
+recoil_params[0].pmax = densities**(-1/3) / sqrt(np.pi)
+recoil_params[0].mean_free_path = densities**(-1/3)
 
 # Initialize the scattering parameters
 pot_model = input_params["models"]["potential"]
@@ -441,10 +443,10 @@ if pot_model == "NLHlin":
 
 for ielem1 in range(nelem):
     for ielem2 in range(nelem):
-        z1 = elements_params.Z[ielem1]
-        z2 = elements_params.Z[ielem2]
-        m1 = elements_params.M[ielem1]
-        m2 = elements_params.M[ielem2]
+        z1 = elements_params[ielem1].Z
+        z2 = elements_params[ielem2].Z
+        m1 = elements_params[ielem1].M
+        m2 = elements_params[ielem2].M
         m1_m2 = m1 / m2
 
         if pot_model.startswith("ZBL"):
@@ -488,12 +490,12 @@ if pot_model == "NLHlin":
         ("nlhlin_coefs", NLHLIN_COEFS_DTYPE, (NELEM, NELEM)),
     ], align=True)
 
-scatter_params = np.recarray(1, dtype=SCATTER_PARAMS_DTYPE)[0]
-scatter_params.pot_model = pot_model
-scatter_params.enorm = enorm
-scatter_params.rnorm = rnorm
-scatter_params.dirfac = dirfac
-scatter_params.denfac = denfac
+scatter_params = np.recarray(1, dtype=SCATTER_PARAMS_DTYPE)
+scatter_params[0].pot_model = pot_model
+scatter_params[0].enorm = enorm
+scatter_params[0].rnorm = rnorm
+scatter_params[0].dirfac = dirfac
+scatter_params[0].denfac = denfac
 if pot_model == "NLHlin":
     scatter_params.nlhlin_coefs = nlhlin_coefs
 
@@ -505,9 +507,9 @@ CASCADE_PARAMS_DTYPE = np.dtype([
     ("emin", np.float64),
     ("ed", np.float64),
 ], align=True)
-cascade_params = np.recarray(1, dtype=CASCADE_PARAMS_DTYPE)[0]
-cascade_params.emin = 5.0
-cascade_params.ed = 15.0
+cascade_params = np.recarray(1, dtype=CASCADE_PARAMS_DTYPE)
+cascade_params[0].emin = 5.0
+cascade_params[0].ed = 15.0
 
 # Example hardcoded parameters (TODO: to be replaced with file input)
 #nelem = len(elements_params)  # number of species to record
@@ -515,22 +517,22 @@ nbin = 40              # number of bins for depth distribution
 limits = (0.0, 4000.0) # limits for depth distribution
 
 STAT_PARAMS_DTYPE = np.dtype([
-    ("nspec", np.int32),
-    ("nbin", np.int32),
+    ("nspec", np.int64),
+    ("nbin", np.int64),
     ("limits", np.float64, (2,)),
 ], align=True)
 
-stat_params = np.recarray(1, dtype=STAT_PARAMS_DTYPE)[0]
-stat_params.nspec = NELEM
-stat_params.nbin = nbin
-stat_params.limits = limits
+stat_params = np.recarray(1, dtype=STAT_PARAMS_DTYPE)
+stat_params[0].nspec = NELEM
+stat_params[0].nbin = nbin
+stat_params[0].limits = limits
 
 #statistics.setup(nelem, nbin, limits)  # TODO: use input_params as argument
-if False:
+if True:
     PARAMS_DTYPE = np.dtype([
-        ("rng_seed", np.int32),
-        ("nelem", np.int32),
-        ("nmat", np.int32),
+        ("rng_seed", np.int64),
+        ("nelem", np.int64),
+        ("nmat", np.int64),
         ("cascade", CASCADE_PARAMS_DTYPE),
         ("recoil", RECOIL_PARAMS_DTYPE),
         ("geometry", GEOMETRY_PARAMS_DTYPE),
@@ -541,18 +543,20 @@ if False:
         ("stat", STAT_PARAMS_DTYPE),
     ], align=True)
 
-    params = np.recarray(1, dtype=PARAMS_DTYPE)[0]
-    params.rng_seed = input_params["simulation"]["rng_seed"]
-    params.nelem = nelem
-    params.nmat = nmat
-    params.cascade = cascade_params
-    params.recoil = recoil_params
-    params.geometry = geometry_params
-    params.elements = elements_params
-    params.materials = materials_params
-    params.estop = estop_params
-    params.scatter = scatter_params
-    params.stat = stat_params
+    params = np.recarray(1, dtype=PARAMS_DTYPE)
+    # NOTE: Do not do "params = params[0]", since this would create a structured
+    # scalar, which causes issues with parallelization in Numba.
+    params[0].rng_seed = input_params["simulation"]["rng_seed"]
+    params[0].nelem = nelem
+    params[0].nmat = nmat
+    params[0].cascade = cascade_params
+    params[0].recoil = recoil_params
+    params[0].geometry = geometry_params
+    params[0].elements = elements_params
+    params[0].materials = materials_params
+    params[0].estop = estop_params
+    params[0].scatter = scatter_params
+    params[0].stat = stat_params
 else:
     Params = namedtuple("Params", [
         "rng_seed",

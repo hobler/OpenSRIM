@@ -25,6 +25,7 @@ def simulate(nion, params, follow_recoils=False, sim_idx=0):
     #print(f"Size of params: {params.nbytes/1024:.3f} kB")
 
     proj_count, hist_buf, mom_buf = _simulate(nion, params, follow_recoils, sim_idx)
+    #_simulate.inspect_types()  # For debugging Numba type inference issues
     return proj_count, np.sum(hist_buf, axis=0, dtype=np.int32), np.sum(mom_buf, axis=0, dtype=np.float64)
 
 
@@ -34,7 +35,7 @@ def _simulate(nion, params, follow_recoils, sim_idx):
     
     Parameters:
         nion: (int) Total number of projectiles to simulate
-        sim_params_tup: (tuple) Simulation parameters (provided by `SimParams.to_tuple()`)
+        params: (PARAMS_DTYPE) Simulation parameters
         follow_recoils: (bool) If the simulation should be performed for recoils aswell
         sim_idx: (int) Simulation index (for chunked simulations)
         
@@ -44,8 +45,6 @@ def _simulate(nion, params, follow_recoils, sim_idx):
             List of result buffers for `Histogram_1d` class (for each `nion`),
             List of result buffers for `Moments_1d` class (for each `nion`)
     """
-    print(f"index={sim_idx}, type(params)={type(params)}")
-
     # Initial conditions of the projectile
     proj_init = Projectile(
         50000.0,                         # energy (eV)
@@ -69,10 +68,10 @@ def _simulate(nion, params, follow_recoils, sim_idx):
     
     # Simulate the collision cascades in parallel
     for i in prange(nion):
-        np.random.seed(params.rng_seed + sim_idx + i)
-        proj_sim[i], hist_results[i], mom_results[i] = cascade.cascade(
+        np.random.seed(params[0].rng_seed + sim_idx + i)
 #        proj_sim[i] = cascade.cascade(
-            proj_dummy_arr[0], params, follow_recoils)
+        proj_sim[i], hist_results[i], mom_results[i] = cascade.cascade(
+            proj_dummy_arr[0], params[0], follow_recoils)
     
     proj_count = 0
     for proj_lst in proj_sim:

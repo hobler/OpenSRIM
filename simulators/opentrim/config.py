@@ -3,6 +3,7 @@ import os
 
 #os.environ["NUMBA_DISABLE_JIT"] = "1"
 #os.environ["NUMBA_FULL_TRACEBACK"] = "1"
+#os.environ["NUMBA_DEBUG"] = "1"
 
 if getattr(sys, "frozen", False):
     # Different caching location when using PyInstaller

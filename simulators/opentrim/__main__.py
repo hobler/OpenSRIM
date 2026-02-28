@@ -77,9 +77,7 @@ if __name__ == "__main__":
     for _ in range(iter_cnt):
         for i, c in enumerate(counts):
             # empty stats for each nion count
-            statistics.setup(nspec=params[0].stat.nspec, 
-                             nbin=params[0].stat.nbin, 
-                             limits=params[0].stat.limits)
+            statistics.setup(params[0].stat)
             
             start_time = time.time()
             # proj_count, hist_buf, mom_buf = simulate_adaptive(avg_chunk_time, c, params, follow_recoils=True)

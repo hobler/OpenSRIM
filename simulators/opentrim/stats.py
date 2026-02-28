@@ -13,7 +13,8 @@ from numba.core.types import UniTuple, namedtuple
 import numpy as np
 from numba.experimental import jitclass
 from numba.extending import overload, register_jitable
-from numba import int32, float64, jit
+from numba import int32, float64, jit, from_dtype, types, typed
+from .init import HIST_PARAMS_DTYPE
 
 
 mom = None
@@ -174,11 +175,9 @@ class Moment_1d:
 
 
 @jitclass(spec = [
-    ("nvar", int32),
-    ("nbin", int32),
-    ("limits", UniTuple(float64, 2)),
-    ("counts", int32[:,:]),
-    ("bin_width", float64)
+    ("hist_params", from_dtype(HIST_PARAMS_DTYPE)[:]),
+    ("counts", types.ListType(int32[:,:])),
+    ("bin_width", float64[:])
 ])
 class Histogram_1d:
     """Calculate 1D histograms.
@@ -189,31 +188,30 @@ class Histogram_1d:
     "counts" attribute.
     
     Attributes:
-        nvar (int): number variables for which histograms are desired
-        nbin (int): number of bins
-        limits (tuple[float]): (min, max) limits of the histogram (size 2)
-        counts (ndarray[int]): counts per bin including 
-            underflow and overflow bins (shape (nvar,nbin+2))
-        results: (ndarray[float]) A public getter / setter for `counts`
-        bin_width (float): width of each bin
+        hist_params (ndarray[HIST_PARAMS_DTYPE]): Configuration for each histogram
     """
-    def __init__(self, nvar, nbin, limits):
-        self.nvar = nvar
-        self.nbin = nbin
-        self.limits = limits
-        self.bin_width = (self.limits[1] - self.limits[0]) / self.nbin
-        self.counts = np.zeros((nvar, nbin+2), dtype=np.int32)
+    def __init__(self, hist_params):
+        self.hist_params = hist_params
+        self.bin_width = np.empty(self.hist_params.shape[0])
+        self.counts = typed.List.empty_list(int32[:,:])
+        for i, entry in enumerate(hist_params):
+            self.bin_width[i] = (entry.limits[1] - entry.limits[0]) / entry.nbin
+            self.counts.append(np.zeros((entry.nvar, entry.nbin+2), dtype=np.int32))
 
     def score(self, ivar, value):
         """Score a new data point to the histogram of variable ivar."""
-        if value < self.limits[0]:
-            ibin = 0                # underflow bin
-        elif value >= self.limits[1]:
-            ibin = -1               # overflow bin
-        else:
-            ibin = int((value - self.limits[0]) / self.bin_width) + 1
-        
-        self.counts[ivar,ibin] += 1
+        for i in range(len(self.hist_params)):
+            params = self.hist_params[i]
+            width = self.bin_width[i]
+            
+            if value < params.limits[0]:
+                ibin = 0                # underflow bin
+            elif value >= params.limits[1]:
+                ibin = -1               # overflow bin
+            else:
+                ibin = int((value - params.limits[0]) / width) + 1
+            
+            self.counts[i][ivar,ibin] += 1
     
     @property
     def results(self):
@@ -224,21 +222,17 @@ class Histogram_1d:
         self.counts = new
 
 
-def setup(nspec, nbin, limits):
+def setup(hist_params):
     """Setup module variables and pre-compile functions
 
     Parameters:
-        nspec(int): number of atom species
-        nbin (int): number of bins
-        limits (tuple[float]): (min, max) limits of the histogram (size 2)
-
-    Returns:
-        (STAT_PARAMS_DTYPE): Statistics parameters
+        hist_params (ndarray[HIST_PARAMS_DTYPE]):
+            Parameters for individual histograms
     """
     global mom, hist
 
-    mom = Moment_1d(nvar=nspec, nmax=4)
-    hist = Histogram_1d(nspec, nbin, (limits[0], limits[1]))
+    mom = Moment_1d(nvar=hist_params[0].nvar, nmax=4)
+    hist = Histogram_1d(hist_params)
     
     mom.central_moments()
     mom.mean()
@@ -280,13 +274,16 @@ def print_results():
 def plot_results(log=False):
     """Plot the histogram using matplotlib."""
     import matplotlib.pyplot as plt
+    global hist
     assert hist is not None
 
-    for ivar in range(hist.nvar):
-        plt.stairs(hist.counts[ivar,1:-1],
-                   edges=np.linspace(hist.limits[0], hist.limits[1], 
-                                     hist.nbin+1),
-                   label=f"Species {ivar}")
+    for ihist, hist_2d in enumerate(hist.results):
+        config = hist.hist_params[ihist]
+        for ivar in range(len(hist_2d)):
+            plt.stairs(hist_2d[ivar,1:-1],
+                      edges=np.linspace(config.limits[0], config.limits[1], 
+                                        config.nbin+1),
+                      label=f"Species {ivar}, Hist '{config["name"]}'")
     if log:
         plt.yscale("log")
     plt.xlabel("Penetration depth (A)")

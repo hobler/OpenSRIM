@@ -39,15 +39,13 @@ def cascade(initial_proj, params, follow_recoils=False, prealloc=400):
     
     emin = params.cascade.emin
     ed = params.cascade.ed
-    #emin = 5.0
-    #ed = 15.0
     
     stat = params.stat
     hist = statistics.Histogram_1d(stat.nspec, stat.nbin, 
                                    (stat.limits[0], stat.limits[1]))
     mom = statistics.Moment_1d(stat.nspec, 4)
 
-    # NOTE: We cannot create record arrays within numba-jitted functions, so we 
+    # NOTE: Record arrays cannot be created within numba-jitted functions, so we 
     # use regular structured arrays and access fields by name (rather than
     # by attributes).
 
@@ -71,7 +69,6 @@ def cascade(initial_proj, params, follow_recoils=False, prealloc=400):
         while proj["e"] > emin:
             free_path, p, dirp, recoil_pos = get_recoil_position(
                 proj, params.recoil)
-            #print(f"Trajectory start: proj_e={proj['e']:.2f} eV")
             
             # step projectile forward and update energy
             dee = eloss(proj, free_path, params.estop, params.materials)
@@ -80,9 +77,6 @@ def cascade(initial_proj, params, follow_recoils=False, prealloc=400):
             proj["ilayer"] = get_layer_index(proj["pos"], params.geometry)
             proj["is_inside"] = is_inside_target(proj["pos"], params.geometry)
             
-            #print(f"geometry_params={params.geometry}")
-            #print(f"proj_e={proj['e']:.2f} eV, proj_pos={proj['pos']}, is_inside={proj['is_inside']}")
-
             if not proj["is_inside"]:
                 break
             

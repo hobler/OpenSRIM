@@ -214,7 +214,19 @@ def _get_nlhlin_coefs(z1, z2):
 
 input_params = read_input()
 
-# Initialize the geometry
+### Initialize the beam
+BEAM_PARAMS_DTYPE = np.dtype([
+    ("ielem", np.int64),
+    ("energy", np.float64),
+    ("tilt", np.float64),
+], align=True)
+
+beam_params = np.recarray(1, dtype=BEAM_PARAMS_DTYPE)
+beam_params[0].ielem = 0  # only one beam element for now
+beam_params[0].energy = 1000.0 * input_params["beam"]["energy"]
+beam_params[0].tilt = input_params["beam"]["tilt"]
+
+### Initialize the geometry
 layers_params = input_params["layers"]
 nlayers = len(layers_params["name"])
 
@@ -231,7 +243,7 @@ GEOMETRY_PARAMS_DTYPE = np.dtype([
 ], align=True)
 
 geometry_params = np.recarray(1, dtype=GEOMETRY_PARAMS_DTYPE)
-# NOTE: Do not do "geometry_params = geometry_params[0]", since this would 
+# NOTE: Do not do "geometry_params = np.recarray(...)[0]", since this would 
 # create a structured scalar, which causes issues with parallelization in Numba.
 geometry_params[0].nlayers = nlayers
 geometry_params[0].z_intf = z_intf
@@ -318,7 +330,7 @@ print("Materials:")
 for mat in materials:
     print(mat)
 
-# Define the elements parameters
+### Define the elements parameters
 ELEMENT_PARAMS_DTYPE = np.dtype([
     ("symbol", "<U2"),
     ("name", "<U12"),
@@ -337,8 +349,7 @@ for ielem, elem in enumerate(elements):
     elements_params[ielem].M = elem["M"]
 print(f"elements_params={elements_params}")
 
-# Define the materials parameters
-
+### Define the materials parameters
 MATERIALS_PARAMS_DTYPE = np.dtype([
     ("name", "<U12"),
     ("density", np.float64),
@@ -363,14 +374,15 @@ for imat, mat in enumerate(materials):
     materials_params[imat].nelem = mat["nelem"]
     for ielem in range(mat["nelem"]):
         materials_params[imat].ielem[ielem] = mat["ielem"][ielem]
-        materials_params[imat].atomic_fraction[ielem] = mat["atomic_fractions"][ielem]
+        materials_params[imat].atomic_fraction[ielem] = (
+            mat["atomic_fractions"][ielem])
         materials_params[imat].cumulative_fraction[ielem] = (
             np.sum(mat["atomic_fractions"][:ielem+1]))
         materials_params[imat].displacement_energy[ielem] = (
             mat["displacement_energy"][ielem])
 print(f"materials_params={materials_params}")
 
-# Define electronic stopping parameters
+### Define electronic stopping parameters
 model = input_params["models"]["electronic stopping"]
 if model != "Lindhard":
     raise ValueError(f"Unsupported electronic stopping model: {model}")
@@ -397,7 +409,6 @@ for ielem1 in range(nelem):
             corr_lindhard[ielem1, ielem2] * 1.212 * z1**(7/6) * z2 
             / ((z1**(2/3) + z2**(2/3))**(3/2) * sqrt(m1)) )
 
-
 ESTOP_PARAMS_DTYPE = np.dtype([
     ("fac_lindhard", np.float64, (NELEM, NELEM)),
 ], align=True)
@@ -405,7 +416,7 @@ ESTOP_PARAMS_DTYPE = np.dtype([
 estop_params = np.recarray(1, dtype=ESTOP_PARAMS_DTYPE)
 estop_params[0].fac_lindhard = fac_lindhard
 
-# Initialize the recoiling parameters
+### Initialize the recoiling parameters
 densities = np.array(input_params["layers"]["density"])
 
 RECOIL_PARAMS_DTYPE = np.dtype([
@@ -417,7 +428,7 @@ recoil_params = np.recarray(1, dtype=RECOIL_PARAMS_DTYPE)
 recoil_params[0].pmax = densities**(-1/3) / sqrt(np.pi)
 recoil_params[0].mean_free_path = densities**(-1/3)
 
-# Initialize the scattering parameters
+### Initialize the scattering parameters
 pot_model = input_params["models"]["potential"]
 if input_params["models"]["scattering integrals"]["algorithm"] == "magic":
     pot_model += "_magic"
@@ -502,7 +513,7 @@ if pot_model == "NLHlin":
 # TODO: include n_absc in params
 #cm_scatter.setup(input_params["models"]["scattering integrals"]["n_absc"])
 
-# Initialize the cascade parameters
+### Initialize the cascade parameters
 CASCADE_PARAMS_DTYPE = np.dtype([
     ("emin", np.float64),
     ("ed", np.float64),
@@ -511,11 +522,7 @@ cascade_params = np.recarray(1, dtype=CASCADE_PARAMS_DTYPE)
 cascade_params[0].emin = 5.0
 cascade_params[0].ed = 15.0
 
-# Example hardcoded parameters (TODO: to be replaced with file input)
-#nelem = len(elements_params)  # number of species to record
-nbin = 40              # number of bins for depth distribution
-limits = (0.0, 4000.0) # limits for depth distribution
-
+### Initialize the statistics parameters
 STAT_PARAMS_DTYPE = np.dtype([
     ("nspec", np.int64),
     ("nbin", np.int64),
@@ -524,8 +531,8 @@ STAT_PARAMS_DTYPE = np.dtype([
 
 stat_params = np.recarray(1, dtype=STAT_PARAMS_DTYPE)
 stat_params[0].nspec = NELEM
-stat_params[0].nbin = nbin
-stat_params[0].limits = limits
+stat_params[0].nbin = input_params["output"]["depth distribution"]["nbins"]
+stat_params[0].limits = input_params["output"]["depth distribution"]["limits"]
 
 #statistics.setup(nelem, nbin, limits)  # TODO: use input_params as argument
 if True:
@@ -533,6 +540,7 @@ if True:
         ("rng_seed", np.int64),
         ("nelem", np.int64),
         ("nmat", np.int64),
+        ("beam", BEAM_PARAMS_DTYPE),
         ("cascade", CASCADE_PARAMS_DTYPE),
         ("recoil", RECOIL_PARAMS_DTYPE),
         ("geometry", GEOMETRY_PARAMS_DTYPE),
@@ -549,6 +557,7 @@ if True:
     params[0].rng_seed = input_params["simulation"]["rng_seed"]
     params[0].nelem = nelem
     params[0].nmat = nmat
+    params[0].beam = beam_params[0]
     params[0].cascade = cascade_params
     params[0].recoil = recoil_params
     params[0].geometry = geometry_params

@@ -36,7 +36,7 @@ def _simulate(nion, params, follow_recoils, sim_idx):
     Parameters:
         nion: (int) Total number of projectiles to simulate
         params: (PARAMS_DTYPE) Simulation parameters
-        follow_recoils: (bool) If the simulation should be performed for recoils aswell
+        follow_recoils: (bool) If the simulation should be performed for recoils as well
         sim_idx: (int) Simulation index (for chunked simulations)
         
     Returns:
@@ -47,31 +47,28 @@ def _simulate(nion, params, follow_recoils, sim_idx):
     """
     # Initial conditions of the projectile
     proj_init = Projectile(
-        50000.0,                         # energy (eV)
-        np.array([0.0, 0.0, 0.0]),     # position (A)
-        np.array([0.0, 0.0, 1.0]),     # direction (unit vector)
+        params[0].beam.energy,  # energy (eV)
+        np.array([0.0, 0.0, 0.0]),  # position (A)
+        np.array([np.sin(np.radians(params[0].beam.tilt)), 0.0, 
+                  np.cos(np.radians(params[0].beam.tilt))]), # direction (unit vector)
         0,
         0,
         True
     )
-    proj_dummy_arr = np.empty(1, dtype=PROJ_DTYPE)
-    proj_sim = [proj_dummy_arr for _ in range(nion)]
-    proj_dummy_arr[0] = proj_init
+    proj_dummy = np.empty(1, dtype=PROJ_DTYPE)
+    proj_sim = [proj_dummy for _ in range(nion)]
+    proj_dummy[0] = proj_init
 
-    # Fixes weird Numba error by passing array instead of single record
-    #params_arr = np.full(1, params)
-    
     hist_dummy = np.empty((1, 1), dtype=np.int32)
     mom_dummy = np.empty((1, 1), dtype=np.float64)
     hist_results = [hist_dummy for _ in range(nion)]
     mom_results = [mom_dummy for _ in range(nion)]
     
-    # Simulate the collision cascades in parallel
+    # PARALLEL LOOP over collision cascades
     for i in prange(nion):
         np.random.seed(params[0].rng_seed + sim_idx + i)
-#        proj_sim[i] = cascade.cascade(
         proj_sim[i], hist_results[i], mom_results[i] = cascade.cascade(
-            proj_dummy_arr[0], params[0], follow_recoils)
+            proj_dummy[0], params[0], follow_recoils)
     
     proj_count = 0
     for proj_lst in proj_sim:

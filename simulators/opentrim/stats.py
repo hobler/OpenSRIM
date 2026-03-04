@@ -279,6 +279,8 @@ def plot_results(log=False):
 
     for ihist, hist_2d in enumerate(hist.results):
         config = hist.hist_params[ihist]
+        if not config["name"].startswith("depth distribution"):
+            continue
         for ivar in range(len(hist_2d)):
             plt.stairs(hist_2d[ivar,1:-1],
                       edges=np.linspace(config.limits[0], config.limits[1], 

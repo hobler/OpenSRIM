@@ -85,10 +85,8 @@ if __name__ == "__main__":
                                                              params, 
                                                              follow_recoils=True)
             # proj_count, hist_buf, mom_buf = simulate(c, params, follow_recoils=True, sim_idx=0)
-            if statistics.hist is not None:
-                statistics.hist.results = hist_buf
-            if statistics.mom is not None:
-                statistics.mom.results = mom_buf
+            if statistics.stat is not None:
+                statistics.stat.results = (hist_buf, mom_buf)
             times[i].append(time.time() - start_time)
             proj_counts[i].append(proj_count)
     

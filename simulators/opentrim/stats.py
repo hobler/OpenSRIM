@@ -1,24 +1,18 @@
 """Module for collecting and reporting statistics of projectile trajectories.
 
-- Classes are defined for 1D moments and histograms. 
-- The moments and histograms are module attributes. 
-- Funtions are provided to setup, score, and print/plot results.
-
-There are two module-level attributes:
-    mom: Moment_1d instance for calculating moments.
-    hist: Histogram_1d instance for calculating histograms.
+- Classes are defined for 1D moments and histograms.
+- The `Statistics` class owns one instance of each and forwards scoring.
+- Functions are provided to setup, and print/plot results.
 """
 import math
-from numba.core.types import UniTuple, namedtuple
 import numpy as np
 from numba.experimental import jitclass
 from numba.extending import overload, register_jitable
-from numba import int32, float64, jit, from_dtype, types, typed
+from numba import int32, float64, from_dtype, types, typed
 from .init import HIST_PARAMS_DTYPE
 
 
-mom = None
-hist = None
+stat = None
 
 @register_jitable
 def fct(n: int):
@@ -100,8 +94,10 @@ class Moment_1d:
         # self._cenmom = np.zeros((nvar, 2*nmax + 1), dtype=np.float64)
         # self.count = np.zeros(nvar, dtype=np.float64)
 
-    def score(self, ivar, value):
-        """Score a new data point for variable ivar."""
+    def score(self, proj):
+        """Score projectile stopping depth for its species."""
+        ivar = proj["ielem"]
+        value = proj["pos"][2]
         # Original line causing __powidf2 missing error:
         # self._mom[ivar,:] += value**self._orders[:]
 
@@ -198,8 +194,10 @@ class Histogram_1d:
             self.bin_width[i] = (entry.limits[1] - entry.limits[0]) / entry.nbin
             self.counts.append(np.zeros((entry.nvar, entry.nbin+2), dtype=np.int32))
 
-    def score(self, ivar, value):
-        """Score a new data point to the histogram of variable ivar."""
+    def score(self, proj):
+        """Score projectile stopping depth for its species."""
+        ivar = proj["ielem"]
+        value = proj["pos"][2]
         for i in range(len(self.hist_params)):
             params = self.hist_params[i]
             width = self.bin_width[i]
@@ -222,6 +220,31 @@ class Histogram_1d:
         self.counts = new
 
 
+@jitclass
+class Statistics:
+    hist: Histogram_1d
+    mom: Moment_1d
+    
+    """Aggregate statistics container for histogram and moments."""
+    def __init__(self, stat_params):
+        self.hist = Histogram_1d(stat_params)
+        self.mom = Moment_1d(stat_params[0].nvar, 4)
+
+    def score(self, proj):
+        if proj["is_inside"]:
+            self.hist.score(proj)
+            self.mom.score(proj)
+
+    @property
+    def results(self):
+        return self.hist.results, self.mom.results
+
+    @results.setter
+    def results(self, new):
+        self.hist.results = new[0]
+        self.mom.results = new[1]
+
+
 def setup(hist_params):
     """Setup module variables and pre-compile functions
 
@@ -229,22 +252,22 @@ def setup(hist_params):
         hist_params (ndarray[HIST_PARAMS_DTYPE]):
             Parameters for individual histograms
     """
-    global mom, hist
+    global stat
 
-    mom = Moment_1d(nvar=hist_params[0].nvar, nmax=4)
-    hist = Histogram_1d(hist_params)
+    stat = Statistics(hist_params)
     
-    mom.central_moments()
-    mom.mean()
-    mom.std()
-    mom.skewness()
-    mom.kurtosis()
+    stat.mom.central_moments()
+    stat.mom.mean()
+    stat.mom.std()
+    stat.mom.skewness()
+    stat.mom.kurtosis()
 
 
 def print_results():
     """Print statistics of the scored projectiles."""
-    global mom
-    assert mom is not None
+    global stat
+    assert stat is not None
+    mom = stat.mom
 
     mom.central_moments()
     mean, mean_err = mom.mean()
@@ -274,8 +297,9 @@ def print_results():
 def plot_results(log=False):
     """Plot the histogram using matplotlib."""
     import matplotlib.pyplot as plt
-    global hist
-    assert hist is not None
+    global stat
+    assert stat is not None
+    hist = stat.hist
 
     for ihist, hist_2d in enumerate(hist.results):
         config = hist.hist_params[ihist]

@@ -160,7 +160,7 @@ def simulate_chunked(chunk_size, nion, *args, **kwargs):
     total_hist_buf = None
     total_mom_buf = None
     
-    def _process_chunks(chunk_size):
+    def _process_chunks(chunk_size, sim_idx):
         nonlocal total_hist_buf, total_mom_buf, total_proj_count
         if chunk_size == 0:
             return
@@ -168,7 +168,7 @@ def simulate_chunked(chunk_size, nion, *args, **kwargs):
         proj_count, hist_buf, mom_buf = simulate(
             chunk_size,
             *args,
-            sim_idx=processed_count,
+            sim_idx=sim_idx,
             **kwargs
         )
         # NOTE: Saving can be performed here
@@ -183,6 +183,7 @@ def simulate_chunked(chunk_size, nion, *args, **kwargs):
         total_proj_count += proj_count
     
     for processed_count in range(0, nion, chunk_size):
-        _process_chunks(chunk_size)
-    _process_chunks(nion // chunk_size) # Process remainder
+        _process_chunks(chunk_size, processed_count)
+    remainder = nion % chunk_size
+    _process_chunks(remainder, nion - remainder) # Process remainder
     return total_proj_count, total_hist_buf, total_mom_buf

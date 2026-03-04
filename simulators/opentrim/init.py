@@ -534,15 +534,40 @@ def _collect_histograms(d, prefix=""):
         new_prefix = f"{prefix}.{key}" if prefix else key
         if isinstance(val, dict):
             if "nbins" in val:
-                records.append({
-                    "name": new_prefix,
-                    "nvar": 2,  # TODO extract / assume constant
-                    "nbins": int(val["nbins"]),
-                    "limits": np.array(val.get("limits", (0.0, 0.0)), dtype=np.float64),
-                    "ion/recoils": bool(val.get("ion/recoils", False)),
-                    "phonons": bool(val.get("phonons", False)),
-                    "ionization": bool(val.get("ionization", False)),
-                })
+                nbin = int(val["nbins"])
+                limits = np.array(val.get("limits", (0.0, 0.0)), dtype=np.float64)
+                # Split output channels into dedicated histogram configs
+                # that share binning and limits.
+                channels = [
+                    "ion/recoils",
+                    "phonons",
+                    "ionization",
+                ]
+                channel_count = 0
+                for channel in channels:
+                    if bool(val.get(channel, False)):
+                        channel_count += 1
+                        records.append({
+                            "name": f"{new_prefix}.{channel}",
+                            "nvar": 2,  # TODO extract / assume constant
+                            "nbins": nbin,
+                            "limits": limits,
+                            "ion/recoils": channel == "ion/recoils",
+                            "phonons": channel == "phonons",
+                            "ionization": channel == "ionization",
+                        })
+                # Keep backwards-compatible behavior for sections that
+                # define bins/limits but no output channels.
+                if channel_count == 0:
+                    records.append({
+                        "name": new_prefix,
+                        "nvar": 2,  # TODO extract / assume constant
+                        "nbins": nbin,
+                        "limits": limits,
+                        "ion/recoils": False,
+                        "phonons": False,
+                        "ionization": False,
+                    })
             records.extend(_collect_histograms(val, new_prefix))
     return records
 

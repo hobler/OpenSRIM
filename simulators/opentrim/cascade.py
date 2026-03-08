@@ -42,10 +42,7 @@ def cascade(initial_proj, params, follow_recoils=False, prealloc=400):
     #emin = 5.0
     #ed = 15.0
     
-    stat = params.stat
-    hist = statistics.Histogram_1d(stat.nspec, stat.nbin, 
-                                   (stat.limits[0], stat.limits[1]))
-    mom = statistics.Moment_1d(stat.nspec, 4)
+    stat = statistics.Statistics(params.stat)
 
     # NOTE: We cannot create record arrays within numba-jitted functions, so we 
     # use regular structured arrays and access fields by name (rather than
@@ -124,9 +121,7 @@ def cascade(initial_proj, params, follow_recoils=False, prealloc=400):
         proj_lst[lst_tail] = proj
         lst_tail += 1
         
-        if proj["is_inside"]:
-            hist.score(proj["ielem"], proj["pos"][2])
-            mom.score(proj["ielem"], proj["pos"][2])
+        stat.score(proj)
         
         for i in range(recoils_tail - 1, -1, -1):
             if stack_tail >= stack.size:
@@ -135,4 +130,5 @@ def cascade(initial_proj, params, follow_recoils=False, prealloc=400):
             stack_tail += 1
 
     # Return continuous arrays
-    return proj_lst[:lst_tail][::-1].copy(), hist.results.copy(), mom.results.copy()
+    hist_results, mom_results = stat.results
+    return proj_lst[:lst_tail][::-1].copy(), hist_results, mom_results.copy()

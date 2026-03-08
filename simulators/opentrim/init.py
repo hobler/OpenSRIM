@@ -522,18 +522,76 @@ cascade_params = np.recarray(1, dtype=CASCADE_PARAMS_DTYPE)
 cascade_params[0].emin = 5.0
 cascade_params[0].ed = 15.0
 
-### Initialize the statistics parameters
-STAT_PARAMS_DTYPE = np.dtype([
-    ("nspec", np.int64),
-    ("nbin", np.int64),
+HIST_PARAMS_DTYPE = np.dtype([
+    ("nvar", np.int32),
+    ("nbin", np.int32),
     ("limits", np.float64, (2,)),
+    ("ion/recoils", np.bool_),
+    ("phonons", np.bool_),
+    ("ionization", np.bool_),
+    ("name", "<U64"),   # TODO shorter names, maybe?
 ], align=True)
 
-stat_params = np.recarray(1, dtype=STAT_PARAMS_DTYPE)
-stat_params[0].nspec = NELEM
-stat_params[0].nbin = input_params["output"]["depth distribution"]["nbins"]
-stat_params[0].limits = input_params["output"]["depth distribution"]["limits"]
+# TODO similar for mom
+# MOM_PARAMS_DTYPE = np.dtype([
+#     ("nvar", np.int32),
+#     ("nmax", np.int32),
+# ], align=True)
 
+# Build histogram parameter records from the output configuration
+def _collect_histograms(d, prefix=""):
+    records = []
+    for key, val in d.items():
+        new_prefix = f"{prefix}.{key}" if prefix else key
+        if isinstance(val, dict):
+            if "nbins" in val:
+                nbin = int(val["nbins"])
+                limits = np.array(val.get("limits", (0.0, 0.0)), dtype=np.float64)
+                # Split output channels into dedicated histogram configs
+                # that share binning and limits.
+                channels = [
+                    "ion/recoils",
+                    "phonons",
+                    "ionization",
+                ]
+                channel_count = 0
+                for channel in channels:
+                    if bool(val.get(channel, False)):
+                        channel_count += 1
+                        records.append({
+                            "name": f"{new_prefix}.{channel}",
+                            "nvar": 2,  # TODO extract / assume constant
+                            "nbins": nbin,
+                            "limits": limits,
+                            "ion/recoils": channel == "ion/recoils",
+                            "phonons": channel == "phonons",
+                            "ionization": channel == "ionization",
+                        })
+                # Keep backwards-compatible behavior for sections that
+                # define bins/limits but no output channels.
+                if channel_count == 0:
+                    records.append({
+                        "name": new_prefix,
+                        "nvar": 2,  # TODO extract / assume constant
+                        "nbins": nbin,
+                        "limits": limits,
+                        "ion/recoils": False,
+                        "phonons": False,
+                        "ionization": False,
+                    })
+            records.extend(_collect_histograms(val, new_prefix))
+    return records
+
+_histogram_list = _collect_histograms(input_params["output"])
+hist_params = np.empty(len(_histogram_list), dtype=HIST_PARAMS_DTYPE)
+for i, rec in enumerate(_histogram_list):
+    hist_params[i]["name"] = rec["name"]
+    hist_params[i]["nvar"] = rec["nvar"]
+    hist_params[i]["nbin"] = rec["nbins"]
+    hist_params[i]["limits"] = rec["limits"]
+    hist_params[i]["ion/recoils"] = rec["ion/recoils"]
+    hist_params[i]["phonons"] = rec["phonons"]
+    hist_params[i]["ionization"] = rec["ionization"]
 #statistics.setup(nelem, nbin, limits)  # TODO: use input_params as argument
 if True:
     PARAMS_DTYPE = np.dtype([
@@ -547,8 +605,8 @@ if True:
         ("elements", ELEMENT_PARAMS_DTYPE, (NELEM,)),
         ("materials", MATERIALS_PARAMS_DTYPE, (NMAT,)),
         ("estop", ESTOP_PARAMS_DTYPE),
+        ("stat", HIST_PARAMS_DTYPE, (hist_params.size,)),
         ("scatter", SCATTER_PARAMS_DTYPE),
-        ("stat", STAT_PARAMS_DTYPE),
     ], align=True)
 
     params = np.recarray(1, dtype=PARAMS_DTYPE)
@@ -564,8 +622,8 @@ if True:
     params[0].elements = elements_params
     params[0].materials = materials_params
     params[0].estop = estop_params
+    params[0].stat = hist_params
     params[0].scatter = scatter_params
-    params[0].stat = stat_params
 else:
     Params = namedtuple("Params", [
         "rng_seed",
@@ -591,5 +649,5 @@ else:
         materials=materials_params,
         estop=estop_params,
         scatter=scatter_params,
-        stat=stat_params,
+        stat=hist_params,
     )

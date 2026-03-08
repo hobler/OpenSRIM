@@ -1,7 +1,7 @@
 import time
 from . import config
 import numpy as np
-from numba import jit, prange
+from numba import jit, prange, typed, int32
 from . import cascade
 from .mytypes import Projectile, PROJ_DTYPE
 
@@ -16,9 +16,9 @@ def simulate(nion, params, follow_recoils=False, sim_idx=0):
         sim_idx: (int) Simulation index (for chunked simulations)
         
     Returns:
-        tuple[int, np.ndarray, np.ndarray]:
+        tuple[int, list[np.ndarray], np.ndarray]:
             Total number of simulated projectiles,
-            Result buffers for `Histogram_1d` class,
+            A list of buffers (for each hist) for `Histogram_1d` class,
             Result buffers for `Moments_1d` class
     """
     #print(f"params is C contiguous = {params.flags.c_contiguous}")
@@ -26,7 +26,12 @@ def simulate(nion, params, follow_recoils=False, sim_idx=0):
 
     proj_count, hist_buf, mom_buf = _simulate(nion, params, follow_recoils, sim_idx)
     #_simulate.inspect_types()  # For debugging Numba type inference issues
-    return proj_count, np.sum(hist_buf, axis=0, dtype=np.int32), np.sum(mom_buf, axis=0, dtype=np.float64)
+    for i, lst in enumerate(hist_buf):
+        if i == 0:
+            continue
+        for j, arr in enumerate(lst):
+            hist_buf[0][j] += arr
+    return proj_count, hist_buf[0], np.sum(mom_buf, axis=0, dtype=np.float64)
 
 
 @jit(cache=config.ENABLE_CACHING, parallel=config.PARALLEL, nogil=config.PARALLEL)
@@ -61,11 +66,15 @@ def _simulate(nion, params, follow_recoils, sim_idx):
 
     hist_dummy = np.empty((1, 1), dtype=np.int32)
     mom_dummy = np.empty((1, 1), dtype=np.float64)
-    hist_results = [hist_dummy for _ in range(nion)]
+    # hist_results: [[hist1[:, :], hist2[:, :], ...], ...]
+    # where len(hist_results) == nion
+    hist_results = typed.List.empty_list(typed.List.empty_list(int32[:,:]))
+    for _ in range(nion):
+        hist_results.append(typed.List.empty_list(int32[:,:]))
     mom_results = [mom_dummy for _ in range(nion)]
     
-    # PARALLEL LOOP over collision cascades
-    for i in prange(nion):
+    # Simulate the collision cascades in parallel
+    for i in prange(nion):  # ty:ignore[not-iterable]
         np.random.seed(params[0].rng_seed + sim_idx + i)
         proj_sim[i], hist_results[i], mom_results[i] = cascade.cascade(
             proj_dummy[0], params[0], follow_recoils)
@@ -86,10 +95,10 @@ def simulate_adaptive(avg_chunk_time, nion, *args, **kwargs):
         *args, **kwargs: As in `simulate()`
         
     Returns:
-        tuple[int, np.ndarray, np.ndarray]:
+        tuple[int, list[np.ndarray], np.ndarray]:
             Total number of simulated projectiles,
-            Result buffer for `Histogram_1d` class,
-            Result buffer for `Moment_1d` class
+            A list of buffers (for each hist) for `Histogram_1d` class,
+            Result buffers for `Moments_1d` class
     """
     # TODO Doesn't work with fixed seed (due to varying chunk sizes)
     min_chunk_size = 100
@@ -114,10 +123,11 @@ def simulate_adaptive(avg_chunk_time, nion, *args, **kwargs):
         
         total_proj_count += proj_count
         if total_hist_buf is None:
-            total_hist_buf = hist_buf.copy()
+            total_hist_buf = hist_buf
             total_mom_buf = mom_buf.copy()
         else:
-            total_hist_buf += hist_buf
+            for i, arr in enumerate(hist_buf):
+                total_hist_buf[i] += arr
             total_mom_buf += mom_buf
         duration = time.time() - start_time
         
@@ -138,16 +148,16 @@ def simulate_chunked(chunk_size, nion, *args, **kwargs):
         *args, **kwargs: As in `simulate()`
         
     Returns:
-        tuple[int, np.ndarray, np.ndarray]:
+        tuple[int, list[np.ndarray], np.ndarray]:
             Total number of simulated projectiles,
-            Result buffer for `Histogram_1d` class,
-            Result buffer for `Moment_1d` class
+            A list of buffers (for each hist) for `Histogram_1d` class,
+            Result buffers for `Moments_1d` class
     """    
     total_proj_count = 0
     total_hist_buf = None
     total_mom_buf = None
     
-    def _process_chunks(chunk_size):
+    def _process_chunks(chunk_size, sim_idx):
         nonlocal total_hist_buf, total_mom_buf, total_proj_count
         if chunk_size == 0:
             return
@@ -155,20 +165,22 @@ def simulate_chunked(chunk_size, nion, *args, **kwargs):
         proj_count, hist_buf, mom_buf = simulate(
             chunk_size,
             *args,
-            sim_idx=processed_count,
+            sim_idx=sim_idx,
             **kwargs
         )
         # NOTE: Saving can be performed here
         
         if total_hist_buf is None:
-            total_hist_buf = hist_buf.copy()
+            total_hist_buf = hist_buf
             total_mom_buf = mom_buf.copy()
         else:
-            total_hist_buf += hist_buf
+            for i, arr in enumerate(hist_buf):
+                total_hist_buf[i] += arr
             total_mom_buf += mom_buf
         total_proj_count += proj_count
     
     for processed_count in range(0, nion, chunk_size):
-        _process_chunks(chunk_size)
-    _process_chunks(nion // chunk_size) # Process remainder
+        _process_chunks(chunk_size, processed_count)
+    remainder = nion % chunk_size
+    _process_chunks(remainder, nion - remainder) # Process remainder
     return total_proj_count, total_hist_buf, total_mom_buf

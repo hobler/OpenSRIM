@@ -1,23 +1,18 @@
 """Module for collecting and reporting statistics of projectile trajectories.
 
-- Classes are defined for 1D moments and histograms. 
-- The moments and histograms are module attributes. 
-- Funtions are provided to setup, score, and print/plot results.
-
-There are two module-level attributes:
-    mom: Moment_1d instance for calculating moments.
-    hist: Histogram_1d instance for calculating histograms.
+- Classes are defined for 1D moments and histograms.
+- The `Statistics` class owns one instance of each and forwards scoring.
+- Functions are provided to setup, and print/plot results.
 """
 import math
-from numba.core.types import UniTuple, namedtuple
 import numpy as np
 from numba.experimental import jitclass
 from numba.extending import overload, register_jitable
-from numba import int32, float64, jit
+from numba import int32, float64, from_dtype, types, typed
+from .init import HIST_PARAMS_DTYPE
 
 
-mom = None
-hist = None
+stat = None
 
 @register_jitable
 def fct(n: int):
@@ -99,8 +94,10 @@ class Moment_1d:
         # self._cenmom = np.zeros((nvar, 2*nmax + 1), dtype=np.float64)
         # self.count = np.zeros(nvar, dtype=np.float64)
 
-    def score(self, ivar, value):
-        """Score a new data point for variable ivar."""
+    def score(self, proj):
+        """Score projectile stopping depth for its species."""
+        ivar = proj["ielem"]
+        value = proj["pos"][2]
         # Original line causing __powidf2 missing error:
         # self._mom[ivar,:] += value**self._orders[:]
 
@@ -174,11 +171,9 @@ class Moment_1d:
 
 
 @jitclass(spec = [
-    ("nvar", int32),
-    ("nbin", int32),
-    ("limits", UniTuple(float64, 2)),
-    ("counts", int32[:,:]),
-    ("bin_width", float64)
+    ("hist_params", from_dtype(HIST_PARAMS_DTYPE)[:]),
+    ("counts", types.ListType(int32[:,:])),
+    ("bin_width", float64[:])
 ])
 class Histogram_1d:
     """Calculate 1D histograms.
@@ -189,31 +184,32 @@ class Histogram_1d:
     "counts" attribute.
     
     Attributes:
-        nvar (int): number variables for which histograms are desired
-        nbin (int): number of bins
-        limits (tuple[float]): (min, max) limits of the histogram (size 2)
-        counts (ndarray[int]): counts per bin including 
-            underflow and overflow bins (shape (nvar,nbin+2))
-        results: (ndarray[float]) A public getter / setter for `counts`
-        bin_width (float): width of each bin
+        hist_params (ndarray[HIST_PARAMS_DTYPE]): Configuration for each histogram
     """
-    def __init__(self, nvar, nbin, limits):
-        self.nvar = nvar
-        self.nbin = nbin
-        self.limits = limits
-        self.bin_width = (self.limits[1] - self.limits[0]) / self.nbin
-        self.counts = np.zeros((nvar, nbin+2), dtype=np.int32)
+    def __init__(self, hist_params):
+        self.hist_params = hist_params
+        self.bin_width = np.empty(self.hist_params.shape[0])
+        self.counts = typed.List.empty_list(int32[:,:])
+        for i, entry in enumerate(hist_params):
+            self.bin_width[i] = (entry.limits[1] - entry.limits[0]) / entry.nbin
+            self.counts.append(np.zeros((entry.nvar, entry.nbin+2), dtype=np.int32))
 
-    def score(self, ivar, value):
-        """Score a new data point to the histogram of variable ivar."""
-        if value < self.limits[0]:
-            ibin = 0                # underflow bin
-        elif value >= self.limits[1]:
-            ibin = -1               # overflow bin
-        else:
-            ibin = int((value - self.limits[0]) / self.bin_width) + 1
-        
-        self.counts[ivar,ibin] += 1
+    def score(self, proj):
+        """Score projectile stopping depth for its species."""
+        ivar = proj["ielem"]
+        value = proj["pos"][2]
+        for i in range(len(self.hist_params)):
+            params = self.hist_params[i]
+            width = self.bin_width[i]
+            
+            if value < params.limits[0]:
+                ibin = 0                # underflow bin
+            elif value >= params.limits[1]:
+                ibin = -1               # overflow bin
+            else:
+                ibin = int((value - params.limits[0]) / width) + 1
+            
+            self.counts[i][ivar,ibin] += 1
     
     @property
     def results(self):
@@ -224,33 +220,54 @@ class Histogram_1d:
         self.counts = new
 
 
-def setup(nspec, nbin, limits):
+@jitclass
+class Statistics:
+    hist: Histogram_1d
+    mom: Moment_1d
+    
+    """Aggregate statistics container for histogram and moments."""
+    def __init__(self, stat_params):
+        self.hist = Histogram_1d(stat_params)
+        self.mom = Moment_1d(stat_params[0].nvar, 4)
+
+    def score(self, proj):
+        if proj["is_inside"]:
+            self.hist.score(proj)
+            self.mom.score(proj)
+
+    @property
+    def results(self):
+        return self.hist.results, self.mom.results
+
+    @results.setter
+    def results(self, new):
+        self.hist.results = new[0]
+        self.mom.results = new[1]
+
+
+def setup(hist_params):
     """Setup module variables and pre-compile functions
 
     Parameters:
-        nspec(int): number of atom species
-        nbin (int): number of bins
-        limits (tuple[float]): (min, max) limits of the histogram (size 2)
-
-    Returns:
-        (STAT_PARAMS_DTYPE): Statistics parameters
+        hist_params (ndarray[HIST_PARAMS_DTYPE]):
+            Parameters for individual histograms
     """
-    global mom, hist
+    global stat
 
-    mom = Moment_1d(nvar=nspec, nmax=4)
-    hist = Histogram_1d(nspec, nbin, (limits[0], limits[1]))
+    stat = Statistics(hist_params)
     
-    mom.central_moments()
-    mom.mean()
-    mom.std()
-    mom.skewness()
-    mom.kurtosis()
+    stat.mom.central_moments()
+    stat.mom.mean()
+    stat.mom.std()
+    stat.mom.skewness()
+    stat.mom.kurtosis()
 
 
 def print_results():
     """Print statistics of the scored projectiles."""
-    global mom
-    assert mom is not None
+    global stat
+    assert stat is not None
+    mom = stat.mom
 
     mom.central_moments()
     mean, mean_err = mom.mean()
@@ -280,13 +297,19 @@ def print_results():
 def plot_results(log=False):
     """Plot the histogram using matplotlib."""
     import matplotlib.pyplot as plt
-    assert hist is not None
+    global stat
+    assert stat is not None
+    hist = stat.hist
 
-    for ivar in range(hist.nvar):
-        plt.stairs(hist.counts[ivar,1:-1],
-                   edges=np.linspace(hist.limits[0], hist.limits[1], 
-                                     hist.nbin+1),
-                   label=f"Species {ivar}")
+    for ihist, hist_2d in enumerate(hist.results):
+        config = hist.hist_params[ihist]
+        if not config["name"].startswith("depth distribution"):
+            continue
+        for ivar in range(len(hist_2d)):
+            plt.stairs(hist_2d[ivar,1:-1],
+                      edges=np.linspace(config.limits[0], config.limits[1], 
+                                        config.nbin+1),
+                      label=f"Species {ivar}, Hist '{config["name"]}'")
     if log:
         plt.yscale("log")
     plt.xlabel("Penetration depth (A)")

@@ -232,21 +232,21 @@ nlayers = len(layers_params["name"])
 
 #NLAYERS = 5
 NLAYERS = nlayers
-z_intf = np.empty(NLAYERS + 1, dtype=np.float64)
-z_intf[0] = 0.0
+x_intf = np.empty(NLAYERS + 1, dtype=np.float64)
+x_intf[0] = 0.0
 for i in range(nlayers):
-    z_intf[i+1] = z_intf[i] + layers_params["width"][i]
+    x_intf[i+1] = x_intf[i] + layers_params["width"][i]
 
 GEOMETRY_PARAMS_DTYPE = np.dtype([
     ("nlayers", np.int64),
-    ("z_intf", np.float64, (NLAYERS+1,)),
+    ("x_intf", np.float64, (NLAYERS+1,)),
 ], align=True)
 
 geometry_params = np.recarray(1, dtype=GEOMETRY_PARAMS_DTYPE)
 # NOTE: Do not do "geometry_params = np.recarray(...)[0]", since this would 
 # create a structured scalar, which causes issues with parallelization in Numba.
 geometry_params[0].nlayers = nlayers
-geometry_params[0].z_intf = z_intf
+geometry_params[0].x_intf = x_intf
 
 # Extract information about the target materials and construct a more 
 # convenient data structure.

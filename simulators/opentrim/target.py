@@ -20,16 +20,16 @@ def is_inside_target(pos, geometry_params):
     Returns:
         (bool): whether the position is inside the target
     """
-    return (geometry_params.z_intf[0] <= pos[2] 
-            <= geometry_params.z_intf[geometry_params.nlayers])
+    return (geometry_params.x_intf[0] <= pos[0] 
+            <= geometry_params.x_intf[geometry_params.nlayers])
 
 
 @jit(inline = "always")
 def get_layer_index(pos, geometry_params):
     """Get the layer index for a given position.
 
-    For pos[2] < geometry_params.z_intf[0] return 0.
-    For pos[2] >= geometry_params.z_intf[-1], return the last layer index.
+    For pos[0] < geometry_params.x_intf[0] return 0.
+    For pos[0] >= geometry_params.x_intf[-1], return the last layer index.
 
     Note that material index = layer index.
 
@@ -41,7 +41,7 @@ def get_layer_index(pos, geometry_params):
         (int): layer index
     """
     for i in range(1, geometry_params.nlayers):
-        if pos[2] < geometry_params.z_intf[i]:
+        if pos[0] < geometry_params.x_intf[i]:
             return i - 1    # return layer index to the left of the interface
         
     return geometry_params.nlayers - 1  # If not found in any layer, 

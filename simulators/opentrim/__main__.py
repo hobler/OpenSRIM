@@ -31,8 +31,11 @@ if __package__ is None:
 from . import config  # import config early to set up caching and parallel settings
 from . import stats as statistics
 start = time.time()
-from .init_params import params  # defines the params named tuple
+from .init_params import get_params  # defines the params structured array
 from .simulator import simulate, simulate_chunked, simulate_adaptive  # noqa: F401
+
+
+params = get_params()
 
 print("params is in globals():", "params" in globals())
 

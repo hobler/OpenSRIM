@@ -54,8 +54,9 @@ def _simulate(nion, params, follow_recoils, sim_idx):
     proj_init = Projectile(
         params[0].beam.energy,  # energy (eV)
         np.array([0.0, 0.0, 0.0]),  # position (A)
-        np.array([np.sin(np.radians(params[0].beam.tilt)), 0.0, 
-                  np.cos(np.radians(params[0].beam.tilt))]), # direction (unit vector)
+        np.array([np.cos(np.radians(params[0].beam.tilt)), 
+                  np.sin(np.radians(params[0].beam.tilt)), 0.0]),
+                  # direction (unit vector)
         0,
         0,
         True

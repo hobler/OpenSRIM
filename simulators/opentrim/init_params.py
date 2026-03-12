@@ -1,9 +1,9 @@
 """Initialize the simulation parameters.
 
-The params named tuple is defined during import of this module, and contains 
-all the parameters needed for the simulation. This code must not be put into a 
-function, since the params named tuple needs to be defined at the module level 
-for Numba compatibility.
+The params structured array is defined during import of this module, and 
+contains all the parameters needed for the simulation. This code must not be 
+put into a function, since the params structured array needs to be defined at 
+the module level for Numba compatibility.
 
 - Read the input parameters from a TOML file (not implemented yet, currently 
   hardcoded).

@@ -97,7 +97,7 @@ class Moment_1d:
     def score(self, proj):
         """Score projectile stopping depth for its species."""
         ivar = proj["ielem"]
-        value = proj["pos"][2]
+        value = proj["pos"][0]
         # Original line causing __powidf2 missing error:
         # self._mom[ivar,:] += value**self._orders[:]
 
@@ -197,7 +197,7 @@ class Histogram_1d:
     def score(self, proj):
         """Score projectile stopping depth for its species."""
         ivar = proj["ielem"]
-        value = proj["pos"][2]
+        value = proj["pos"][0]
         for i in range(len(self.hist_params)):
             params = self.hist_params[i]
             width = self.bin_width[i]

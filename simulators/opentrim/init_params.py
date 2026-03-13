@@ -14,7 +14,6 @@ from collections import namedtuple
 from math import sqrt
 import numpy as np
 #from . import cm_scatter
-from . import stats as statistics
 from .nlhlin import read_coefs
 
 
@@ -681,7 +680,6 @@ def get_hist_params(input_params):
         hist_params[i]["ion/recoils"] = rec["ion/recoils"]
         hist_params[i]["phonons"] = rec["phonons"]
         hist_params[i]["ionization"] = rec["ionization"]
-    #statistics.setup(nelem, nbin, limits)  # TODO: use input_params as argument
 
     return hist_params
 
@@ -724,7 +722,7 @@ def get_params():
         ("elements", elements_params.dtype, (elements_params.size,)),
         ("materials", materials_params.dtype, (materials_params.size,)),
         ("estop", estop_params.dtype),
-        ("stat", hist_params.dtype, (hist_params.size,)),
+        ("stats", hist_params.dtype, (hist_params.size,)),
         ("scatter", scatter_params.dtype),
     ], align=True)
 
@@ -741,7 +739,7 @@ def get_params():
     params[0].elements = elements_params
     params[0].materials = materials_params
     params[0].estop = estop_params
-    params[0].stat = hist_params
+    params[0].stats = hist_params
     params[0].scatter = scatter_params
 
     return params

@@ -14,7 +14,7 @@ from collections import namedtuple
 from math import sqrt
 import numpy as np
 #from . import cm_scatter
-from . import stats as statistics
+from . import stats_old as statistics
 from .nlhlin import read_coefs
 
 
@@ -605,7 +605,7 @@ if True:
         ("elements", ELEMENT_PARAMS_DTYPE, (NELEM,)),
         ("materials", MATERIALS_PARAMS_DTYPE, (NMAT,)),
         ("estop", ESTOP_PARAMS_DTYPE),
-        ("stat", HIST_PARAMS_DTYPE, (hist_params.size,)),
+        ("stats", HIST_PARAMS_DTYPE, (hist_params.size,)),
         ("scatter", SCATTER_PARAMS_DTYPE),
     ], align=True)
 
@@ -622,7 +622,7 @@ if True:
     params[0].elements = elements_params
     params[0].materials = materials_params
     params[0].estop = estop_params
-    params[0].stat = hist_params
+    params[0].stats = hist_params
     params[0].scatter = scatter_params
 else:
     Params = namedtuple("Params", [
@@ -636,7 +636,7 @@ else:
         "materials",
         "estop",
         "scatter",
-        "stat",
+        "stats",
     ])
     params = Params(
         rng_seed=input_params["simulation"]["rng_seed"],
@@ -649,5 +649,5 @@ else:
         materials=materials_params,
         estop=estop_params,
         scatter=scatter_params,
-        stat=hist_params,
+        stats=hist_params,
     )

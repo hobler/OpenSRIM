@@ -29,15 +29,18 @@ if __package__ is None:
     __package__ = str(Path(__file__).parent.name)
 
 from . import config  # import config early to set up caching and parallel settings
-from . import stats as statistics
+from . import stats_old as statistics
 start = time.time()
 from .init_params import get_params  # defines the params structured array
+from .stats import init_stats  # defines the stats structured array
 from .simulator import simulate, simulate_chunked, simulate_adaptive  # noqa: F401
 
 
 params = get_params()
+stats = init_stats(params[0].stats[0])
 
 print("params is in globals():", "params" in globals())
+print("stats:", stats)
 
 @jit(cache=config.ENABLE_CACHING, parallel=config.PARALLEL, nogil=config.PARALLEL)
 def test_params(params):
@@ -45,7 +48,7 @@ def test_params(params):
 #    print("params:", params)
     for _ in prange(2):
         print("params[0].rng_seed:", params[0].rng_seed)
-        print("params[0].stat:", params[0].stat)
+        print("params[0].stats:", params[0].stats)
         print("params[0].cascade:", params[0].cascade)
         print("params[0].recoil:", params[0].recoil)
         print("params[0].geometry:", params[0].geometry)
@@ -80,7 +83,7 @@ if __name__ == "__main__":
     for _ in range(iter_cnt):
         for i, c in enumerate(counts):
             # empty stats for each nion count
-            statistics.setup(params[0].stat)
+            statistics.setup(params[0].stats)
             
             start_time = time.time()
             # proj_count, hist_buf, mom_buf = simulate_adaptive(avg_chunk_time, c, params, follow_recoils=True)

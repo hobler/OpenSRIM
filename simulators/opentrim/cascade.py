@@ -13,7 +13,7 @@ from .recoil import get_recoil_position
 from .scatter import scatter
 from .estop import eloss
 from .target import get_layer_index, get_element_index, is_inside_target
-from . import stats as statistics
+from . import stats_old as statistics
 
 
 # TODO: Make follow_recoils an input parameter, passed via cascade_params
@@ -40,7 +40,7 @@ def cascade(initial_proj, params, follow_recoils=False, prealloc=400):
     emin = params.cascade.emin
     ed = params.cascade.ed
     
-    stat = statistics.Statistics(params.stat)
+    stat = statistics.Statistics(params.stats)
 
     # NOTE: Record arrays cannot be created within numba-jitted functions, so we 
     # use regular structured arrays and access fields by name (rather than

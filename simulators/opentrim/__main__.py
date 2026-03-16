@@ -32,12 +32,12 @@ from . import config  # import config early to set up caching and parallel setti
 from . import stats_old as statistics
 start = time.time()
 from .init_params import get_params  # defines the params structured array
-from .stats import init_stats  # defines the stats structured array
+from .stats import init_stats, plot_results  # defines the stats structured array
 from .simulator import simulate, simulate_chunked, simulate_adaptive  # noqa: F401
 
 
 params = get_params()
-stats = init_stats(params[0].stats[0])
+stats = init_stats(params[0].nelem, params[0].stats[0])
 
 print("params is in globals():", "params" in globals())
 print("stats:", stats)
@@ -88,14 +88,16 @@ if __name__ == "__main__":
             start_time = time.time()
             # proj_count, hist_buf, mom_buf = simulate_adaptive(avg_chunk_time, c, params, follow_recoils=True)
             proj_count, hist_buf, mom_buf = simulate_chunked(chunk_size, c, 
-                                                             params, 
+                                                             params, stats,
                                                              follow_recoils=True)
             # proj_count, hist_buf, mom_buf = simulate(c, params, follow_recoils=True, sim_idx=0)
             if statistics.stat is not None:
                 statistics.stat.results = (hist_buf, mom_buf)
             times[i].append(time.time() - start_time)
             proj_counts[i].append(proj_count)
-    
+
+    print(f'stats["inside"]["histx"]["counts"]=', stats[0]["inside"]["histx"]["counts"][:, 1:-1])
+
     # Output the results
     start = time.time()
     statistics.print_results()
@@ -109,3 +111,4 @@ if __name__ == "__main__":
     print("Stats calculation time [s]:", end)
     print("--------------------")
     statistics.plot_results(log=True)
+    plot_results(stats[0], log=True)    

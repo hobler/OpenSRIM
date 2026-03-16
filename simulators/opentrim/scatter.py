@@ -42,7 +42,7 @@ def normalize_if_needed(vec, fallback):
 
 
 @jit
-def scatter(proj, p, dirp, ielem2, scatter_params):
+def scatter(proj, p, dirp, recoil_proj, scatter_params):
     """Treat a scattering event.
 
     The atomic numbers and masses of the ion and the target atom enter the
@@ -57,18 +57,12 @@ def scatter(proj, p, dirp, ielem2, scatter_params):
         dirp (ndarray): direction vector of the impact parameter
             (= from the collision point to the recoil position before 
             the collision) (unit vector, size 3)
-        ielem2 (int): index of the target element
+        recoil_proj (Projectile): the recoil projectile
         scatter_params (np.recarray): Scatter parameters
-        is_magic (bool): If magic function should be used (otherwise 
-            scatter_integrals)
-    
-    Returns:
-        (ndarray): direction vector of the recoil after the collision 
-            (size 3)
-        (float): energy of the projectile after the collision
     """
     # scattering angle theta in the center-of-mass system
     ielem1 = proj["ielem"]
+    ielem2 = recoil_proj["ielem"]
     proj_e = proj["e"]
     proj_dir = proj["dir"][:]
 
@@ -102,5 +96,6 @@ def scatter(proj, p, dirp, ielem2, scatter_params):
     # energy after scattering
     recoil_e = denfac * proj_e * sin_half_theta**2
     proj["e"] -= recoil_e
-
-    return recoil_dir[:], recoil_e
+    
+    recoil_proj["dir"][:] = recoil_dir
+    recoil_proj["e"] = recoil_e

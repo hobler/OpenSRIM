@@ -1,12 +1,18 @@
 import time
+
 from . import config
 import numpy as np
 from numba import jit, prange, typed, int32
+import numba as nb
 from . import cascade
 from .mytypes import Projectile, PROJ_DTYPE
+from .stats import STATS_DTYPE, merge_stats, zero_stats
 
 
-def simulate(nion, params, follow_recoils=False, sim_idx=0):
+empty_stats = None
+
+
+def simulate(nion, params, stats, follow_recoils=False, sim_idx=0):
     """Perform simulation on given number of projectiles
     
     Parameters:
@@ -21,21 +27,32 @@ def simulate(nion, params, follow_recoils=False, sim_idx=0):
             A list of buffers (for each hist) for `Histogram_1d` class,
             Result buffers for `Moments_1d` class
     """
-    #print(f"params is C contiguous = {params.flags.c_contiguous}")
-    #print(f"Size of params: {params.nbytes/1024:.3f} kB")
+    global empty_stats
+    if empty_stats is None:
+        empty_stats = zero_stats(stats[0].copy())
 
-    proj_count, hist_buf, mom_buf = _simulate(nion, params, follow_recoils, sim_idx)
-    #_simulate.inspect_types()  # For debugging Numba type inference issues
+    # Construct an array of stats for each ion, since lists cannot be used in 
+    # Numba-jitted functions
+    stats_per_ion = np.array([empty_stats.copy() for _ in range(nion)], 
+                             dtype=STATS_DTYPE)
+
+    proj_count, hist_buf, mom_buf = _simulate(nion, params, stats_per_ion, follow_recoils, sim_idx)
+
     for i, lst in enumerate(hist_buf):
         if i == 0:
             continue
         for j, arr in enumerate(lst):
             hist_buf[0][j] += arr
+
+    # Merge stats from each ion into the total stats
+    for i in range(len(stats_per_ion)):
+        merge_stats(stats, stats_per_ion[i])
+
     return proj_count, hist_buf[0], np.sum(mom_buf, axis=0, dtype=np.float64)
 
 
 @jit(cache=config.ENABLE_CACHING, parallel=config.PARALLEL, nogil=config.PARALLEL)
-def _simulate(nion, params, follow_recoils, sim_idx):
+def _simulate(nion, params, stats_per_ion, follow_recoils, sim_idx):
     """Perform simulation on given number of projectiles
     
     Parameters:
@@ -73,18 +90,19 @@ def _simulate(nion, params, follow_recoils, sim_idx):
     for _ in range(nion):
         hist_results.append(typed.List.empty_list(int32[:,:]))
     mom_results = [mom_dummy for _ in range(nion)]
-    
-    # Simulate the collision cascades in parallel
+
+    # Parallel loop over collision cascades
     for i in prange(nion):  # ty:ignore[not-iterable]
         np.random.seed(params[0].rng_seed + sim_idx + i)
         proj_sim[i], hist_results[i], mom_results[i] = cascade.cascade(
-            proj_dummy[0], params[0], follow_recoils)
+            proj_dummy[0], params[0], stats_per_ion[i], 
+            follow_recoils)
     
     proj_count = 0
     for proj_lst in proj_sim:
         proj_count += proj_lst.size
-    
-    return proj_count, hist_results, mom_results
+
+    return proj_count, hist_results, mom_results  #, stats_per_ion
 
 
 def simulate_adaptive(avg_chunk_time, nion, *args, **kwargs):

@@ -7,8 +7,8 @@ import os
 from collections import namedtuple
 
 import numpy as np
-from numba import jit
-from .mytypes import PROJ_DTYPE
+from numba import jit, typed
+from .mytypes import PROJ_DTYPE, PROJ_NUMBA_DTYPE
 from .recoil import get_recoil_position
 from .scatter import scatter
 from .estop import eloss
@@ -34,8 +34,6 @@ def cascade(initial_proj, params, follow_recoils=False, prealloc=400):
             results buffer of Moment_1d class
     """
     GROWTH_FACTOR = 1.5
-    INITIAL_STACK_SIZE = 100
-    INITIAL_RECOILS_SIZE = 5
     
     emin = params.cascade.emin
     ed = params.cascade.ed
@@ -51,17 +49,14 @@ def cascade(initial_proj, params, follow_recoils=False, prealloc=400):
     lst_tail = 0
     
     # Projectiles to be simulated
-    stack = np.empty(INITIAL_STACK_SIZE, dtype=PROJ_DTYPE)
-    stack[0] = initial_proj
-    stack_tail = 1
+    stack = typed.List.empty_list(PROJ_NUMBA_DTYPE)
+    stack.append(initial_proj)
     
     # Recoils of the currently simulated projectile
-    recoils = np.empty(INITIAL_RECOILS_SIZE, dtype=PROJ_DTYPE)
+    recoils = typed.List.empty_list(PROJ_NUMBA_DTYPE)
 
-    while stack_tail > 0:
-        stack_tail -= 1
-        proj = stack[stack_tail]
-        recoils_tail = 0
+    while len(stack) > 0:
+        proj = stack[-1]
     
         while proj["e"] > emin:
             free_path, p, dirp, recoil_pos = get_recoil_position(
@@ -92,36 +87,28 @@ def cascade(initial_proj, params, follow_recoils=False, prealloc=400):
             if follow_recoils and recoil_e > ed:
                 recoil_is_inside = is_inside_target(recoil_pos, 
                                                     params.geometry)
-
-                if recoils_tail >= recoils.size:
-                    #print("Growing recoils array from size", recoils.size)
-                    recoils = np.append(
-                        recoils, 
-                        np.empty(int((GROWTH_FACTOR - 1.0)* recoils.size), 
-                                 dtype=PROJ_DTYPE))
-                    #print("to size", recoils.size)
-                recoils[recoils_tail]["e"] = recoil_e
-                recoils[recoils_tail]["pos"] = recoil_pos
-                recoils[recoils_tail]["dir"] = recoil_dir
-                recoils[recoils_tail]["ielem"] = recoil_ielem
-                recoils[recoils_tail]["ilayer"] = recoil_ilayer
-                recoils[recoils_tail]["is_inside"] = recoil_is_inside
-                recoils_tail += 1
+                recoils.append(proj)    # Proj copied to the list (not a reference)
+                last_el = len(recoils) - 1
+                recoils[last_el]["e"] = recoil_e
+                recoils[last_el]["pos"] = recoil_pos
+                recoils[last_el]["dir"] = recoil_dir
+                recoils[last_el]["ielem"] = recoil_ielem
+                recoils[last_el]["ilayer"] = recoil_ilayer
+                recoils[last_el]["is_inside"] = recoil_is_inside
         
         if lst_tail >= proj_lst.size:
             proj_lst = np.append(
                 proj_lst, np.empty(int((GROWTH_FACTOR - 1.0) * proj_lst.size), 
                                    dtype=PROJ_DTYPE))
-        proj_lst[lst_tail] = proj
+        proj_lst[lst_tail] = proj   # TODO copied?
         lst_tail += 1
         
         stat.score(proj)
+        stack.pop() # Remove currently processed projectile
         
-        for i in range(recoils_tail - 1, -1, -1):
-            if stack_tail >= stack.size:
-                stack = np.append(stack, np.empty(int(GROWTH_FACTOR * stack.size), dtype=PROJ_DTYPE))
-            stack[stack_tail] = recoils[i]
-            stack_tail += 1
+        for i in range(len(recoils) - 1, -1, -1):
+            stack.append(recoils[i])
+            recoils.pop()
 
     # Return continuous arrays
     hist_results, mom_results = stat.results

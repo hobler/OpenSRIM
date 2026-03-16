@@ -12,7 +12,7 @@ from .mytypes import PROJ_DTYPE, PROJ_NUMBA_DTYPE
 from .recoil import get_recoil_position
 from .scatter import scatter
 from .estop import eloss
-from .target import get_layer_index, get_element_index, is_inside_target
+from .target import set_layer_index, set_element_index, set_is_inside_target
 from . import stats as statistics
 
 
@@ -54,47 +54,38 @@ def cascade(initial_proj, params, follow_recoils=False, prealloc=400):
     
     # Recoils of the currently simulated projectile
     recoils = typed.List.empty_list(PROJ_NUMBA_DTYPE)
+    
+    # A recoil to be added to the simulation list
+    recoil_proj = np.empty(1, dtype=PROJ_DTYPE)[0]
 
     while len(stack) > 0:
         proj = stack[-1]
     
         while proj["e"] > emin:
-            free_path, p, dirp, recoil_pos = get_recoil_position(
-                proj, params.recoil)
+            free_path, p, dirp = get_recoil_position(
+                proj, recoil_proj, params.recoil)
             
             # step projectile forward and update energy
             dee = eloss(proj, free_path, params.estop, params.materials)
             proj["e"] -= dee
             proj["pos"] += free_path * proj["dir"]
-            proj["ilayer"] = get_layer_index(proj["pos"], params.geometry)
-            proj["is_inside"] = is_inside_target(proj["pos"], params.geometry)
+            set_layer_index(proj, params.geometry)
+            set_is_inside_target(proj, params.geometry)
             
             if not proj["is_inside"]:
                 break
             
             # get chemical element of recoil
-            recoil_ilayer = get_layer_index(recoil_pos, 
-                                            params.geometry)
-            recoil_ielem = get_element_index(recoil_ilayer, 
-                                             params.materials)
+            set_layer_index(recoil_proj, params.geometry)
+            set_element_index(recoil_proj, params.materials)
             
             # scattering event
-            recoil_dir, recoil_e = scatter(proj, p, dirp, recoil_ielem,
-                                           params.scatter)
-            # Create recoil projectile and add to recoils list
+            scatter(proj, p, dirp, recoil_proj, params.scatter)
+            set_is_inside_target(recoil_proj, params.geometry)
             # TODO: We may want to score the recoil energy even when it is 
             # below ed
-            if follow_recoils and recoil_e > ed:
-                recoil_is_inside = is_inside_target(recoil_pos, 
-                                                    params.geometry)
-                recoils.append(proj)    # Proj copied to the list (not a reference)
-                last_el = len(recoils) - 1
-                recoils[last_el]["e"] = recoil_e
-                recoils[last_el]["pos"] = recoil_pos
-                recoils[last_el]["dir"] = recoil_dir
-                recoils[last_el]["ielem"] = recoil_ielem
-                recoils[last_el]["ilayer"] = recoil_ilayer
-                recoils[last_el]["is_inside"] = recoil_is_inside
+            if follow_recoils and recoil_proj["e"] > ed:
+                recoils.append(recoil_proj)    # Proj copied to the list (not a reference)
         
         if lst_tail >= proj_lst.size:
             proj_lst = np.append(

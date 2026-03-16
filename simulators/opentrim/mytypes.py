@@ -1,6 +1,6 @@
 import os
 import numpy as np
-from numba import jit
+from numba import jit, from_dtype
 
 
 PROJ_DTYPE = np.dtype([
@@ -11,6 +11,7 @@ PROJ_DTYPE = np.dtype([
     ("ilayer", np.int32),
     ("is_inside", np.bool_)
 ], align=True)
+PROJ_NUMBA_DTYPE = from_dtype(PROJ_DTYPE)
 
 
 # Preserve compatibility with vanilla NumPy (with nuparams.scattermba disabled)

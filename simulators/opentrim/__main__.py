@@ -32,7 +32,7 @@ from . import config  # import config early to set up caching and parallel setti
 from . import stats_old as statistics
 start = time.time()
 from .init_params import get_params  # defines the params structured array
-from .stats import init_stats, plot_results  # defines the stats structured array
+from .stats import init_stats, print_moments, plot_histograms  # defines the stats structured array
 from .simulator import simulate, simulate_chunked, simulate_adaptive  # noqa: F401
 
 
@@ -101,6 +101,7 @@ if __name__ == "__main__":
     # Output the results
     start = time.time()
     statistics.print_results()
+    print_moments(stats[0])
     end = time.time() - start
     print("--------------------")
     for in_count, times_per_count, out_counts in zip(counts, times, proj_counts):
@@ -111,4 +112,4 @@ if __name__ == "__main__":
     print("Stats calculation time [s]:", end)
     print("--------------------")
     statistics.plot_results(log=True)
-    plot_results(stats[0], log=True)    
+    plot_histograms(stats[0], log=True)    

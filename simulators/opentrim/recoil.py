@@ -14,7 +14,7 @@ from .mytypes import PROJ_DTYPE
 
 
 @jit
-def get_recoil_position(proj, recoil_params):
+def get_recoil_position(proj, recoil_proj, recoil_params):
     """Get the position of the recoil hit after the next free flight path.
 
     The recoil more precisely is a recoil candidate, since it is not guaranteed 
@@ -30,6 +30,7 @@ def get_recoil_position(proj, recoil_params):
 
     Parameters:
         proj (Projectile): state of the projectile
+        recoil_proj (Projectile): the projectile to write recoil position to
         recoil_params (RECOIL_PARAMS_DTYPE): Recoil parameters
 
     Returns:
@@ -37,7 +38,6 @@ def get_recoil_position(proj, recoil_params):
         (float): impact parameter = distance between collision point and 
             recoil (A)
         (ndarray): direction vector from collision point to recoil (size 3)
-        (ndarray): the recoil position (size 3)
     """
     pos = proj["pos"][:]
     dir = proj["dir"][:]
@@ -72,6 +72,6 @@ def get_recoil_position(proj, recoil_params):
     dirp /= norm
 
     # recoil position
-    recoil_pos = collision_pos[:] + p * dirp[:]
+    recoil_proj["pos"] = collision_pos[:] + p * dirp[:]
 
-    return free_path, p, dirp[:], recoil_pos
+    return free_path, p, dirp[:]

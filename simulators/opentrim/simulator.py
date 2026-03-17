@@ -5,7 +5,7 @@ import numpy as np
 from numba import jit, prange, typed, int32
 import numba as nb
 from . import cascade
-from .mytypes import Projectile, PROJ_DTYPE
+from .mytypes import Projectile, PROJ_DTYPE, PROJ_NUMBA_DTYPE
 from .stats import STATS_DTYPE, merge_stats, zero_stats
 
 
@@ -23,6 +23,7 @@ def simulate(nion, params, stats, follow_recoils=False, sim_idx=0):
         sim_idx: (int) Simulation index (for chunked simulations)
     """
     global empty_stats
+    
     if empty_stats is None:
         empty_stats = zero_stats(stats[0].copy())
 
@@ -62,16 +63,20 @@ def _simulate(nion, params, stats_per_ion, follow_recoils, sim_idx):
         0,
         True
     )
-    proj_dummy = np.empty(1, dtype=PROJ_DTYPE)
-    proj_sim = [proj_dummy for _ in range(nion)]
-    proj_dummy[0] = proj_init
+    proj_dummy_list = typed.List.empty_list(PROJ_NUMBA_DTYPE)
+    proj_sim = [proj_dummy_list for _ in range(nion)]
+    
+    proj_dummy = np.full(1, proj_init)
 
     # Parallel loop over collision cascades
     for i in prange(nion):  # ty:ignore[not-iterable]
         np.random.seed(params[0].rng_seed + sim_idx + i)
         proj_sim[i] = cascade.cascade(
-            proj_dummy[0], params[0], stats_per_ion[i], 
-            follow_recoils)
+            proj_dummy[0], params[0], stats_per_ion[i], follow_recoils)
+    
+    proj_count = 0
+    for proj_lst in proj_sim:
+        proj_count += len(proj_lst)
     
     return
 

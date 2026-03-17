@@ -183,7 +183,7 @@ def standardize_moments(mom, ivar):
         return std_moments, std_moments_err
 
     # Raw moments
-    moments = power_sums[:] / power_sums[0]
+    moments = power_sums[:] / count
 
     # Central moments
     central_moments = np.array(

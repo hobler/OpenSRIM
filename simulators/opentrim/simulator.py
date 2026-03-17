@@ -3,7 +3,7 @@ from . import config
 import numpy as np
 from numba import jit, prange, typed, int32
 from . import cascade
-from .mytypes import Projectile, PROJ_DTYPE
+from .mytypes import Projectile, PROJ_DTYPE, PROJ_NUMBA_DTYPE
 
 
 def simulate(nion, params, follow_recoils=False, sim_idx=0):
@@ -61,9 +61,10 @@ def _simulate(nion, params, follow_recoils, sim_idx):
         0,
         True
     )
-    proj_dummy = np.empty(1, dtype=PROJ_DTYPE)
-    proj_sim = [proj_dummy for _ in range(nion)]
-    proj_dummy[0] = proj_init
+    proj_dummy_list = typed.List.empty_list(PROJ_NUMBA_DTYPE)
+    proj_sim = [proj_dummy_list for _ in range(nion)]
+    
+    proj_dummy = np.full(1, proj_init)
 
     hist_dummy = np.empty((1, 1), dtype=np.int32)
     mom_dummy = np.empty((1, 1), dtype=np.float64)
@@ -82,7 +83,7 @@ def _simulate(nion, params, follow_recoils, sim_idx):
     
     proj_count = 0
     for proj_lst in proj_sim:
-        proj_count += proj_lst.size
+        proj_count += len(proj_lst)
     
     return proj_count, hist_results, mom_results
 

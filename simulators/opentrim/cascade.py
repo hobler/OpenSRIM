@@ -45,8 +45,7 @@ def cascade(initial_proj, params, follow_recoils=False, prealloc=400):
     # by attributes).
 
     # Fully simulated projectiles
-    proj_lst = np.empty(1 if not follow_recoils else prealloc, dtype=PROJ_DTYPE)
-    lst_tail = 0
+    proj_lst = typed.List.empty_list(PROJ_NUMBA_DTYPE)
     
     # Projectiles to be simulated
     stack = typed.List.empty_list(PROJ_NUMBA_DTYPE)
@@ -87,13 +86,7 @@ def cascade(initial_proj, params, follow_recoils=False, prealloc=400):
             if follow_recoils and recoil_proj["e"] > ed:
                 recoils.append(recoil_proj)    # Proj copied to the list (not a reference)
         
-        if lst_tail >= proj_lst.size:
-            proj_lst = np.append(
-                proj_lst, np.empty(int((GROWTH_FACTOR - 1.0) * proj_lst.size), 
-                                   dtype=PROJ_DTYPE))
-        proj_lst[lst_tail] = proj   # TODO copied?
-        lst_tail += 1
-        
+        proj_lst.append(proj)
         stat.score(proj)
         stack.pop() # Remove currently processed projectile
         
@@ -103,4 +96,4 @@ def cascade(initial_proj, params, follow_recoils=False, prealloc=400):
 
     # Return continuous arrays
     hist_results, mom_results = stat.results
-    return proj_lst[:lst_tail][::-1].copy(), hist_results, mom_results.copy()
+    return proj_lst[::-1], hist_results, mom_results.copy()

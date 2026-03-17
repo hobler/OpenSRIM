@@ -97,7 +97,13 @@ if __name__ == "__main__":
     print("--------------------")
     for in_count, times_per_count, out_counts in zip(counts, times, proj_counts):
         print(f"Statistics for {in_count} initial projectiles:")
-        print(f"- Average time ({iter_cnt} iterations) [s]:", sum(times_per_count) / iter_cnt)
+        if iter_cnt > 1:    # Exclude 1st longer run
+            avg_time = sum(times_per_count[1:]) / (iter_cnt - 1)
+            avg_iter = iter_cnt - 1
+        else:
+            avg_time = sum(times_per_count) / iter_cnt
+            avg_iter = iter_cnt
+        print(f"- Average time ({avg_iter} iterations) [s]:", avg_time)
         print(f"- All simulation times ({iter_cnt} iterations) [s]:", [round(t, 3) for t in times_per_count])
         print("- Average interactions (output projectiles):", sum(out_counts) / iter_cnt)
     print("Stats calculation time [s]:", end)

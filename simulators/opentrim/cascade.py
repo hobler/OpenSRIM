@@ -13,7 +13,6 @@ from .recoil import get_recoil_position
 from .scatter import scatter
 from .estop import eloss
 from .target import get_layer_index, get_element_index, is_inside_target
-from . import stats_old as statistics
 from .stats import score
 
 
@@ -32,10 +31,7 @@ def cascade(initial_proj, params, stats,
             (for better performance)
         
     Returns:
-        tuple[ndarray[Projectile], ndarray[int32], ndarray[float64]]:
-            list of final projectile states,
-            results buffer of Histogram_1d class,
-            results buffer of Moment_1d class
+        ndarray[Projectile]: list of final projectile states
     """
     GROWTH_FACTOR = 1.5
     INITIAL_STACK_SIZE = 100
@@ -44,8 +40,6 @@ def cascade(initial_proj, params, stats,
     emin = params.cascade.emin
     ed = params.cascade.ed
     
-    stat = statistics.Statistics(params.stats)
-
     # NOTE: Record arrays cannot be created within numba-jitted functions, so we 
     # use regular structured arrays and access fields by name (rather than
     # by attributes).
@@ -119,8 +113,7 @@ def cascade(initial_proj, params, stats,
         proj_lst[lst_tail] = proj
         lst_tail += 1
         
-        stat.score(proj)  # old version, for reference
-        score(stats, proj)  # new version
+        score(stats, proj)
         
         for i in range(recoils_tail - 1, -1, -1):
             if stack_tail >= stack.size:
@@ -128,6 +121,4 @@ def cascade(initial_proj, params, stats,
             stack[stack_tail] = recoils[i]
             stack_tail += 1
 
-    # Return continuous arrays
-    hist_results, mom_results = stat.results
-    return proj_lst[:lst_tail][::-1].copy(), hist_results, mom_results.copy()
+    return proj_lst[:lst_tail][::-1].copy()

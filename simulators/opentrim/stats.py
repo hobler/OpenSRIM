@@ -1,315 +1,263 @@
-"""Module for collecting and reporting statistics of projectile trajectories.
+"""Handle moments and histograms.
 
-- Classes are defined for 1D moments and histograms.
-- The `Statistics` class owns one instance of each and forwards scoring.
-- Functions are provided to setup, and print/plot results.
+In order to allow JIT compilation of the scoring function, we need to define 
+a structured array stats the may be passed through the Python-nopython
+interface.
+
+Available functions:
+    init_stats: Initialize the stats structured array.
+    zero_stats: Reset the statistics to zero.
+    merge_stats: Merge the statistics from one projectile into the total 
+        statistics.
+    score: Score a projectile's contribution to the statistics.
+    standardize_moments: Calculate the standardized moments from the power sums.
+    print_moments: Print the standardized moments.
+    plot_histograms: Plot the histogram using matplotlib.
 """
 import math
 import numpy as np
-from numba.experimental import jitclass
-from numba.extending import overload, register_jitable
-from numba import int32, float64, from_dtype, types, typed
-from .init import HIST_PARAMS_DTYPE
+from numba import jit, literal_unroll
+from . import config
 
 
-stat = None
+STATS_DTYPE = None
+fields = None
 
-@register_jitable
-def fct(n: int):
-    """Calculate the factorial of a number (Numba-compatible)
+
+def init_stats(nelem, stat_params):
+    """Initialize the stats structured array.
     
-    Parameters:
-        n: (int) Number to calculate the factorial for
-        
+    The stats array contains subarrays for all the moments and histograms.
+
+    Arguments:
+        nelem: The number of different atom species
+        stat_params: The parameters for the statistics
+
     Returns:
-        int: The factorial of the provided number
+        The initialized stats structured array.
     """
-    fact = 1
-    for num in range(2, n + 1):
-        fact *= num
-    return fact
+    global STATS_DTYPE, fields
 
-@overload(math.comb)
-def impl(n: int, k: int):
-    """Calculate k-of-n combinations (Numba-compatible) 
-    
-    Parameters:
-        k: (int) Number of items in the chosen set
-        n: (int) Total number of items to choose from
+    max_order = 4    # TODO: Make max_order an input parameter, passed via stat_params
+    assert 1 <= max_order <= 4, "max_order must be between 1 and 4"
+    MOMENTS_1D_DTYPE = np.dtype([
+        ("nvar", np.int32),
+        ("max_order", np.int32),
+        ("power_sums", np.float64, (nelem, 2*max_order + 1,))
+    ], align=True)
+
+    HISTOGRAM_1D_DTYPE = np.dtype([
+        ("nvar", np.int32),
+        ("nbins", np.int32),
+        ("limits", np.float64, (2,)),
+        ("bin_width", np.float64),
+        ("counts", np.float64, (nelem, stat_params.nbin + 2))
+    ], align=True)
         
+    INSIDE_DTYPE = np.dtype([
+        ("momx", MOMENTS_1D_DTYPE),
+        ("histx", HISTOGRAM_1D_DTYPE),
+    ], align=True)
+
+    STATS_DTYPE = np.dtype([
+        ("inside", INSIDE_DTYPE),
+    ], align=True)
+
+    # For each STATS_DTYPE field, define the subfields
+    fields = (
+        ("inside", INSIDE_DTYPE.names),  
+    )
+    for field, subfields in fields:
+        print(f"Field '{field}' has subfields: {subfields}")
+
+    # Create the stats structured array
+    # Do not create a structured scalar, since this would cause issues with
+    # Numba-jitted functions
+    stats = np.empty(1, dtype=STATS_DTYPE)
+    
+    # Initialize the moments parameters
+    stats["inside"]["momx"]["nvar"] = nelem
+    stats["inside"]["momx"]["max_order"] = max_order
+    stats["inside"]["momx"]["power_sums"].fill(0.0)
+    
+    # Initialize the histogram parameters
+    stats["inside"]["histx"]["nvar"] = nelem
+    stats["inside"]["histx"]["nbins"] = stat_params.nbin
+    stats["inside"]["histx"]["limits"] = stat_params.limits
+    stats["inside"]["histx"]["bin_width"] = (
+        (stat_params.limits[1] - stat_params.limits[0]) / stat_params.nbin)
+    stats["inside"]["histx"]["counts"].fill(0.0)
+    
+    return stats
+
+
+def zero_stats(stats):
+    """Reset the statistics to zero.
+    
+    Loop over the fields and subfields of the stats structured array and reset 
+    the power sums and histogram counts to zero.
+    
+    Arguments:
+        stats: The stats structured array to be reset (modified in-place)
+    
+    Returns: 
+        The reset stats structured array.
+    """
+    for field, subfields in fields:
+        for subfield in subfields:
+            if subfield.startswith("mom"):
+                stats[field][subfield]["power_sums"].fill(0.0)
+            elif subfield.startswith("hist"):
+                stats[field][subfield]["counts"].fill(0.0)
+
+    return stats
+
+
+def merge_stats(total_stats, stats):
+    """Merge the statistics from one projectile into the total statistics.
+    
+    Arguments:
+        total_stats: The total statistics to be updated (modified in-place)
+        stats: The statistics from a single projectile to be merged into the 
+            total statistics
+    """
+    for field, subfields in fields:
+        for subfield in subfields:
+            if subfield.startswith("mom"):
+                total_mom_values = total_stats[field][subfield]["power_sums"]
+                mom_values = stats[field][subfield]["power_sums"]
+                total_mom_values += mom_values
+            elif subfield.startswith("hist"):
+                total_hist_counts = total_stats[field][subfield]["counts"]
+                hist_counts = stats[field][subfield]["counts"]
+                total_hist_counts += hist_counts
+
+
+@jit(cache=config.ENABLE_CACHING)
+def score(stats, proj):
+    """Score a projectile's contribution to the statistics."""
+    ivar = proj["ielem"]
+
+    if proj["is_inside"]:
+        x = proj["pos"][0]
+
+        mom = stats["inside"]["momx"]
+        max_order = mom["max_order"]
+        increment = x ** np.arange(2*max_order + 1)
+        mom["power_sums"][ivar, :] += increment
+
+        hist = stats["inside"]["histx"]
+        if x < hist["limits"][0]:
+            ibin = 0  # Underflow bin
+        elif x < hist["limits"][1]:
+            ibin = int((x - hist["limits"][0]) / hist["bin_width"]) + 1
+        else:
+            ibin = -1  # Overflow bin
+        hist["counts"][ivar, ibin] += 1.0
+
+
+def standardize_moments(mom, ivar):
+    """Calculate the standardized moments from the power sums.
+    
+    We define the standardized moments (abbreviated as std_moements) here as 
+    count, mean, standard deviation, skewness, and kurtosis, although the term 
+    is nomally used only for the latter two.
+    
+    Arguments:
+        mom: The moments structured array containing the power sums
+        ivar: The index of the variable (atom species) for which to calculate 
+            the moments
+    
     Returns:
-        int: The number of possible combinations
+        The standardized moments.
     """
-    def inner(n: int, k: int):
-        return 0 if k > n else fct(n) / (fct(k) * fct(n - k))
-    return inner
+    max_order = mom["max_order"]
+    std_moments = np.zeros(mom["max_order"] + 1)
+    std_moments_err = np.zeros(mom["max_order"] + 1)
+
+    # Counts
+    power_sums = mom["power_sums"][ivar, :]
+    count = power_sums[0]
+    std_moments[0] = count
+    if count == 0:
+        return std_moments, std_moments_err
+
+    # Raw moments
+    moments = power_sums[:] / count
+
+    # Central moments
+    central_moments = np.array(
+        [sum(math.comb(i, j) * moments[i-j] * (-moments[1])**j 
+             for j in range(i+1))
+         for i in range(2*max_order + 1)]
+    )
+
+    # Central moments errors
+    central_moments_err = np.array(
+        [np.sqrt((central_moments[2*i]
+                  - 2*i*central_moments[i-1]*central_moments[i+1] 
+                  - central_moments[i]**2 
+                  + i**2*central_moments[2]*central_moments[i-1]**2)
+                 / count) for i in range(max_order + 1)]
+    )
+
+    # Mean value
+    std_moments[1] = moments[1]
+    std_moments_err[1] = np.sqrt(central_moments[2] / count)
+    if max_order == 1:
+        return std_moments, std_moments_err
     
-
-@jitclass(spec = [
-    ("nvar", int32),
-    ("nmax", int32),
-    ("count", float64[:]),
-    ("_orders", int32[:]),
-    ("_mom", float64[:,:]),
-    ("_cenmom", float64[:,:])
-])
-class Moment_1d:
-    """Calculate moments of 1D data.
+    # standard deviation
+    std_moments[2] = np.sqrt(central_moments[2])
+    if std_moments[2] == 0.0:
+        return std_moments, std_moments_err
     
-    Moments up to twice the desired order are stored as they are needed 
-    to compute the standard deviations of the moments.
+    std_moments_err[2] = central_moments_err[2] / (2*std_moments[2]) 
+    if max_order == 2 or std_moments[2] == 0.0:
+        return std_moments, std_moments_err
 
-    To calculate one of the standard moments (mean, std, skewness, kurtosis),
-    create an instance of this class with the desired number of variables and
-    maximum order of moments. Score data points using the score() method. After
-    all data points have been scored, call the central_moments() method to
-    compute the central moments from the raw moments. Finally, call the desired
-    moment methods (mean(), std(), skewness(), kurtosis()) to retrieve the
-    moments and their standard errors. 
+    # skewness and kurtosis
+    for i in range(3, max_order + 1):
+        std_moments[i] = central_moments[i] / std_moments[2]**i
+        std_moments_err[i] = central_moments_err[i] / std_moments[2]**i
 
-    Note that the standard errors are derived assuming independent data points.
-    If they are correlated such as when recoil positions stem from the same
-    collision cascade, the standard errors will be underestimated.
+    return std_moments, std_moments_err
 
-    Attributes:
-        nvar (int): number of variables for which moments are desired
-        nmax (int): maximum order of moments
-        count (ndarray[int]): number of scored data points per variable (size 
-            nvar)
-        _orders (ndarray[int]): orders of all moments to be calculated (size 
-            2*nmax+1)
-        _mom (ndarray[float]): sum of values raised to the order of the moment 
-            to be calculated (shape (nvar, 2*nmax+1))
-        results: (ndarray[float]) A public getter / setter for `_mom`
-        _cenmom (ndarray[float]): central moments (shape (nvar, 2*nmax+1))
-    """
-    def __init__(self, nvar, nmax):
-        self.nvar = nvar
-        if nmax < 1 or nmax > 4:
-            raise ValueError("nmax must be between 1 and 4.")
-        self.nmax = nmax
-        self._orders = np.arange(0, 2*nmax + 1, dtype=np.int32)
-        self._mom = np.zeros((nvar, 2*nmax + 1), dtype=np.float64)
-        # TODO variable init?
-        # self._cenmom = np.zeros((nvar, 2*nmax + 1), dtype=np.float64)
-        # self.count = np.zeros(nvar, dtype=np.float64)
 
-    def score(self, proj):
-        """Score projectile stopping depth for its species."""
-        ivar = proj["ielem"]
-        value = proj["pos"][0]
-        # Original line causing __powidf2 missing error:
-        # self._mom[ivar,:] += value**self._orders[:]
-
-        # Workaround
-        powers_of_value = np.empty_like(self._orders, dtype=np.float64)
-        powers_of_value[0] = 1.0
-        if len(self._orders) > 1:
-            powers_of_value[1] = value
-
-        # Compute higher powers iteratively using multiplication
-        # This avoids the generic float-to-float power function
-        for i in range(2, len(self._orders)):
-            powers_of_value[i] = powers_of_value[i-1] * value
-
-        self._mom[ivar,:] += powers_of_value
+def print_moments(stats):
+    """Print the standardized moments."""
+    mom = stats["inside"]["momx"]
+    max_order = mom["max_order"]
+    for ivar in range(mom["nvar"]):
+        std_moments, std_moments_err = standardize_moments(mom, ivar)
         
-    @property
-    def results(self):
-        return self._mom
-        
-    @results.setter
-    def results(self, new):
-        self._mom = new
-
-
-
-    def central_moments(self):
-        """Compute central moments up to order 2*nmax."""
-        self.count = self._mom[:,0]
-        mom = self._mom[:,:] / self.count[:,np.newaxis]
-        self._cenmom = np.zeros_like(self._mom)
-        for ivar in range(self.nvar):
-            for i in range(2*self.nmax + 1):
-                self._cenmom[ivar,i] = mom[ivar,i]
-                for j in range(1, i+1):
-                    self._cenmom[ivar,i] += (math.comb(i, j) 
-                            * mom[ivar,i-j] * (-mom[ivar,1])**j)
-
-    def mean(self):
-        """Return the mean values and their standard errors."""
-        mean_ = self._mom[:,1] / self.count[:]
-        mean_err = np.sqrt(self._cenmom[:,2] / self.count[:]) 
-        return mean_[:], mean_err[:]
-    
-    def std(self):
-        """Return the standard deviations and their standard errors."""
-        std_ = np.sqrt(self._cenmom[:,2])
-        std_err = self._cenmom_err(2)[:] / (2*std_[:])
-        return std_[:], std_err[:]
-    
-    def skewness(self):
-        """Return the skewnesses and their standard errors."""
-        skewness_ = self._cenmom[:,3] / self._cenmom[:,2]**1.5
-        skewness_err = self._cenmom_err(3)[:] / self._cenmom[:,2]**1.5
-        return skewness_[:], skewness_err[:]
-    
-    def kurtosis(self):
-        """Return the kurtoses and their standard errors."""
-        kurtosis_ = self._cenmom[:,4] / self._cenmom[:,2]**2
-        kurtosis_err = self._cenmom_err(4)[:] / self._cenmom[:,2]**2
-        return kurtosis_[:], kurtosis_err[:]
-
-    def _cenmom_err(self, i):
-        """Return the standard error of the central moment of order i."""
-        cenmom_err = np.sqrt((self._cenmom[:,2*i]
-                              - 2*i*self._cenmom[:,i-1]*self._cenmom[:,i+1] 
-                              - self._cenmom[:,i]**2 
-                              + i**2*self._cenmom[:,2]*self._cenmom[:,i-1]**2)
-                             / self.count[:])
-        return cenmom_err[:]
-
-
-@jitclass(spec = [
-    ("hist_params", from_dtype(HIST_PARAMS_DTYPE)[:]),
-    ("counts", types.ListType(int32[:,:])),
-    ("bin_width", float64[:])
-])
-class Histogram_1d:
-    """Calculate 1D histograms.
-
-    To calculate histograms, create an instance of this class with the
-    desired number of variables, number of bins, and limits. Score data points
-    using the score() method. The histogram counts can be accessed via the 
-    "counts" attribute.
-    
-    Attributes:
-        hist_params (ndarray[HIST_PARAMS_DTYPE]): Configuration for each histogram
-    """
-    def __init__(self, hist_params):
-        self.hist_params = hist_params
-        self.bin_width = np.empty(self.hist_params.shape[0])
-        self.counts = typed.List.empty_list(int32[:,:])
-        for i, entry in enumerate(hist_params):
-            self.bin_width[i] = (entry.limits[1] - entry.limits[0]) / entry.nbin
-            self.counts.append(np.zeros((entry.nvar, entry.nbin+2), dtype=np.int32))
-
-    def score(self, proj):
-        """Score projectile stopping depth for its species."""
-        ivar = proj["ielem"]
-        value = proj["pos"][0]
-        for i in range(len(self.hist_params)):
-            params = self.hist_params[i]
-            width = self.bin_width[i]
-            
-            if value < params.limits[0]:
-                ibin = 0                # underflow bin
-            elif value >= params.limits[1]:
-                ibin = -1               # overflow bin
-            else:
-                ibin = int((value - params.limits[0]) / width) + 1
-            
-            self.counts[i][ivar,ibin] += 1
-    
-    @property
-    def results(self):
-        return self.counts
-        
-    @results.setter
-    def results(self, new):
-        self.counts = new
-
-
-@jitclass
-class Statistics:
-    hist: Histogram_1d
-    mom: Moment_1d
-    
-    """Aggregate statistics container for histogram and moments."""
-    def __init__(self, stat_params):
-        self.hist = Histogram_1d(stat_params)
-        self.mom = Moment_1d(stat_params[0].nvar, 4)
-
-    def score(self, proj):
-        if proj["is_inside"]:
-            self.hist.score(proj)
-            self.mom.score(proj)
-
-    @property
-    def results(self):
-        return self.hist.results, self.mom.results
-
-    @results.setter
-    def results(self, new):
-        self.hist.results = new[0]
-        self.mom.results = new[1]
-
-
-def setup(hist_params):
-    """Setup module variables and pre-compile functions
-
-    Parameters:
-        hist_params (ndarray[HIST_PARAMS_DTYPE]):
-            Parameters for individual histograms
-    """
-    global stat
-
-    stat = Statistics(hist_params)
-    
-    stat.mom.central_moments()
-    stat.mom.mean()
-    stat.mom.std()
-    stat.mom.skewness()
-    stat.mom.kurtosis()
-
-
-def print_results():
-    """Print statistics of the scored projectiles."""
-    global stat
-    assert stat is not None
-    mom = stat.mom
-
-    mom.central_moments()
-    mean, mean_err = mom.mean()
-    std, std_err = mom.std()
-    skewness, skewness_err = mom.skewness()
-    kurtosis, kurtosis_err = mom.kurtosis()
-
-    for ivar in range(mom.nvar):
         print(f"Statistics for atom species {ivar}:")
-    
-        if mom.count[ivar] == 0:
-            print("   No atoms stopped inside the target.")
-            continue
 
         print(f"   Number of atoms stopped inside the target: "
-              f"{int(mom.count[ivar])}")
+              f"{std_moments[0]:.0f}")
         print(f"   Mean penetration depth: "
-              f"{mean[ivar]:.2f} A +/- {mean_err[ivar]:.2f} A")
-        print(f"   Standard deviation of penetration depth: "
-              f"{std[ivar]:.2f} A +/- {std_err[ivar]:.2f} A")
-        print(f"   Skewness: "
-              f"{skewness[ivar]:.2f} +/- {skewness_err[ivar]:.2f}")
-        print(f"   Kurtosis: "
-              f"{kurtosis[ivar]:.2f} +/- {kurtosis_err[ivar]:.2f}")
+              f"{std_moments[1]:.2f} A +/- {std_moments_err[1]:.2f} A")
+        if max_order >= 2:
+            print(f"   Standard deviation of penetration depth: "
+                  f"{std_moments[2]:.2f} A +/- {std_moments_err[2]:.2f} A")
+        if max_order >= 3:
+            print(f"   Skewness: "
+                  f"{std_moments[3]:.2f} +/- {std_moments_err[3]:.2f}")
+        if max_order >= 4:
+            print(f"   Kurtosis: "
+                  f"{std_moments[4]:.2f} +/- {std_moments_err[4]:.2f}")
 
 
-def plot_results(log=False):
+def plot_histograms(stats, log=False):
     """Plot the histogram using matplotlib."""
     import matplotlib.pyplot as plt
-    global stat
-    assert stat is not None
-    hist = stat.hist
 
-    for ihist, hist_2d in enumerate(hist.results):
-        config = hist.hist_params[ihist]
-        if not config["name"].startswith("depth distribution"):
-            continue
-        for ivar in range(len(hist_2d)):
-            plt.stairs(hist_2d[ivar,1:-1],
-                      edges=np.linspace(config.limits[0], config.limits[1], 
-                                        config.nbin+1),
-                      label=f"Species {ivar}, Hist '{config["name"]}'")
+    hist = stats["inside"]["histx"]
+    for ivar in range(hist["counts"].shape[0]):
+        plt.stairs(hist["counts"][ivar, 1:-1],
+                   edges=np.linspace(hist["limits"][0], hist["limits"][1], 
+                                     hist["nbins"]+1),
+                   label=f"Species {ivar}, Hist 'depth distribution'")
     if log:
         plt.yscale("log")
     plt.xlabel("Penetration depth (A)")
@@ -317,4 +265,3 @@ def plot_results(log=False):
     plt.title("Histogram of Penetration Depths")
     plt.legend()
     plt.show()
-

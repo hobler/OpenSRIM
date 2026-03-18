@@ -29,31 +29,17 @@ if __package__ is None:
     __package__ = str(Path(__file__).parent.name)
 
 from . import config  # import config early to set up caching and parallel settings
-from . import stats as statistics
 start = time.time()
-from .init_params import params  # defines the params named tuple
+from .init_params import get_params  # defines the params structured array
+from .stats import init_stats, zero_stats, print_moments, plot_histograms  # defines the stats structured array
 from .simulator import simulate, simulate_chunked, simulate_adaptive  # noqa: F401
 
+
+params = get_params()
+stats = init_stats(params[0].nelem, params[0].stats[0])
+
 print("params is in globals():", "params" in globals())
-
-@jit(cache=config.ENABLE_CACHING, parallel=config.PARALLEL, nogil=config.PARALLEL)
-def test_params(params):
-    print("Testing params:")
-#    print("params:", params)
-    for _ in prange(2):
-        print("params[0].rng_seed:", params[0].rng_seed)
-        print("params[0].stat:", params[0].stat)
-        print("params[0].cascade:", params[0].cascade)
-        print("params[0].recoil:", params[0].recoil)
-        print("params[0].geometry:", params[0].geometry)
-        print("params[0].elements:", params[0].elements)
-        print("params[0].materials:", params[0].materials)
-        print("params[0].estop:", params[0].estop)
-        print("params[0].scatter:", params[0].scatter)
-        print("params[0].nelem:", params[0].nelem)
-        print("Finished!")
-
-#test_params(params); exit()
+print("stats:", stats)
 
 if __name__ == "__main__":
     if not config.ENABLE_CACHING:
@@ -67,7 +53,7 @@ if __name__ == "__main__":
     
     print("Startup time:", time.time() - start)
     iter_cnt = 1
-    counts = [10000] #[10000]
+    counts = [10000, 10000] #[10000]
     chunk_size = 100
     # avg_chunk_time = 0.1    # seconds
     
@@ -76,23 +62,23 @@ if __name__ == "__main__":
     
     for _ in range(iter_cnt):
         for i, c in enumerate(counts):
-            # empty stats for each nion count
-            statistics.setup(params[0].stat)
             
+            zero_stats(stats)
+
             start_time = time.time()
-            # proj_count, hist_buf, mom_buf = simulate_adaptive(avg_chunk_time, c, params, follow_recoils=True)
-            proj_count, hist_buf, mom_buf = simulate_chunked(chunk_size, c, 
-                                                             params, 
-                                                             follow_recoils=True)
-            # proj_count, hist_buf, mom_buf = simulate(c, params, follow_recoils=True, sim_idx=0)
-            if statistics.stat is not None:
-                statistics.stat.results = (hist_buf, mom_buf)
+            # simulate_adaptive(avg_chunk_time, c, params, follow_recoils=True)
+            simulate_chunked(chunk_size, c, 
+                             params, stats,
+                             follow_recoils=True)
+            # simulate(c, params, follow_recoils=True, sim_idx=0)
             times[i].append(time.time() - start_time)
+            
+            proj_count = stats[0]['inside']['momx']['power_sums'][1,0]  # this is only approximate
             proj_counts[i].append(proj_count)
-    
+
     # Output the results
     start = time.time()
-    statistics.print_results()
+    print_moments(stats[0])
     end = time.time() - start
     print("--------------------")
     for in_count, times_per_count, out_counts in zip(counts, times, proj_counts):
@@ -108,4 +94,4 @@ if __name__ == "__main__":
         print("- Average interactions (output projectiles):", sum(out_counts) / iter_cnt)
     print("Stats calculation time [s]:", end)
     print("--------------------")
-    statistics.plot_results(log=True)
+    plot_histograms(stats[0], log=True)    

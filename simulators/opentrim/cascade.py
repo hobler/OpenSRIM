@@ -13,33 +13,31 @@ from .recoil import get_recoil_position
 from .scatter import scatter
 from .estop import eloss
 from .target import set_layer_index, set_element_index, set_is_inside_target
-from . import stats as statistics
+from .stats import score
 
 
 # TODO: Make follow_recoils an input parameter, passed via cascade_params
 @jit
-def cascade(initial_proj, params, follow_recoils=False, prealloc=400):
+def cascade(initial_proj, params, stats, 
+            follow_recoils=False, prealloc=400):
     """Simulate one projectile trajectory.
     
     Parameters:
         initial_proj: (Projectile) the initial state of the first projectile
         params: (PARAMS_DTYPE) Simulation parameters
+        stats: (STATS_DTYPE) statistical data container
         follow_recoils: (bool) whether to follow recoil trajectories
-        prealloc: (int) number of recoil projectiles to pre-allocate space for (for better performance)
+        prealloc: (int) number of recoil projectiles to pre-allocate space for 
+            (for better performance)
         
     Returns:
-        tuple[ndarray[Projectile], ndarray[int32], ndarray[float64]]:
-            list of final projectile states,
-            results buffer of Histogram_1d class,
-            results buffer of Moment_1d class
+        ndarray[Projectile]: list of final projectile states
     """
     GROWTH_FACTOR = 1.5
     
     emin = params.cascade.emin
     ed = params.cascade.ed
     
-    stat = statistics.Statistics(params.stat)
-
     # NOTE: Record arrays cannot be created within numba-jitted functions, so we 
     # use regular structured arrays and access fields by name (rather than
     # by attributes).
@@ -87,13 +85,14 @@ def cascade(initial_proj, params, follow_recoils=False, prealloc=400):
                 recoils.append(recoil_proj)    # Proj copied to the list (not a reference)
         
         proj_lst.append(proj)
-        stat.score(proj)
-        stack.pop() # Remove currently processed projectile
+        score(stats, proj)
+
+        # Remove currently processed projectile
+        stack.pop()
         
         for i in range(len(recoils) - 1, -1, -1):
             stack.append(recoils[i])
             recoils.pop()
 
     # Return continuous arrays
-    hist_results, mom_results = stat.results
-    return proj_lst[::-1], hist_results, mom_results.copy()
+    return proj_lst[::-1]

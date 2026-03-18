@@ -133,7 +133,7 @@ def merge_stats(total_stats, stats):
                 total_hist_counts += hist_counts
 
 
-@jit(cache=config.ENABLE_CACHING)
+@jit
 def score(stats, proj):
     """Score a projectile's contribution to the statistics."""
     ivar = proj["ielem"]

@@ -18,8 +18,7 @@ from .stats import score
 
 # TODO: Make follow_recoils an input parameter, passed via cascade_params
 @jit
-def cascade(initial_proj, params, stats, 
-            follow_recoils=False, prealloc=400):
+def cascade(initial_proj, params, stats, follow_recoils=False):
     """Simulate one projectile trajectory.
     
     Parameters:
@@ -27,8 +26,6 @@ def cascade(initial_proj, params, stats,
         params: (PARAMS_DTYPE) Simulation parameters
         stats: (STATS_DTYPE) statistical data container
         follow_recoils: (bool) whether to follow recoil trajectories
-        prealloc: (int) number of recoil projectiles to pre-allocate space for 
-            (for better performance)
         
     Returns:
         ndarray[Projectile]: list of final projectile states
@@ -94,5 +91,5 @@ def cascade(initial_proj, params, stats,
             stack.append(recoils[i])
             recoils.pop()
 
-    # Return continuous arrays
+    # Return fully simulated projectiles in the correct order
     return proj_lst[::-1]

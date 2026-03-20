@@ -419,11 +419,14 @@ def _get_cascade_params(input_params):
         cascade_params: (np.recarray) The cascade parameters.
     """
     CASCADE_PARAMS_DTYPE = np.dtype([
+        ("follow_recoils", np.int64),  # stored as int for better compatibility with Numba
         ("emin", np.float64),
         ("ed", np.float64),
     ], align=True)
 
     cascade_params = np.recarray(1, dtype=CASCADE_PARAMS_DTYPE)
+    cascade_params[0].follow_recoils = (
+        input_params["simulation"]["follow recoils"])
     cascade_params[0].emin = 5.0
     cascade_params[0].ed = 15.0
 
@@ -460,8 +463,8 @@ def get_params(input_params):
 
     # collect subarrays into a single structured array
     PARAMS_DTYPE = np.dtype([
-        ("rng_seed", np.int64),     # one or all of the ints must be int64
-        ("nelem", np.int32),        # to avoid trouble with Numba when
+        ("rng_seed", np.int64),     # need an even number of int32 for alignment
+        ("nelem", np.int32),        # without padding, which causes trouble with Numba when
         ("nmat", np.int32),         # align=True
         ("beam", beam_params.dtype),
         ("cascade", cascade_params.dtype),

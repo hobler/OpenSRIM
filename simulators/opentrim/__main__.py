@@ -68,11 +68,9 @@ if __name__ == "__main__":
             zero_stats(stats)
 
             start_time = time.time()
-            # simulate_adaptive(avg_chunk_time, c, params, follow_recoils=True)
-            simulate_chunked(chunk_size, c, 
-                             params, stats,
-                             follow_recoils=True)
-            # simulate(c, params, follow_recoils=True, sim_idx=0)
+            # simulate_adaptive(avg_chunk_time, c, params, stats)
+            simulate_chunked(chunk_size, c, params, stats)
+            # simulate(c, params, stats, sim_idx=0)
             times[i].append(time.time() - start_time)
             
             proj_count = stats[0]['x']['power_sums'][1,0]  # this is only approximate

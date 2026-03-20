@@ -8,6 +8,7 @@ def read_params():
     """
     input_params = {
         "simulation": {
+            "follow recoils": True,  # whether to follow recoils in the simulation
             "nions": 10000,        # number of ions to simulate
             "nions_update": 100,     # update parameters every n ions
             "rng_seed": 12345,      # random seed for reproducibility

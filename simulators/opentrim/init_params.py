@@ -17,170 +17,6 @@ import numpy as np
 from .nlhlin import read_coefs
 
 
-def read_input():
-    """Read the input parameters from a file.
-
-    Currently hardcoded, but should read from a TOML file in the future.
-
-    Returns:
-        (dict): A dictionary containing the input parameters.
-    """
-    input_params = {
-        "simulation": {
-            "nions": 10000,        # number of ions to simulate
-            "nions_update": 100,     # update parameters every n ions
-            "rng_seed": 12345,      # random seed for reproducibility
-            "workdir": "./",          # working directory for output files
-        },
-        "beam": {
-            "symbol": "B",       # chemical symbol of the incoming ions
-            "name": "Boron",      # full name of chemical element
-            "Z": 5,              # atomic number of the incoming ions
-            "M": 11.009,          # mass of the incoming ions (amu)
-            "energy": 50.0,       # energy of the incoming ions (keV)
-            "tilt": 0.0,         # tilt angle of the beam (degrees)
-        },
-        "layers" : {
-            "name": ["Layer 1"],  # names of the layers
-            "width": [4000.0],    # width of each layer (A)
-            "density": [0.04994],  # density of each layer (atoms/A^3)
-            "compound correction": [1.0],  # correction factor for compound targets
-            "gas": [False],        # whether the layer is a gas (True) or solid (False) 
-            "material": [
-                {
-                "symbol": ["Si"],  # chemical symbol of the target atoms
-                "name": ["Silicon"], # full name of chemical element
-                "Z": [14],          # atomic number of the target atoms
-                "M": [28.086],       # mass of the target atoms (amu)
-                "stoichiometry": [1],   # stoichiometric ratio of the target atoms in the layer
-                "displacement_energy": [15.0],  # displacement energy of the target atoms (eV)
-                },
-            ],
-        },
-#
-# The layers part of the TOML file would look something like this:
-#
-# [layers]
-# name = ["Layer 1", ...]
-# width = [4000.0, ...]
-# density = [0.04994, ...]
-# compound_correction = [1.0, ...]
-# gas = [false, ...] 
-#
-# [[layers.material]]
-# symbol = ["Si", ...]
-# name = ["Silicon", ...]
-# Z = [14, ...]
-# M = [28.086, ...]
-# stoichiometry = [1, ...]
-# displacement_energy = [15.0, ...]
-#
-# [[layers.material]]
-# ...
-#
-# TODO: 
-#       "layer": [
-#           {
-#               "name": "Layer 1",
-#               "width": 4000.0,
-#               "density": 0.04994,
-#               "compound correction": 1.0,
-#               "gas": False,
-#               "element": [
-#                   {
-#                       "symbol": "Si",
-#                       "name": "Silicon",
-#                       "Z": 14,
-#                       "M": 28.086,
-#                       "stoichiometry": 1,
-#                       "displacement energy": 15.0,
-#                   },
-#                   ...
-#               ],
-#           },
-#           ...
-#       ],
-#
-# would maybe result in better readability of the TOML file:
-#
-# [[layer]]
-# name = "Layer 1"
-# width = 4000.0
-# density = 0.04994
-# compound_correction = 1.0
-# gas = false
-#
-# [[layer.element]]
-# symbol = "Si"
-# name = "Silicon"
-# Z = 14
-# M = 28.086
-# stoichiometry = 1
-# displacement_energy = 15.0
-#
-# [[layer.element]]
-# ...
-#
-# [[layer]]
-# ...
-#
-        "models": {
-            "potential": "ZBL",  # potential model for scattering
-            "scattering integrals": {
-                "algorithm": "magic",  # algorithm for numerical integration of scattering integrals
-                                                # "magic" or "Guass-Legendre"
-                "n_absc": 4,       # number of abscissas for numerical integration of scattering integrals
-            },
-            "electronic stopping": "Lindhard",  # model for electronic stopping power
-            "Lindhard correction": {
-                "B->Si": 1.5,       # Correction factor to Lindhard stopping power for B->Si
-                "Si->Si": 1.0,      # Correction factor to Lindhard stopping power for Si->Si
-            },
-        },
-        "output": {
-            "trajectories": {
-                "start": False,      # whether to record starting points of trajectories
-                "end": False,        # whether to record ending points of trajectories
-                "collisions": False,  # whether to record collision points of trajectories
-            },
-            "depth distribution": {
-                "nbins": 40,         # number of bins for depth distribution
-                "limits": (0.0, 4000.0), # limits for depth distribution (A)
-                "ion/recoils": True,  # whether to record depth distribution for both ions and recoils
-                "phonons": False,      # whether to record depth distribution for phonons
-                "ionization": False,      # whether to record depth distribution for ionization events
-            },
-            "lateral distribution": {
-                "nbins": 40,         # number of bins for lateral distribution
-                "limits": (-2000.0, 2000.0), # limits for lateral distribution (A)
-                "ion/recoils": True,  # whether to record lateral distribution for both ions and recoils
-                "phonons": False,      # whether to record lateral distribution for phonons
-                "ionization": False,      # whether to record lateral distribution for ionization events
-            },
-            "backscattered atoms distribution": {
-                "energy": {
-                    "nbins": 40,         # number of bins for energy distribution
-                    "limits": (0.0, 50.0), # limits for energy distribution (keV)
-                },
-                "angle": {
-                    "nbins": 40,         # number of bins for angle distribution
-                    "limits": (-90.0, 90.0), # limits for angle distribution
-                },
-            },
-            "transmitted atoms distribution": {
-                "energy": {
-                    "nbins": 40,         # number of bins for energy distribution
-                    "limits": (0.0, 50.0), # limits for energy distribution (keV)
-                },
-                "angle": {
-                    "nbins": 40,         # number of bins for angle distribution
-                    "limits": (-90.0, 90.0), # limits for angle distribution
-                },
-            },
-        }
-    }
-    
-    return input_params
 
 
 def _get_nlhlin_coefs(z1, z2):
@@ -601,15 +437,100 @@ def get_cascade_params(input_params):
     return cascade_params
 
 
-def get_hist_params(input_params):
+def get_hist_params(input_params, nelem):
     """Get the histogram parameters from the input parameters.
 
     Parameters:
         input_params: (dict) The input parameters dictionary.
+        nelem: (int) The number of elements.
 
     Returns:
         hist_params: (np.recarray) The histogram parameters.
     """
+    short_names = {
+        "depth distribution": "x",
+        "lateral distribution": "y",
+        "backscattered atoms distribution": "b",
+        "transmitted atoms distribution": "t",
+        "ion/recoils": "",
+        "nuclear energy deposition": "n",
+        "electronic energy deposition": "e",
+        "energy": "e",
+        "angle": "a",
+    }
+
+    # Build a flattened dictionary of histogram configurations from the output 
+    # configuration. The histogram name is constructed from the keys in the 
+    # output configuration, e.g. "depth distribution.ion/recoils" -> "histx", 
+    # "lateral distribution.nuclear energy deposition" -> "histyn", 
+    # "backscattered atoms distribution.energy" -> "histbe", etc. The 
+    # histogram parameters (number of bins, limits, etc.) are taken from the 
+    # corresponding section in the output configuration. 
+    hist_configs = {}
+    for name in input_params["output"]:
+        if name == "trajectories":
+            continue
+        if name not in short_names:
+            raise ValueError(f"Unknown distribution type: {name}")
+        if not isinstance(input_params["output"][name], dict):
+            raise ValueError(f"Expected a dictionary for distribution config "
+                             f"of {name}")
+        for subname in input_params["output"][name]:
+            if subname not in short_names:
+                raise ValueError(f"Unknown distribution type: {name}.{subname}")        
+            hist_config = input_params["output"][name][subname]
+            if not isinstance(hist_config, dict):
+                raise ValueError(f"Expected a dictionary for hist "
+                                 f"config of {name}.{subname}")
+
+            short_name = f"{short_names[name]}{short_names[subname]}"
+            hist_name = f"hist{short_name}"
+            hist_configs[hist_name] = hist_config
+
+    # TODO: As long as we don't pass hist_configs to Numba-jitted functions,
+    # we can keep it as a dictionary, but we would need to add nvar=nelem to it
+
+    # Build a structured array data type of histogram parameters
+    HIST_PARAMS_DTYPE = np.dtype([
+        ("score", np.bool_),
+        ("nvar", np.int32),
+        ("nbins", np.int32),
+        ("limits", np.float64, (2,)),
+    ], align=True)
+
+    for i, hist_name in enumerate(hist_configs):
+        if i == 0:
+            STATS_PARAMS_DTYPE = np.dtype([
+                (hist_name, HIST_PARAMS_DTYPE),
+            ], align=True)
+        else:
+            STATS_PARAMS_DTYPE = np.dtype(STATS_PARAMS_DTYPE.descr + [
+                (hist_name, HIST_PARAMS_DTYPE),
+            ], align=True)
+    STATS_PARAMS_DTYPE = np.dtype(STATS_PARAMS_DTYPE.descr, align=True)
+    
+    # Create the structured array of histogram parameters
+    hist_params = np.recarray(1, dtype=STATS_PARAMS_DTYPE)
+    for hist_name, hist_config in hist_configs.items():
+        hist_params[0][hist_name]["nvar"] = nelem
+        for field in hist_config:
+            if field not in ["score", "nbins", "limits"]:
+                raise ValueError(f"Unknown histogram config field: {field} "
+                                 f"in {hist_name}")
+            hist_params[0][hist_name][field] = hist_config[field]
+
+#    print("Histogram configurations:")
+#    for hist_name in hist_configs:
+#        print(f"   {hist_name}: {hist_params[0][hist_name]}")
+#        print(f"       fields: {hist_params[0][hist_name].dtype.names}")
+#    print(f"hist_params: {hist_params}")
+#    print(f"hist_params fields: {hist_params.dtype.names}")
+#    print(f"hist_params.dtype: {hist_params.dtype}")
+
+    return hist_params
+
+def get_hist_params_old(input_params):
+
     HIST_PARAMS_DTYPE = np.dtype([
         ("nvar", np.int32),
         ("nbin", np.int32),
@@ -671,6 +592,7 @@ def get_hist_params(input_params):
         return records
 
     _histogram_list = _collect_histograms(input_params["output"])
+    print(f"{_histogram_list=}")
     hist_params = np.empty(len(_histogram_list), dtype=HIST_PARAMS_DTYPE)
     for i, rec in enumerate(_histogram_list):
         hist_params[i]["name"] = rec["name"]
@@ -684,18 +606,21 @@ def get_hist_params(input_params):
     return hist_params
 
 
-def get_params():
+def get_params(input_params):
     """Initialize the simulation parameters.
     
     The parameters are returned as a structured array of subarrays. Do not
     create a structured scalar by saying params = params[0] and similarly for
     the subarrays, since this causes issues with parallelization in Numba.
+
+    Parameters:
+        input_params: (dict) The input parameters dictionary.
+
+    Returns:
+        params: (np.recarray) The input parameters structured array.
     """
     global NELEM, NMAT
     
-    # read input parameters
-    input_params = read_input()
-
     # rearrange parameters and calculate derived parameters
     beam_params = get_beam_params(input_params)
     geometry_params = get_geometry_params(input_params)
@@ -705,7 +630,7 @@ def get_params():
     recoil_params = get_recoil_params(input_params)
     scatter_params = get_scatter_params(input_params, nelem, elements_params)
     cascade_params = get_cascade_params(input_params)
-    hist_params = get_hist_params(input_params)
+    hist_params = get_hist_params(input_params, nelem)
 
     # TODO: include n_absc in params
     #cm_scatter.setup(input_params["models"]["scattering integrals"]["n_absc"])
@@ -722,7 +647,7 @@ def get_params():
         ("elements", elements_params.dtype, (elements_params.size,)),
         ("materials", materials_params.dtype, (materials_params.size,)),
         ("estop", estop_params.dtype),
-        ("stats", hist_params.dtype, (hist_params.size,)),
+#        ("stats", hist_params.dtype),
         ("scatter", scatter_params.dtype),
     ], align=True)
 
@@ -739,7 +664,17 @@ def get_params():
     params[0].elements = elements_params
     params[0].materials = materials_params
     params[0].estop = estop_params
-    params[0].stats = hist_params
+#    params[0].stats = hist_params
     params[0].scatter = scatter_params
 
-    return params
+#    print("------------")
+#    print(f"params[0].stats: {params[0].stats}")
+#    print(f"params[0].stats fields: {params[0].stats.dtype.names}")
+#    print(f"params[0].stats.dtype: {params[0].stats.dtype}")
+#    print("------------")
+#    print(f"params[0].stats[0]: {params[0].stats[0]}")
+#    print(f"params[0].stats[0] fields: {params[0].stats[0].dtype.names}")
+#    print(f"params[0].stats[0].dtype: {params[0].stats[0].dtype}")
+
+
+    return params, hist_params

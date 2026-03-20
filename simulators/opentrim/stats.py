@@ -21,72 +21,116 @@ from . import config
 
 
 STATS_DTYPE = None
-fields = None
+stats_fields = None
+
+max_order = 4    # TODO: Make max_order an input parameter, passed via stats_params
+                 # e.g., input_params["output"]name].max_order
+assert 1 <= max_order <= 4, "max_order must be between 1 and 4"
 
 
-def init_stats(nelem, stat_params):
+def init_stats(nelem, input_params, stats_params):
     """Initialize the stats structured array.
     
     The stats array contains subarrays for all the moments and histograms.
 
     Arguments:
         nelem: The number of different atom species
-        stat_params: The parameters for the statistics
+        stats_params: The parameters for the statistics
 
     Returns:
         The initialized stats structured array.
     """
-    global STATS_DTYPE, fields
+    global STATS_DTYPE, stats_fields
 
-    max_order = 4    # TODO: Make max_order an input parameter, passed via stat_params
-    assert 1 <= max_order <= 4, "max_order must be between 1 and 4"
-    MOMENTS_1D_DTYPE = np.dtype([
-        ("nvar", np.int32),
-        ("max_order", np.int32),
-        ("power_sums", np.float64, (nelem, 2*max_order + 1,))
-    ], align=True)
+    short_names = {
+        "depth distribution": "x",
+        "lateral distribution": "y",
+        "backscattered atoms distribution": "b",
+        "transmitted atoms distribution": "t",
+        "ion/recoils": "",
+        "nuclear energy deposition": "n",
+        "electronic energy deposition": "e",
+        "energy": "e",
+        "angle": "a",
+    }
+    # Build a flattened dictionary of histogram configurations from the output 
+    # configuration. The histogram name is constructed from the keys in the 
+    # output configuration, e.g. "depth distribution.ion/recoils" -> "histx", 
+    # "lateral distribution.nuclear energy deposition" -> "histyn", 
+    # "backscattered atoms distribution.energy" -> "histbe", etc. The 
+    # histogram parameters (number of bins, limits, etc.) are taken from the 
+    # corresponding section in the output configuration. 
+    output_params = input_params["output"]
+    distrib_configs = {}
+    for name in output_params:
+        if name == "trajectories":
+            continue
+        if name not in short_names:
+            raise ValueError(f"Unknown distribution type: {name}")
+        if not isinstance(output_params[name], dict):
+            raise ValueError(f"Expected a dictionary for distribution config "
+                             f"of {name}")
+        for subname in output_params[name]:
+            if subname not in short_names:
+                raise ValueError(f"Unknown distribution type: {name}.{subname}")        
+            distrib_config = output_params[name][subname]
+            if not isinstance(distrib_config, dict):
+                raise ValueError(f"Expected a dictionary for distrib "
+                                 f"config of {name}.{subname}")
 
-    HISTOGRAM_1D_DTYPE = np.dtype([
-        ("nvar", np.int32),
-        ("nbins", np.int32),
-        ("limits", np.float64, (2,)),
-        ("bin_width", np.float64),
-        ("counts", np.float64, (nelem, stat_params.nbin + 2))
-    ], align=True)
-        
-    INSIDE_DTYPE = np.dtype([
-        ("momx", MOMENTS_1D_DTYPE),
-        ("histx", HISTOGRAM_1D_DTYPE),
-    ], align=True)
+            short_name = f"{short_names[name]}{short_names[subname]}"
+            distrib_configs[short_name] = distrib_config
 
-    STATS_DTYPE = np.dtype([
-        ("inside", INSIDE_DTYPE),
-    ], align=True)
+    # Build a structured array data type of distribution parameters
+    for i, name in enumerate(distrib_configs):
+        distrib_dtype = np.dtype([
+            ("score", np.int64),  # whether to score this distribution (use integer for JIT compatibility)
+            ("nvar", np.int32),  # number of variables (e.g. atom species) for this distribution
+            ("nbins", np.int32),  # number of bins for this distribution
+            ("limits", np.float64, (2,)),  # limits for this distribution
+            ("bin_width", np.float64),
+            ("counts", np.float64, (nelem,  # TODO: may depend on follow_recoils and other factors
+                                    distrib_configs[name]["nbins"] + 2)),
+            ("power_sums", np.float64, (nelem, 2*max_order + 1)),
+        ], align=True)
 
-    # For each STATS_DTYPE field, define the subfields
-    fields = (
-        ("inside", INSIDE_DTYPE.names),  
-    )
-    for field, subfields in fields:
-        print(f"Field '{field}' has subfields: {subfields}")
+        if i == 0:
+            STATS_DTYPE = np.dtype([
+                (name, distrib_dtype),
+            ], align=True)
+        else:
+            STATS_DTYPE = np.dtype(STATS_DTYPE.descr + [
+                (name, distrib_dtype),
+            ], align=True)
+    STATS_DTYPE = np.dtype(STATS_DTYPE.descr, align=True)
 
-    # Create the stats structured array
-    # Do not create a structured scalar, since this would cause issues with
-    # Numba-jitted functions
-    stats = np.empty(1, dtype=STATS_DTYPE)
-    
-    # Initialize the moments parameters
-    stats["inside"]["momx"]["nvar"] = nelem
-    stats["inside"]["momx"]["max_order"] = max_order
-    stats["inside"]["momx"]["power_sums"].fill(0.0)
-    
-    # Initialize the histogram parameters
-    stats["inside"]["histx"]["nvar"] = nelem
-    stats["inside"]["histx"]["nbins"] = stat_params.nbin
-    stats["inside"]["histx"]["limits"] = stat_params.limits
-    stats["inside"]["histx"]["bin_width"] = (
-        (stat_params.limits[1] - stat_params.limits[0]) / stat_params.nbin)
-    stats["inside"]["histx"]["counts"].fill(0.0)
+    # Create the structured array of statistical distributions
+    stats = np.recarray(1, dtype=STATS_DTYPE)
+    for name, distrib_config in distrib_configs.items():
+        stats[0][name]["nvar"] = nelem    # TODO: may depend on follow_recoils and other factors
+        for field in distrib_config:
+#            if field == "score":  # test
+#                continue
+            if field not in ["score", "nbins", "limits"]:
+                raise ValueError(f"Unknown histogram config field: {field} "
+                                 f"in {name}")
+            stats[0][name][field] = distrib_config[field]
+
+        stats[0][name]["bin_width"] = (
+            (distrib_config["limits"][1] - distrib_config["limits"][0]) 
+            / distrib_config["nbins"])
+        stats[0][name]["counts"].fill(0.0)
+        stats[0][name]["power_sums"].fill(0.0)
+
+    print("-----------")
+    print(f"stats: {stats}")
+    print(f"stats fields: {stats.dtype.names}")
+    for name in stats.dtype.names:
+        print(f"   {name}: {stats[name]}")
+
+    stats_fields = STATS_DTYPE.names
+
+    print(f"stats_fields: '{stats_fields}'")
     
     return stats
 
@@ -103,12 +147,9 @@ def zero_stats(stats):
     Returns: 
         The reset stats structured array.
     """
-    for field, subfields in fields:
-        for subfield in subfields:
-            if subfield.startswith("mom"):
-                stats[field][subfield]["power_sums"].fill(0.0)
-            elif subfield.startswith("hist"):
-                stats[field][subfield]["counts"].fill(0.0)
+    for field in stats_fields:
+        stats[field]["counts"].fill(0.0)
+        stats[field]["power_sums"].fill(0.0)
 
     return stats
 
@@ -121,16 +162,13 @@ def merge_stats(total_stats, stats):
         stats: The statistics from a single projectile to be merged into the 
             total statistics
     """
-    for field, subfields in fields:
-        for subfield in subfields:
-            if subfield.startswith("mom"):
-                total_mom_values = total_stats[field][subfield]["power_sums"]
-                mom_values = stats[field][subfield]["power_sums"]
-                total_mom_values += mom_values
-            elif subfield.startswith("hist"):
-                total_hist_counts = total_stats[field][subfield]["counts"]
-                hist_counts = stats[field][subfield]["counts"]
-                total_hist_counts += hist_counts
+    for field in stats_fields:
+            total_power_sums = total_stats[field]["power_sums"]
+            power_sums = stats[field]["power_sums"]
+            total_power_sums += power_sums
+            total_counts = total_stats[field]["counts"]
+            counts = stats[field]["counts"]
+            total_counts += counts
 
 
 @jit(cache=config.ENABLE_CACHING)
@@ -138,25 +176,22 @@ def score(stats, proj):
     """Score a projectile's contribution to the statistics."""
     ivar = proj["ielem"]
 
-    if proj["is_inside"]:
+    if proj["is_inside"] and stats["x"]["score"]:
         x = proj["pos"][0]
 
-        mom = stats["inside"]["momx"]
-        max_order = mom["max_order"]
         increment = x ** np.arange(2*max_order + 1)
-        mom["power_sums"][ivar, :] += increment
+        stats["x"]["power_sums"][ivar, :] += increment
 
-        hist = stats["inside"]["histx"]
-        if x < hist["limits"][0]:
+        if x < stats["x"]["limits"][0]:
             ibin = 0  # Underflow bin
-        elif x < hist["limits"][1]:
-            ibin = int((x - hist["limits"][0]) / hist["bin_width"]) + 1
+        elif x < stats["x"]["limits"][1]:
+            ibin = int((x - stats["x"]["limits"][0]) / stats["x"]["bin_width"]) + 1
         else:
             ibin = -1  # Overflow bin
-        hist["counts"][ivar, ibin] += 1.0
+        stats["x"]["counts"][ivar, ibin] += 1.0
 
 
-def standardize_moments(mom, ivar):
+def standardize_moments(stats, ivar):
     """Calculate the standardized moments from the power sums.
     
     We define the standardized moments (abbreviated as std_moements) here as 
@@ -164,19 +199,18 @@ def standardize_moments(mom, ivar):
     is nomally used only for the latter two.
     
     Arguments:
-        mom: The moments structured array containing the power sums
+        stats: The statistics structured array containing the power sums
         ivar: The index of the variable (atom species) for which to calculate 
             the moments
     
     Returns:
         The standardized moments.
     """
-    max_order = mom["max_order"]
-    std_moments = np.zeros(mom["max_order"] + 1)
-    std_moments_err = np.zeros(mom["max_order"] + 1)
+    std_moments = np.zeros(max_order + 1)
+    std_moments_err = np.zeros(max_order + 1)
 
     # Counts
-    power_sums = mom["power_sums"][ivar, :]
+    power_sums = stats["power_sums"][ivar, :]
     count = power_sums[0]
     std_moments[0] = count
     if count == 0:
@@ -226,10 +260,8 @@ def standardize_moments(mom, ivar):
 
 def print_moments(stats):
     """Print the standardized moments."""
-    mom = stats["inside"]["momx"]
-    max_order = mom["max_order"]
-    for ivar in range(mom["nvar"]):
-        std_moments, std_moments_err = standardize_moments(mom, ivar)
+    for ivar in range(stats["x"]["nvar"]):
+        std_moments, std_moments_err = standardize_moments(stats["x"], ivar)
         
         print(f"Statistics for atom species {ivar}:")
 
@@ -252,7 +284,7 @@ def plot_histograms(stats, log=False):
     """Plot the histogram using matplotlib."""
     import matplotlib.pyplot as plt
 
-    hist = stats["inside"]["histx"]
+    hist = stats["x"]
     for ivar in range(hist["counts"].shape[0]):
         plt.stairs(hist["counts"][ivar, 1:-1],
                    edges=np.linspace(hist["limits"][0], hist["limits"][1], 

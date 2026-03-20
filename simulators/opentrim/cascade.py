@@ -16,19 +16,14 @@ from .target import set_layer_index, set_element_index, set_is_inside_target
 from .stats import score
 
 
-# TODO: Make follow_recoils an input parameter, passed via cascade_params
 @jit
-def cascade(initial_proj, params, stats, 
-            follow_recoils=False, prealloc=400):
+def cascade(initial_proj, params, stats):
     """Simulate one projectile trajectory.
     
     Parameters:
         initial_proj: (Projectile) the initial state of the first projectile
         params: (PARAMS_DTYPE) Simulation parameters
         stats: (STATS_DTYPE) statistical data container
-        follow_recoils: (bool) whether to follow recoil trajectories
-        prealloc: (int) number of recoil projectiles to pre-allocate space for 
-            (for better performance)
         
     Returns:
         ndarray[Projectile]: list of final projectile states
@@ -81,7 +76,7 @@ def cascade(initial_proj, params, stats,
             set_is_inside_target(recoil_proj, params.geometry)
             # TODO: We may want to score the recoil energy even when it is 
             # below ed
-            if follow_recoils and recoil_proj["e"] > ed:
+            if params.cascade.follow_recoils and recoil_proj["e"] > ed:
                 recoils.append(recoil_proj)    # Proj copied to the list (not a reference)
         
         proj_lst.append(proj)

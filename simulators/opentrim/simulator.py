@@ -25,7 +25,8 @@ def simulate(nion, params, stats, follow_recoils=False, sim_idx=0):
     global empty_stats
     
     if empty_stats is None:
-        empty_stats = zero_stats(stats[0].copy())
+        empty_stats = stats[0].copy()
+        zero_stats(empty_stats)
 
     # Construct an array of stats for each ion, since lists cannot be used in 
     # Numba-jitted functions

@@ -121,8 +121,10 @@ def read_params():
         "output": {
             "trajectories": {
                 "start": False,      # whether to record starting points of trajectories
-                "end": False,        # whether to record ending points of trajectories
                 "collisions": False,  # whether to record collision points of trajectories
+                "stopped": False,        # whether to record ending points of trajectories
+                "backscattered": False, # whether to record backscattered projectiles
+                "transmitted": False,   # whether to record transmitted projectiles
             },
             "depth distribution": {
                 "ion/recoils": {

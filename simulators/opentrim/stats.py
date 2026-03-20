@@ -1,7 +1,7 @@
 """Handle moments and histograms.
 
-In order to allow JIT compilation of the scoring function, we need to define 
-a structured array stats the may be passed through the Python-nopython
+In order to allow JIT compilation of the scoring functions, we need to define 
+a structured array "stats" the may be passed through the Python-nopython
 interface.
 
 Available functions:
@@ -23,20 +23,21 @@ from . import config
 STATS_DTYPE = None
 stats_fields = None
 
-max_order = 4    # TODO: Make max_order an input parameter, passed via stats_params
-                 # e.g., input_params["output"]name].max_order
+max_order = 4    # TODO: Make max_order an input parameter, passed via input_params
+                 # e.g., input_params["output"]["depth distribution"].max_order
 assert 1 <= max_order <= 4, "max_order must be between 1 and 4"
 
 
-def init_stats(nelem, input_params, stats_params):
+def init_stats(nelem, input_params):
     """Initialize the stats structured array.
     
     The stats array contains subarrays for all the moments and histograms.
 
     Arguments:
-        nelem: The number of different atom species
-        stats_params: The parameters for the statistics
-
+        nelem: (int) The number of different atom species
+        input_params: (dict) The input parameters dictionary, used to extract 
+            the histogram configurations from the output configuration section.
+    
     Returns:
         The initialized stats structured array.
     """
@@ -53,84 +54,87 @@ def init_stats(nelem, input_params, stats_params):
         "energy": "e",
         "angle": "a",
     }
-    # Build a flattened dictionary of histogram configurations from the output 
-    # configuration. The histogram name is constructed from the keys in the 
-    # output configuration, e.g. "depth distribution.ion/recoils" -> "histx", 
-    # "lateral distribution.nuclear energy deposition" -> "histyn", 
-    # "backscattered atoms distribution.energy" -> "histbe", etc. The 
-    # histogram parameters (number of bins, limits, etc.) are taken from the 
-    # corresponding section in the output configuration. 
+    # Build a flattened dictionary "stats_configs" of statistics configurations 
+    # from the output configuration. The keys of the dictionary are constructed 
+    # from the keys in the output configuration, e.g. 
+    #   "depth distribution.ion/recoils" -> "x", 
+    #   "lateral distribution.nuclear energy deposition" -> "yn", 
+    #   "backscattered atoms distribution.energy" -> "be", etc. 
+    # The histogram parameters (number of bins, limits, etc.) are taken from 
+    # the corresponding section in the output configuration. 
     output_params = input_params["output"]
-    distrib_configs = {}
+    stats_configs = {}
+    
     for name in output_params:
         if name == "trajectories":
             continue
         if name not in short_names:
-            raise ValueError(f"Unknown distribution type: {name}")
+            raise ValueError(f"Unknown output field: {name}")
         if not isinstance(output_params[name], dict):
-            raise ValueError(f"Expected a dictionary for distribution config "
-                             f"of {name}")
+            raise ValueError(f"Expected a dictionary for output field "
+                             f"{name}")
+        
         for subname in output_params[name]:
             if subname not in short_names:
-                raise ValueError(f"Unknown distribution type: {name}.{subname}")        
-            distrib_config = output_params[name][subname]
-            if not isinstance(distrib_config, dict):
-                raise ValueError(f"Expected a dictionary for distrib "
-                                 f"config of {name}.{subname}")
+                raise ValueError(f"Unknown output type: {name}.{subname}")        
+           
+            stats_config = output_params[name][subname]
+            if not isinstance(stats_config, dict):
+                raise ValueError(f"Expected a dictionary for output field "
+                                 f"{name}.{subname}")
 
             short_name = f"{short_names[name]}{short_names[subname]}"
-            distrib_configs[short_name] = distrib_config
+            stats_configs[short_name] = stats_config
 
-    # Build a structured array data type of distribution parameters
-    for i, name in enumerate(distrib_configs):
-        distrib_dtype = np.dtype([
-            ("score", np.int64),  # whether to score this distribution (use integer for JIT compatibility)
-            ("nvar", np.int32),  # number of variables (e.g. atom species) for this distribution
-            ("nbins", np.int32),  # number of bins for this distribution
-            ("limits", np.float64, (2,)),  # limits for this distribution
+    # Build a structured array data type of statistics parameters
+    for i, name in enumerate(stats_configs):
+        stats_dtype = np.dtype([
+            ("score", np.int64),  # whether to score this statistics (use integer for JIT compatibility)
+            ("nvar", np.int32),  # number of variables (e.g. atom species) for this statistics
+            ("nbins", np.int32),  # number of bins for this statistics
+            ("limits", np.float64, (2,)),  # limits for this statistics
             ("bin_width", np.float64),
             ("counts", np.float64, (nelem,  # TODO: may depend on follow_recoils and other factors
-                                    distrib_configs[name]["nbins"] + 2)),
+                                    stats_configs[name]["nbins"] + 2)),
             ("power_sums", np.float64, (nelem, 2*max_order + 1)),
         ], align=True)
 
         if i == 0:
             STATS_DTYPE = np.dtype([
-                (name, distrib_dtype),
+                (name, stats_dtype),
             ], align=True)
         else:
             STATS_DTYPE = np.dtype(STATS_DTYPE.descr + [
-                (name, distrib_dtype),
+                (name, stats_dtype),
             ], align=True)
     STATS_DTYPE = np.dtype(STATS_DTYPE.descr, align=True)
 
-    # Create the structured array of statistical distributions
+    # Create the structured array of statistics
     stats = np.recarray(1, dtype=STATS_DTYPE)
-    for name, distrib_config in distrib_configs.items():
+    for name, stats_config in stats_configs.items():
         stats[0][name]["nvar"] = nelem    # TODO: may depend on follow_recoils and other factors
-        for field in distrib_config:
-#            if field == "score":  # test
-#                continue
+        for field in stats_config:
             if field not in ["score", "nbins", "limits"]:
                 raise ValueError(f"Unknown histogram config field: {field} "
                                  f"in {name}")
-            stats[0][name][field] = distrib_config[field]
+            stats[0][name][field] = stats_config[field]
 
         stats[0][name]["bin_width"] = (
-            (distrib_config["limits"][1] - distrib_config["limits"][0]) 
-            / distrib_config["nbins"])
+            (stats_config["limits"][1] - stats_config["limits"][0]) 
+            / stats_config["nbins"])
         stats[0][name]["counts"].fill(0.0)
         stats[0][name]["power_sums"].fill(0.0)
 
-    print("-----------")
-    print(f"stats: {stats}")
-    print(f"stats fields: {stats.dtype.names}")
-    for name in stats.dtype.names:
-        print(f"   {name}: {stats[name]}")
+    if False:
+        print("-----------")
+        print(f"stats: {stats}")
+        print(f"stats fields: {stats.dtype.names}")
+        for name in stats.dtype.names:
+            print(f"   {name}: {stats[name]}")
 
     stats_fields = STATS_DTYPE.names
 
-    print(f"stats_fields: '{stats_fields}'")
+#    print(f"stats_fields: '{stats_fields}'")
     
     return stats
 
@@ -150,8 +154,6 @@ def zero_stats(stats):
     for field in stats_fields:
         stats[field]["counts"].fill(0.0)
         stats[field]["power_sums"].fill(0.0)
-
-    return stats
 
 
 def merge_stats(total_stats, stats):

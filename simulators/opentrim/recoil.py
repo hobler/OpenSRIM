@@ -11,10 +11,10 @@ from math import sqrt, sin, cos
 import numpy as np
 from numba import jit
 from .mytypes import PROJ_DTYPE
-
+from .target import get_layer_index, get_element_index, is_inside_target
 
 @jit
-def get_recoil_position(proj, recoil_proj, recoil_params):
+def get_recoil(proj, recoil, params):
     """Get the position of the recoil hit after the next free flight path.
 
     The recoil more precisely is a recoil candidate, since it is not guaranteed 
@@ -30,8 +30,9 @@ def get_recoil_position(proj, recoil_proj, recoil_params):
 
     Parameters:
         proj (Projectile): state of the projectile
-        recoil_proj (Projectile): the projectile to write recoil position to
-        recoil_params (RECOIL_PARAMS_DTYPE): Recoil parameters
+        recoil (Projectile): the recoil with position and is_inside, element 
+            and layer index, set (modified in-place)
+        params (PARAMS_DTYPE): Simulation parameters
 
     Returns:
         (float): free path length to the next collision (A)
@@ -44,9 +45,9 @@ def get_recoil_position(proj, recoil_proj, recoil_params):
     ilayer = proj["ilayer"]
     
     # free flight path and impact parameter
-    free_path = recoil_params.mean_free_path[ilayer]
+    free_path = params.recoil.mean_free_path[ilayer]
     collision_pos = pos[:] + free_path * dir[:]
-    p = recoil_params.pmax[ilayer] * sqrt(np.random.rand())
+    p = params.recoil.pmax[ilayer] * sqrt(np.random.rand())
 
     # Azimuthal angle fi
     fi = 2 * np.pi * np.random.rand()
@@ -72,6 +73,9 @@ def get_recoil_position(proj, recoil_proj, recoil_params):
     dirp /= norm
 
     # recoil position
-    recoil_proj["pos"] = collision_pos[:] + p * dirp[:]
+    recoil["pos"] = collision_pos[:] + p * dirp[:]
+    recoil["ilayer"] = get_layer_index(recoil["pos"], params.geometry)
+    recoil["ielem"] = get_element_index(recoil, params.materials)
+    recoil["is_inside"] = is_inside_target(recoil["pos"], params.geometry)
 
     return free_path, p, dirp[:]

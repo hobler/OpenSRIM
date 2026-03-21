@@ -89,5 +89,5 @@ def cascade(initial_proj, params, stats):
             stack.append(recoils[i])
             recoils.pop()
 
-    # Return continuous arrays
+    # Return fully simulated projectiles in the correct order
     return proj_lst[::-1]

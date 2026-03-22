@@ -5,7 +5,7 @@ the next collision is assumed to be constant and equal to the atomic
 density to the power -1/3.
 
 Available functions:
-    get_recoil_position: get the recoil position.
+    select_recoil: select the recoil position and atom species.
 """
 from math import sqrt, sin, cos
 import numpy as np
@@ -14,7 +14,7 @@ from .mytypes import PROJ_DTYPE
 from .target import get_layer_index, get_element_index, is_inside_target
 
 @jit
-def get_recoil(proj, recoil, params):
+def select_recoil(proj, recoil, params):
     """Get the position of the recoil hit after the next free flight path.
 
     The recoil more precisely is a recoil candidate, since it is not guaranteed 

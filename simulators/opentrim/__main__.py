@@ -30,16 +30,18 @@ if __package__ is None:
 
 from . import config  # import config early to set up caching and parallel settings
 start = time.time()
+from .read_params import read_params  # get the input parameters as a dictionary
 from .init_params import get_params  # defines the params structured array
 from .stats import init_stats, zero_stats, print_moments, plot_histograms  # defines the stats structured array
 from .simulator import simulate, simulate_chunked, simulate_adaptive  # noqa: F401
 
 
-params = get_params()
-stats = init_stats(params[0].nelem, params[0].stats[0])
+input_params = read_params()
+params = get_params(input_params)
+stats = init_stats(params[0].nelem, input_params)
 
-print("params is in globals():", "params" in globals())
-print("stats:", stats)
+#print("params is in globals():", "params" in globals())
+#print("stats:", stats)
 
 if __name__ == "__main__":
     if not config.ENABLE_CACHING:
@@ -66,14 +68,12 @@ if __name__ == "__main__":
             zero_stats(stats)
 
             start_time = time.time()
-            # simulate_adaptive(avg_chunk_time, c, params, follow_recoils=True)
-            simulate_chunked(chunk_size, c, 
-                             params, stats,
-                             follow_recoils=True)
-            # simulate(c, params, follow_recoils=True, sim_idx=0)
+            # simulate_adaptive(avg_chunk_time, c, params, stats)
+            simulate_chunked(chunk_size, c, params, stats)
+            # simulate(c, params, stats, sim_idx=0)
             times[i].append(time.time() - start_time)
             
-            proj_count = stats[0]['inside']['momx']['power_sums'][1,0]  # this is only approximate
+            proj_count = stats[0]['x']['power_sums'][1,0]  # this is only approximate
             proj_counts[i].append(proj_count)
 
     # Output the results

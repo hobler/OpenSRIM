@@ -42,7 +42,7 @@ def normalize_if_needed(vec, fallback):
 
 
 @jit
-def scatter(proj, p, dirp, recoil_proj, scatter_params):
+def scatter(proj, p, dirp, recoil, scatter_params):
     """Treat a scattering event.
 
     The atomic numbers and masses of the ion and the target atom enter the
@@ -52,17 +52,17 @@ def scatter(proj, p, dirp, recoil_proj, scatter_params):
     to unit length.
 
     Parameters:
-        proj (Projectile): state of the projectile (will be modified in-place)
+        proj (Projectile): state of the projectile (modified in-place)
         p (float): impact parameter (A)
         dirp (ndarray): direction vector of the impact parameter
             (= from the collision point to the recoil position before 
             the collision) (unit vector, size 3)
-        recoil_proj (Projectile): the recoil projectile
+        recoil (Projectile): the recoil projectile (modified in-place)
         scatter_params (np.recarray): Scatter parameters
     """
     # scattering angle theta in the center-of-mass system
     ielem1 = proj["ielem"]
-    ielem2 = recoil_proj["ielem"]
+    ielem2 = recoil["ielem"]
     proj_e = proj["e"]
     proj_dir = proj["dir"][:]
 
@@ -97,5 +97,5 @@ def scatter(proj, p, dirp, recoil_proj, scatter_params):
     recoil_e = denfac * proj_e * sin_half_theta**2
     proj["e"] -= recoil_e
     
-    recoil_proj["dir"][:] = recoil_dir
-    recoil_proj["e"] = recoil_e
+    recoil["dir"][:] = recoil_dir
+    recoil["e"] = recoil_e

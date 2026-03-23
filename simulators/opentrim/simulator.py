@@ -12,27 +12,27 @@ from .stats import STATS_DTYPE, merge_stats, zero_stats
 empty_stats = None
 
 
-def simulate(nion, params, stats, follow_recoils=False, sim_idx=0):
+def simulate(nion, params, stats, sim_idx=0):
     """Perform simulation on given number of projectiles
     
     Parameters:
         nion: (int) Total number of projectiles to simulate
         params: (PARAMS_DTYPE) Simulation parameters
         stats: (STATS_DTYPE) Statistical data container to store results in
-        follow_recoils: (bool) If the simulation should be performed for recoils aswell
         sim_idx: (int) Simulation index (for chunked simulations)
     """
     global empty_stats
     
     if empty_stats is None:
-        empty_stats = zero_stats(stats[0].copy())
+        empty_stats = stats[0].copy()
+        zero_stats(empty_stats)
 
     # Construct an array of stats for each ion, since lists cannot be used in 
     # Numba-jitted functions
     stats_per_ion = np.array([empty_stats.copy() for _ in range(nion)], 
                              dtype=STATS_DTYPE)
 
-    _simulate(nion, params, stats_per_ion, follow_recoils, sim_idx)
+    _simulate(nion, params, stats_per_ion, sim_idx)
 
     # Merge stats from each ion into the total stats
     for i in range(len(stats_per_ion)):
@@ -42,14 +42,13 @@ def simulate(nion, params, stats, follow_recoils=False, sim_idx=0):
 
 
 @jit(cache=config.ENABLE_CACHING, parallel=config.PARALLEL, nogil=config.PARALLEL)
-def _simulate(nion, params, stats_per_ion, follow_recoils, sim_idx):
+def _simulate(nion, params, stats_per_ion, sim_idx):
     """Perform simulation on given number of projectiles
     
     Parameters:
         nion: (int) Total number of projectiles to simulate
         params: (PARAMS_DTYPE) Simulation parameters
         stats_per_ion: (ndarray[STATS_DTYPE]) Array of stats for each ion
-        follow_recoils: (bool) If the simulation should be performed for recoils as well
         sim_idx: (int) Simulation index (for chunked simulations)
     """
     # Initial conditions of the projectile
@@ -72,7 +71,7 @@ def _simulate(nion, params, stats_per_ion, follow_recoils, sim_idx):
     for i in prange(nion):  # ty:ignore[not-iterable]
         np.random.seed(params[0].rng_seed + sim_idx + i)
         proj_sim[i] = cascade.cascade(
-            proj_dummy[0], params[0], stats_per_ion[i], follow_recoils)
+            proj_dummy[0], params[0], stats_per_ion[i])
     
     proj_count = 0
     for proj_lst in proj_sim:

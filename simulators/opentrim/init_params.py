@@ -1,13 +1,7 @@
-"""Initialize the simulation parameters.
+"""Initialize the simulation parameters except the output parameters.
 
-The params structured array is defined during import of this module, and 
-contains all the parameters needed for the simulation. This code must not be 
-put into a function, since the params structured array needs to be defined at 
-the module level for Numba compatibility.
-
-- Read the input parameters from a TOML file (not implemented yet, currently 
-  hardcoded).
-- Calculate derived parameters.
+Available functions:
+    get_params: Initialize parameters from the input parameters dictionary.
 """
 import os
 from collections import namedtuple
@@ -15,172 +9,6 @@ from math import sqrt
 import numpy as np
 #from . import cm_scatter
 from .nlhlin import read_coefs
-
-
-def read_input():
-    """Read the input parameters from a file.
-
-    Currently hardcoded, but should read from a TOML file in the future.
-
-    Returns:
-        (dict): A dictionary containing the input parameters.
-    """
-    input_params = {
-        "simulation": {
-            "nions": 10000,        # number of ions to simulate
-            "nions_update": 100,     # update parameters every n ions
-            "rng_seed": 12345,      # random seed for reproducibility
-            "workdir": "./",          # working directory for output files
-        },
-        "beam": {
-            "symbol": "B",       # chemical symbol of the incoming ions
-            "name": "Boron",      # full name of chemical element
-            "Z": 5,              # atomic number of the incoming ions
-            "M": 11.009,          # mass of the incoming ions (amu)
-            "energy": 50.0,       # energy of the incoming ions (keV)
-            "tilt": 0.0,         # tilt angle of the beam (degrees)
-        },
-        "layers" : {
-            "name": ["Layer 1"],  # names of the layers
-            "width": [4000.0],    # width of each layer (A)
-            "density": [0.04994],  # density of each layer (atoms/A^3)
-            "compound correction": [1.0],  # correction factor for compound targets
-            "gas": [False],        # whether the layer is a gas (True) or solid (False) 
-            "material": [
-                {
-                "symbol": ["Si"],  # chemical symbol of the target atoms
-                "name": ["Silicon"], # full name of chemical element
-                "Z": [14],          # atomic number of the target atoms
-                "M": [28.086],       # mass of the target atoms (amu)
-                "stoichiometry": [1],   # stoichiometric ratio of the target atoms in the layer
-                "displacement_energy": [15.0],  # displacement energy of the target atoms (eV)
-                },
-            ],
-        },
-#
-# The layers part of the TOML file would look something like this:
-#
-# [layers]
-# name = ["Layer 1", ...]
-# width = [4000.0, ...]
-# density = [0.04994, ...]
-# compound_correction = [1.0, ...]
-# gas = [false, ...] 
-#
-# [[layers.material]]
-# symbol = ["Si", ...]
-# name = ["Silicon", ...]
-# Z = [14, ...]
-# M = [28.086, ...]
-# stoichiometry = [1, ...]
-# displacement_energy = [15.0, ...]
-#
-# [[layers.material]]
-# ...
-#
-# TODO: 
-#       "layer": [
-#           {
-#               "name": "Layer 1",
-#               "width": 4000.0,
-#               "density": 0.04994,
-#               "compound correction": 1.0,
-#               "gas": False,
-#               "element": [
-#                   {
-#                       "symbol": "Si",
-#                       "name": "Silicon",
-#                       "Z": 14,
-#                       "M": 28.086,
-#                       "stoichiometry": 1,
-#                       "displacement energy": 15.0,
-#                   },
-#                   ...
-#               ],
-#           },
-#           ...
-#       ],
-#
-# would maybe result in better readability of the TOML file:
-#
-# [[layer]]
-# name = "Layer 1"
-# width = 4000.0
-# density = 0.04994
-# compound_correction = 1.0
-# gas = false
-#
-# [[layer.element]]
-# symbol = "Si"
-# name = "Silicon"
-# Z = 14
-# M = 28.086
-# stoichiometry = 1
-# displacement_energy = 15.0
-#
-# [[layer.element]]
-# ...
-#
-# [[layer]]
-# ...
-#
-        "models": {
-            "potential": "ZBL",  # potential model for scattering
-            "scattering integrals": {
-                "algorithm": "magic",  # algorithm for numerical integration of scattering integrals
-                                                # "magic" or "Guass-Legendre"
-                "n_absc": 4,       # number of abscissas for numerical integration of scattering integrals
-            },
-            "electronic stopping": "Lindhard",  # model for electronic stopping power
-            "Lindhard correction": {
-                "B->Si": 1.5,       # Correction factor to Lindhard stopping power for B->Si
-                "Si->Si": 1.0,      # Correction factor to Lindhard stopping power for Si->Si
-            },
-        },
-        "output": {
-            "trajectories": {
-                "start": False,      # whether to record starting points of trajectories
-                "end": False,        # whether to record ending points of trajectories
-                "collisions": False,  # whether to record collision points of trajectories
-            },
-            "depth distribution": {
-                "nbins": 40,         # number of bins for depth distribution
-                "limits": (0.0, 4000.0), # limits for depth distribution (A)
-                "ion/recoils": True,  # whether to record depth distribution for both ions and recoils
-                "phonons": False,      # whether to record depth distribution for phonons
-                "ionization": False,      # whether to record depth distribution for ionization events
-            },
-            "lateral distribution": {
-                "nbins": 40,         # number of bins for lateral distribution
-                "limits": (-2000.0, 2000.0), # limits for lateral distribution (A)
-                "ion/recoils": True,  # whether to record lateral distribution for both ions and recoils
-                "phonons": False,      # whether to record lateral distribution for phonons
-                "ionization": False,      # whether to record lateral distribution for ionization events
-            },
-            "backscattered atoms distribution": {
-                "energy": {
-                    "nbins": 40,         # number of bins for energy distribution
-                    "limits": (0.0, 50.0), # limits for energy distribution (keV)
-                },
-                "angle": {
-                    "nbins": 40,         # number of bins for angle distribution
-                    "limits": (-90.0, 90.0), # limits for angle distribution
-                },
-            },
-            "transmitted atoms distribution": {
-                "energy": {
-                    "nbins": 40,         # number of bins for energy distribution
-                    "limits": (0.0, 50.0), # limits for energy distribution (keV)
-                },
-                "angle": {
-                    "nbins": 40,         # number of bins for angle distribution
-                    "limits": (-90.0, 90.0), # limits for angle distribution
-                },
-            },
-        }
-    }
-    
-    return input_params
 
 
 def _get_nlhlin_coefs(z1, z2):
@@ -211,7 +39,7 @@ def _get_nlhlin_coefs(z1, z2):
                      f"not found in {fname}")
 
 
-def get_beam_params(input_params):
+def _get_beam_params(input_params):
     """Get the beam parameters from the input parameters.
 
     Parameters:
@@ -234,7 +62,7 @@ def get_beam_params(input_params):
     return beam_params
 
 
-def get_geometry_params(input_params):
+def _get_geometry_params(input_params):
     """Get the geometry parameters from the input parameters.
 
     Parameters:
@@ -266,7 +94,7 @@ def get_geometry_params(input_params):
     return geometry_params
 
 
-def get_elements_and_materials_params(input_params):
+def _get_elements_and_materials_params(input_params):
     """Get the elements and materials parameters from the input parameters.
 
     Parameters:
@@ -297,7 +125,7 @@ def get_elements_and_materials_params(input_params):
     #     "atomic_fractions": [float, ...],
     #     "displacement_energies": [float, ...],
     # }
-    # TODO: maybe the UI can already provide the materials in this format
+    # TODO: maybe the UI can already provide the materials in this format.
     # But this would mean that the input file format would be more complex, so 
     # maybe it's better to keep it simple and do the conversion in code for now.
     layers_params = input_params["layers"]
@@ -357,13 +185,14 @@ def get_elements_and_materials_params(input_params):
                     # recompilation of Numba functions when nelem changes
 
     # Test:
-    print(f"Number of distinct chemical elements: {nelem}")
-    print("Elements:")
-    for elem in elements:
-        print(elem)
-    print("Materials:")
-    for mat in materials:
-        print(mat)
+    if False:
+        print(f"Number of distinct chemical elements: {nelem}")
+        print("Elements:")
+        for elem in elements:
+            print(elem)
+        print("Materials:")
+        for mat in materials:
+            print(mat)
 
     ### Define the elements parameters
     ELEMENT_PARAMS_DTYPE = np.dtype([
@@ -379,7 +208,7 @@ def get_elements_and_materials_params(input_params):
         elements_params[ielem].name = elem["name"]
         elements_params[ielem].Z = elem["Z"]
         elements_params[ielem].M = elem["M"]
-    print(f"elements_params={elements_params}")
+#    (f"elements_params={elements_params}")
 
     ### Define the materials parameters
     MATERIALS_PARAMS_DTYPE = np.dtype([
@@ -409,12 +238,12 @@ def get_elements_and_materials_params(input_params):
                 np.sum(mat["atomic_fractions"][:ielem+1]))
             materials_params[imat].displacement_energy[ielem] = (
                 mat["displacement_energy"][ielem])
-    print(f"materials_params={materials_params}")
+#    print(f"materials_params={materials_params}")
 
     return nelem, elements_params, nmat, materials_params
 
 
-def get_estop_params(input_params, nelem, elements_params):
+def _get_estop_params(input_params, nelem, elements_params):
     """Get the electronic stopping parameters from the input parameters.
 
     Parameters:
@@ -462,7 +291,7 @@ def get_estop_params(input_params, nelem, elements_params):
     return estop_params
 
 
-def get_recoil_params(input_params):
+def _get_recoil_params(input_params):
     """Get the recoil parameters from the input parameters.
 
     Parameters:
@@ -485,7 +314,7 @@ def get_recoil_params(input_params):
     return recoil_params
 
 
-def get_scatter_params(input_params, nelem, elements_params):
+def _get_scatter_params(input_params, nelem, elements_params):
     """Get the scattering parameters from the input parameters.
 
     Parameters:
@@ -580,7 +409,7 @@ def get_scatter_params(input_params, nelem, elements_params):
     return scatter_params
 
 
-def get_cascade_params(input_params):
+def _get_cascade_params(input_params):
     """Get the cascade parameters from the input parameters.
 
     Parameters:
@@ -590,130 +419,52 @@ def get_cascade_params(input_params):
         cascade_params: (np.recarray) The cascade parameters.
     """
     CASCADE_PARAMS_DTYPE = np.dtype([
+        ("follow_recoils", np.int64),  # stored as int for better compatibility with Numba
         ("emin", np.float64),
         ("ed", np.float64),
     ], align=True)
 
     cascade_params = np.recarray(1, dtype=CASCADE_PARAMS_DTYPE)
+    cascade_params[0].follow_recoils = (
+        input_params["simulation"]["follow recoils"])
     cascade_params[0].emin = 5.0
     cascade_params[0].ed = 15.0
 
     return cascade_params
 
 
-def get_hist_params(input_params):
-    """Get the histogram parameters from the input parameters.
+def get_params(input_params):
+    """Initialize the simulation parameters except the output parameters.
+    
+    The parameters are returned as a structured array of subarrays. Do not
+    create a structured scalar by saying params = params[0] and similarly for
+    the subarrays, since this would cause issues with parallelization in Numba.
 
     Parameters:
         input_params: (dict) The input parameters dictionary.
 
     Returns:
-        hist_params: (np.recarray) The histogram parameters.
-    """
-    HIST_PARAMS_DTYPE = np.dtype([
-        ("nvar", np.int32),
-        ("nbin", np.int32),
-        ("limits", np.float64, (2,)),
-        ("ion/recoils", np.bool_),
-        ("phonons", np.bool_),
-        ("ionization", np.bool_),
-        ("name", "<U64"),   # TODO shorter names, maybe?
-    ], align=True)
-
-    # TODO similar for mom
-    # MOM_PARAMS_DTYPE = np.dtype([
-    #     ("nvar", np.int32),
-    #     ("nmax", np.int32),
-    # ], align=True)
-
-    # Build histogram parameter records from the output configuration
-    def _collect_histograms(d, prefix=""):
-        records = []
-        for key, val in d.items():
-            new_prefix = f"{prefix}.{key}" if prefix else key
-            if isinstance(val, dict):
-                if "nbins" in val:
-                    nbin = int(val["nbins"])
-                    limits = np.array(val.get("limits", (0.0, 0.0)), dtype=np.float64)
-                    # Split output channels into dedicated histogram configs
-                    # that share binning and limits.
-                    channels = [
-                        "ion/recoils",
-                        "phonons",
-                        "ionization",
-                    ]
-                    channel_count = 0
-                    for channel in channels:
-                        if bool(val.get(channel, False)):
-                            channel_count += 1
-                            records.append({
-                                "name": f"{new_prefix}.{channel}",
-                                "nvar": 2,  # TODO extract / assume constant
-                                "nbins": nbin,
-                                "limits": limits,
-                                "ion/recoils": channel == "ion/recoils",
-                                "phonons": channel == "phonons",
-                                "ionization": channel == "ionization",
-                            })
-                    # Keep backwards-compatible behavior for sections that
-                    # define bins/limits but no output channels.
-                    if channel_count == 0:
-                        records.append({
-                            "name": new_prefix,
-                            "nvar": 2,  # TODO extract / assume constant
-                            "nbins": nbin,
-                            "limits": limits,
-                            "ion/recoils": False,
-                            "phonons": False,
-                            "ionization": False,
-                        })
-                records.extend(_collect_histograms(val, new_prefix))
-        return records
-
-    _histogram_list = _collect_histograms(input_params["output"])
-    hist_params = np.empty(len(_histogram_list), dtype=HIST_PARAMS_DTYPE)
-    for i, rec in enumerate(_histogram_list):
-        hist_params[i]["name"] = rec["name"]
-        hist_params[i]["nvar"] = rec["nvar"]
-        hist_params[i]["nbin"] = rec["nbins"]
-        hist_params[i]["limits"] = rec["limits"]
-        hist_params[i]["ion/recoils"] = rec["ion/recoils"]
-        hist_params[i]["phonons"] = rec["phonons"]
-        hist_params[i]["ionization"] = rec["ionization"]
-
-    return hist_params
-
-
-def get_params():
-    """Initialize the simulation parameters.
-    
-    The parameters are returned as a structured array of subarrays. Do not
-    create a structured scalar by saying params = params[0] and similarly for
-    the subarrays, since this causes issues with parallelization in Numba.
+        params: (np.recarray) The input parameters structured array.
     """
     global NELEM, NMAT
     
-    # read input parameters
-    input_params = read_input()
-
     # rearrange parameters and calculate derived parameters
-    beam_params = get_beam_params(input_params)
-    geometry_params = get_geometry_params(input_params)
+    beam_params = _get_beam_params(input_params)
+    geometry_params = _get_geometry_params(input_params)
     nelem, elements_params, nmat, materials_params = (
-        get_elements_and_materials_params(input_params))
-    estop_params = get_estop_params(input_params, nelem, elements_params)
-    recoil_params = get_recoil_params(input_params)
-    scatter_params = get_scatter_params(input_params, nelem, elements_params)
-    cascade_params = get_cascade_params(input_params)
-    hist_params = get_hist_params(input_params)
+        _get_elements_and_materials_params(input_params))
+    estop_params = _get_estop_params(input_params, nelem, elements_params)
+    recoil_params = _get_recoil_params(input_params)
+    scatter_params = _get_scatter_params(input_params, nelem, elements_params)
+    cascade_params = _get_cascade_params(input_params)
 
     # TODO: include n_absc in params
     #cm_scatter.setup(input_params["models"]["scattering integrals"]["n_absc"])
 
     # collect subarrays into a single structured array
     PARAMS_DTYPE = np.dtype([
-        ("rng_seed", np.int64),     # one or all of the ints must be int64
-        ("nelem", np.int32),        # to avoid trouble with Numba when
+        ("rng_seed", np.int64),     # need an even number of int32 for alignment
+        ("nelem", np.int32),        # without padding, which causes trouble with Numba when
         ("nmat", np.int32),         # align=True
         ("beam", beam_params.dtype),
         ("cascade", cascade_params.dtype),
@@ -722,7 +473,6 @@ def get_params():
         ("elements", elements_params.dtype, (elements_params.size,)),
         ("materials", materials_params.dtype, (materials_params.size,)),
         ("estop", estop_params.dtype),
-        ("stats", hist_params.dtype, (hist_params.size,)),
         ("scatter", scatter_params.dtype),
     ], align=True)
 
@@ -739,7 +489,6 @@ def get_params():
     params[0].elements = elements_params
     params[0].materials = materials_params
     params[0].estop = estop_params
-    params[0].stats = hist_params
     params[0].scatter = scatter_params
 
     return params

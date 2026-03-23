@@ -40,7 +40,9 @@ def cascade(initial_proj, params, stats):
     proj_stack = typed.List.empty_list(PROJ_NUMBA_DTYPE)
     proj_stack.append(initial_proj)
     
-    # A recoil to be added to the simulation list
+    # Due to a limitation of Numba, we cannot create a recoil structured array
+    # in select_recoil and return it from there, so we create it here and 
+    # modify it in select_recoil in-place
     recoil = np.empty(1, dtype=PROJ_DTYPE)[0]
 
     # Loop over collision events until there are no more projectiles to 
@@ -72,12 +74,18 @@ def cascade(initial_proj, params, stats):
         # terminate trajectory if the projectile has no more energy
         if proj["e"] <= emin:
             proj_lst.append(proj)
+#            print("Before score:", proj.ielem, recoil.ielem)
             score(stats, proj)
+#            print("After score:", proj.ielem, recoil.ielem)
             proj_stack.pop()
 
         # start a new cascade if the recoil has enough energy to leave its 
         # position
-        if params.cascade.follow_recoils and recoil["e"] > ed:
+        if False:
+            imat = recoil["ilayer"]
+            ielem = params.materials[imat].ielem[recoil["ielem"]]
+            ed = params.materials[imat].displacement_energy[ielem]
+        if (params.cascade.follow_recoils and recoil["e"] > ed):
             proj_stack.append(recoil)
 
     # Return fully simulated projectiles in the correct order

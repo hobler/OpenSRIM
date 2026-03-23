@@ -70,5 +70,5 @@ def get_element_index(proj, materials_params):
     for ielem in range(nelem_mat - 1):
         if r < materials_params.cumulative_fraction[imat, ielem]:
             return materials_params.ielem[imat, ielem]
-    
+
     return materials_params.ielem[imat, nelem_mat - 1]

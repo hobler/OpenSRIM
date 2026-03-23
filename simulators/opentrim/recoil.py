@@ -23,11 +23,10 @@ def select_recoil(proj, recoil, params):
     The recoil position is determined by a deterministic free path length 
     and sampling a random impact parameter.
 
-    We cannot return a recoil structured array here, since Numba apparently 
-    does not allow returning structured arrays from jit functions. Instead, we 
-    return the recoil position as a separate array, and the caller can 
-    construct the recoil structured array if needed.
-
+    Due to a limitation of Numba, we cannot return a recoil structured array 
+    if we create it here. Instead, we receive a recoil structured array as an 
+    argument and modify it in-place.
+    
     Parameters:
         proj (Projectile): state of the projectile
         recoil (Projectile): the recoil with position and is_inside, element 

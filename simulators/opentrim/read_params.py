@@ -22,68 +22,29 @@ def read_params():
             "energy": 50.0,       # energy of the incoming ions (keV)
             "tilt": 0.0,         # tilt angle of the beam (degrees)
         },
-        "layers" : {
-            "name": ["Layer 1"],  # names of the layers
-            "width": [4000.0],    # width of each layer (A)
-            "density": [0.04994],  # density of each layer (atoms/A^3)
-            "compound correction": [1.0],  # correction factor for compound targets
-            "gas": [False],        # whether the layer is a gas (True) or solid (False) 
-            "material": [
-                {
-                "symbol": ["Si"],  # chemical symbol of the target atoms
-                "name": ["Silicon"], # full name of chemical element
-                "Z": [14],          # atomic number of the target atoms
-                "M": [28.086],       # mass of the target atoms (amu)
-                "stoichiometry": [1],   # stoichiometric ratio of the target atoms in the layer
-                "displacement_energy": [15.0],  # displacement energy of the target atoms (eV)
-                },
-            ],
-        },
+        "layer": [
+            {
+                "name": "Layer 1",
+                "width": 4000.0,
+                "density": 0.04994,
+                "compound correction": 1.0,
+                "gas": False,
+                "element": [
+                    {
+                        "symbol": "Si",
+                        "name": "Silicon",
+                        "Z": 14,
+                        "M": 28.086,
+                        "stoichiometry": 1,
+                        "displacement energy": 15.0,
+                    },
+                    #...
+                ],
+            },
+            #...
+        ],
 #
-# The layers part of the TOML file would look something like this:
-#
-# [layers]
-# name = ["Layer 1", ...]
-# width = [4000.0, ...]
-# density = [0.04994, ...]
-# compound_correction = [1.0, ...]
-# gas = [false, ...] 
-#
-# [[layers.material]]
-# symbol = ["Si", ...]
-# name = ["Silicon", ...]
-# Z = [14, ...]
-# M = [28.086, ...]
-# stoichiometry = [1, ...]
-# displacement_energy = [15.0, ...]
-#
-# [[layers.material]]
-# ...
-#
-# TODO: 
-#       "layer": [
-#           {
-#               "name": "Layer 1",
-#               "width": 4000.0,
-#               "density": 0.04994,
-#               "compound correction": 1.0,
-#               "gas": False,
-#               "element": [
-#                   {
-#                       "symbol": "Si",
-#                       "name": "Silicon",
-#                       "Z": 14,
-#                       "M": 28.086,
-#                       "stoichiometry": 1,
-#                       "displacement energy": 15.0,
-#                   },
-#                   ...
-#               ],
-#           },
-#           ...
-#       ],
-#
-# would maybe result in better readability of the TOML file:
+# The "layer" part of the TOML file would look something like this:
 #
 # [[layer]]
 # name = "Layer 1"

@@ -181,8 +181,8 @@ def score(stats, proj):
     if proj["is_inside"] and stats["x"]["score"]:
         x = proj["pos"][0]
 
-        increment = x ** np.arange(2*max_order + 1)
-        stats["x"]["power_sums"][ivar, :] += increment
+        for i in range(2*max_order + 1):
+            stats["x"]["power_sums"][ivar, i] += x ** i
 
         if x < stats["x"]["limits"][0]:
             ibin = 0  # Underflow bin

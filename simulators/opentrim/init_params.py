@@ -72,15 +72,15 @@ def _get_geometry_params(input_params):
         geometry_params: (np.recarray) The geometry parameters.
     """
     # Initialize the geometry
-    layers_params = input_params["layers"]
-    nlayers = len(layers_params["name"])
+    layers_params = input_params["layer"]
+    nlayers = len(layers_params)
     NLAYERS = nlayers   # could be set to max(3, nlayers) to avoid frequent
                         # recompilation of Numba functions when nlayers changes
 
     x_intf = np.empty(NLAYERS + 1, dtype=np.float64)
     x_intf[0] = 0.0
     for i in range(nlayers):
-        x_intf[i+1] = x_intf[i] + layers_params["width"][i]
+        x_intf[i+1] = x_intf[i] + layers_params[i]["width"]
 
     GEOMETRY_PARAMS_DTYPE = np.dtype([
         ("nlayers", np.int32),
@@ -106,58 +106,17 @@ def _get_elements_and_materials_params(input_params):
     """
     global NELEM, NMAT
     
-    # Construct a more convenient data structure. In the new data structure, 
-    # each material has the format
-    # {
-    #     "name": str,
-    #     "density": float,
-    #     "compound_correction": float,
-    #     "gas": bool,
-    #     "elements": [
-    #         {
-    #             "symbol": str,
-    #             "name": str,
-    #             "Z": int,
-    #             "M": float,
-    #         },
-    #         ...
-    #     ],
-    #     "atomic_fractions": [float, ...],
-    #     "displacement_energies": [float, ...],
-    # }
-    # TODO: maybe the UI can already provide the materials in this format.
-    # But this would mean that the input file format would be more complex, so 
-    # maybe it's better to keep it simple and do the conversion in code for now.
-    layers_params = input_params["layers"]
-    nlayers = len(layers_params["name"])
-
-    materials = []
-    for ilayer in range(nlayers):
-        mat_elements = []
+    # Calculate the atomic fractions for each material from the stoichiometry
+    materials = input_params["layer"]
+    for mat in materials:
         atomic_fractions = []
-        displacement_energies = []
-        mat = layers_params["material"][ilayer]
-        for ielem in range(len(mat["symbol"])):
-            element = {key: mat[key][ielem] 
-                        for key in ["symbol", "name", "Z", "M", 
-                                    "displacement_energy"]}
-            mat_elements.append(element)
-            atomic_fraction = (mat["stoichiometry"][ielem] 
-                                / sum(mat["stoichiometry"]))
-            atomic_fractions.append(atomic_fraction)
-            displacement_energies.append(mat["displacement_energy"][ielem])
-        
-        material = {
-            "name": layers_params["name"][ilayer],
-            "density": layers_params["density"][ilayer],
-            "compound_correction": layers_params["compound correction"][ilayer],
-            "gas": layers_params["gas"][ilayer],
-            "nelem": len(mat_elements),
-            "elements": mat_elements,
-            "atomic_fractions": atomic_fractions,
-            "displacement_energy": displacement_energies,
-        }
-        materials.append(material)
+        for element in mat["element"]:
+            atomic_fractions.append(element["stoichiometry"])
+            del element["stoichiometry"]
+        atomic_fractions = np.array(atomic_fractions, dtype=np.float64)
+        atomic_fractions /= np.sum(atomic_fractions)
+        mat["atomic_fractions"] = atomic_fractions
+        mat["nelem"] = len(mat["element"])
     nmat = len(materials)
     NMAT = nmat     # could be set to max(3, nmat) to avoid frequent 
                     # recompilation of Numba functions when nmat changes
@@ -166,20 +125,19 @@ def _get_elements_and_materials_params(input_params):
     # and replace the element information in the materials with indices of the 
     # elements in the elements list.
     element = {key: input_params["beam"][key] 
-                for key in ["symbol", "name", "Z", "M"]}
+               for key in ["symbol", "name", "Z", "M"]}
     element["displacement_energy"] = 0.0
     elements = [element]
 
     for mat in materials:
         ielem = []
-        for elem in mat["elements"]:
+        for elem in mat["element"]:
             if elem in elements:
                 ielem.append(elements.index(elem))
             else:
                 ielem.append(len(elements))
                 elements.append(elem)
         mat["ielem"] = ielem
-        del mat["elements"]
     nelem = len(elements)
     NELEM = nelem   # could be set to max(5, nelem) to avoid frequent 
                     # recompilation of Numba functions when nelem changes
@@ -227,7 +185,7 @@ def _get_elements_and_materials_params(input_params):
     for imat, mat in enumerate(materials):
         materials_params[imat].name = mat["name"]
         materials_params[imat].density = mat["density"]
-        materials_params[imat].compound_correction = mat["compound_correction"]
+        materials_params[imat].compound_correction = mat["compound correction"]
         materials_params[imat].gas = mat["gas"]
         materials_params[imat].nelem = mat["nelem"]
         for ielem in range(mat["nelem"]):
@@ -237,7 +195,7 @@ def _get_elements_and_materials_params(input_params):
             materials_params[imat].cumulative_fraction[ielem] = (
                 np.sum(mat["atomic_fractions"][:ielem+1]))
             materials_params[imat].displacement_energy[ielem] = (
-                mat["displacement_energy"][ielem])
+                mat["element"][ielem]["displacement energy"])
 #    print(f"materials_params={materials_params}")
 
     return nelem, elements_params, nmat, materials_params
@@ -300,7 +258,7 @@ def _get_recoil_params(input_params):
     Returns:
         recoil_params: (np.recarray) The recoil parameters.
     """
-    densities = np.array(input_params["layers"]["density"])
+    densities = np.array([layer["density"] for layer in input_params["layer"]])
 
     RECOIL_PARAMS_DTYPE = np.dtype([
         ("pmax", np.float64, (NMAT,)),

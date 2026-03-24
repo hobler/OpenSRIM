@@ -74,14 +74,12 @@ def cascade(initial_proj, params, stats):
         # terminate trajectory if the projectile has no more energy
         if proj["e"] <= emin:
             proj_lst.append(proj)
-#            print("Before score:", proj.ielem, recoil.ielem)
             score(stats, proj)
-#            print("After score:", proj.ielem, recoil.ielem)
             proj_stack.pop()
 
         # start a new cascade if the recoil has enough energy to leave its 
         # position
-        if False:
+        if True:
             imat = recoil["ilayer"]
             ielem = params.materials[imat].ielem[recoil["ielem"]]
             ed = params.materials[imat].displacement_energy[ielem]

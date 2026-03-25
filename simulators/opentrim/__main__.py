@@ -37,8 +37,8 @@ from .simulator import simulate, simulate_chunked, simulate_adaptive  # noqa: F4
 
 
 input_params = read_params()
-params = get_params(input_params)
-stats = init_stats(params[0].nelem, input_params)
+NELEM_ION, NELEM_TARGET, params = get_params(input_params)
+stats = init_stats(NELEM_ION, NELEM_TARGET, input_params)
 
 #print("params is in globals():", "params" in globals())
 #print("stats:", stats)

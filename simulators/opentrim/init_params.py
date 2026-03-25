@@ -202,7 +202,7 @@ def _get_elements_and_materials_params(input_params):
                 mat["element"][ielem]["displacement energy"])
 #    print(f"materials_params={materials_params}")
 
-    return nelem_ion, nelem_target, elements_params, materials_params
+    return nelem_target, nelem, elements_params, materials_params
 
 
 def _get_estop_params(input_params, nelem, elements_params):
@@ -413,11 +413,11 @@ def get_params(input_params):
     # rearrange parameters and calculate derived parameters
     beam_params = _get_beam_params(input_params)
     geometry_params = _get_geometry_params(input_params)
-    nelem_ion, nelem_target, elements_params, materials_params = (
+    nelem_target, nelem, elements_params, materials_params = (
         _get_elements_and_materials_params(input_params))
-    estop_params = _get_estop_params(input_params, nelem_ion + nelem_target, elements_params)
+    estop_params = _get_estop_params(input_params, nelem, elements_params)
     recoil_params = _get_recoil_params(input_params)
-    scatter_params = _get_scatter_params(input_params, nelem_ion + nelem_target, elements_params)
+    scatter_params = _get_scatter_params(input_params, nelem, elements_params)
     cascade_params = _get_cascade_params(input_params)
 
     # TODO: include n_absc in params
@@ -426,8 +426,8 @@ def get_params(input_params):
     # collect subarrays into a single structured array
     PARAMS_DTYPE = np.dtype([
         ("rng_seed", np.int64),      # need an even number of int32 for alignment
-        ("nelem_ion", np.int32),     # without padding, to avoid trouble with Numba when
-        ("nelem_target", np.int32),  # align=True
+        ("nelem_target", np.int32),  # without padding, to avoid trouble with Numba when
+        ("nelem", np.int32),         # align=True
         ("beam", beam_params.dtype),
         ("cascade", cascade_params.dtype),
         ("recoil", recoil_params.dtype),
@@ -442,8 +442,8 @@ def get_params(input_params):
     # NOTE: Do not do "params = params[0]", since this would create a structured
     # scalar, which causes issues with parallelization in Numba.
     params[0].rng_seed = input_params["simulation"]["rng_seed"]
-    params[0].nelem_ion = nelem_ion
     params[0].nelem_target = nelem_target
+    params[0].nelem = nelem
     params[0].beam = beam_params
     params[0].cascade = cascade_params
     params[0].recoil = recoil_params

@@ -194,23 +194,107 @@ def merge_stats(total_stats, stats):
 
 
 @jit
-def score(stats, proj):
-    """Score a projectile's contribution to the statistics."""
-    ivar = proj["ielem"]
-
-    if proj["is_inside"] and stats["x"]["score"]:
-        x = proj["pos"][0]
-
+def _score(stats_distribution, value, ivar, weight=1.0):
+    """Score a projectile's contribution to a statistics distribution.
+    
+    Arguments:
+        stats: The stats structured array to be updated (modified in-place)
+        value: The value to be scored (e.g. penetration depth)
+        ivar: The index of the variable (e.g. atom species) for which to score
+        weight: The weight of this contribution (default 1.0)
+    """
+    if stats_distribution["score"]:
         for i in range(2*max_order + 1):
-            stats["x"]["power_sums"][ivar, i] += x ** i
+            stats_distribution["power_sums"][ivar, i] += weight * value ** i
 
-        if x < stats["x"]["limits"][0]:
+        if value < stats_distribution["limits"][0]:
             ibin = 0  # Underflow bin
-        elif x < stats["x"]["limits"][1]:
-            ibin = int((x - stats["x"]["limits"][0]) / stats["x"]["bin_width"]) + 1
+        elif value < stats_distribution["limits"][1]:
+            ibin = int((value - stats_distribution["limits"][0]) / 
+                        stats_distribution["bin_width"]) + 1
         else:
             ibin = -1  # Overflow bin
-        stats["x"]["counts"][ivar, ibin] += 1.0
+        stats_distribution["counts"][ivar, ibin] += weight
+
+
+@jit
+def _score_stop(stats, proj):
+    """Score a projectile that has stopped inside the target."""
+    ivar = proj["ielem"]
+    x = proj["pos"][0]
+    y = proj["pos"][1]
+
+    _score(stats["x"], x, ivar)
+    _score(stats["y"], y, ivar)
+
+
+@jit
+def _score_backscattered(stats, proj):
+    """Score a backscattered projectile."""
+    ivar = proj["ielem"]
+    energy = proj["e"]
+    angle = math.degrees(math.atan2(proj["dir"][1], -proj["dir"][0]))
+
+    _score(stats["be"], energy, ivar)
+    _score(stats["ba"], angle, ivar)
+
+
+@jit
+def _score_transmitted(stats, proj):
+    """Score a transmitted projectile."""
+    ivar = proj["ielem"]
+    energy = proj["e"]
+    angle = math.degrees(math.atan2(proj["dir"][1], proj["dir"][0]))
+
+    _score(stats["te"], energy, ivar)
+    _score(stats["ta"], angle, ivar)
+
+
+@jit
+def score_eed(stats, proj, dee):
+    """Score the electronic energy deposition for a projectile."""
+    ivar = proj["ielem"]
+    x = proj["pos"][0]  # TODO: Take center of point and previous point
+    y = proj["pos"][1]
+
+    _score(stats["xe"], x, ivar, weight=dee)
+    _score(stats["ye"], y, ivar, weight=dee)
+
+
+@jit
+def score_ned(stats, proj):
+    """Score the nuclear energy deposition for a projectile."""
+    ivar = proj["ielem"]
+    x = proj["pos"][0]
+    y = proj["pos"][1]
+    ned = proj["e"]
+
+    _score(stats["xn"], x, ivar, weight=ned)
+    _score(stats["yn"], y, ivar, weight=ned)
+
+
+@jit
+def score_start(stats, proj, nelem_target):
+    """Score a projectile at its starting position."""
+    ivar = proj["ielem"] + nelem_target
+    x = proj["pos"][0]
+    y = proj["pos"][1]
+
+    _score(stats["x"], x, ivar)
+    _score(stats["y"], y, ivar)
+
+
+@jit
+def score_end(stats, proj):
+    """Score a projectile that has stopped or left the target."""
+    if proj["is_inside"]:
+        score_ned(stats, proj)
+        _score_stop(stats, proj)
+    else:
+        if proj["dir"][0] < 0:
+            _score_backscattered(stats, proj)
+        else:
+            _score_transmitted(stats, proj)
 
 
 def standardize_moments(stats, ivar):
@@ -306,16 +390,29 @@ def plot_histograms(stats, log=False):
     """Plot the histogram using matplotlib."""
     import matplotlib.pyplot as plt
 
-    hist = stats["x"]
-    for ivar in range(hist["counts"].shape[0]):
-        plt.stairs(hist["counts"][ivar, 1:-1],
-                   edges=np.linspace(hist["limits"][0], hist["limits"][1], 
-                                     hist["nbins"]+1),
-                   label=f"Species {ivar}, Hist 'depth distribution'")
-    if log:
-        plt.yscale("log")
-    plt.xlabel("Penetration depth (A)")
-    plt.ylabel("Counts")
-    plt.title("Histogram of Penetration Depths")
-    plt.legend()
-    plt.show()
+    for field in stats.dtype.names:
+        if not stats[field]["score"]:
+            continue
+        hist = stats[field]
+        for ivar in range(hist["counts"].shape[0]):
+            plt.stairs(hist["counts"][ivar, 1:-1],
+                    edges=np.linspace(hist["limits"][0], hist["limits"][1], 
+                                        hist["nbins"]+1),
+                    label=f"Species {ivar}, Hist '{field}'")
+        if log:
+            plt.yscale("log")
+        if field.startswith("x"):
+            label = "x (A)"
+        elif field.startswith("y"):
+            label = "y (A)"
+        elif field.endswith("e"):
+            label = "Energy (eV)"
+        elif field.endswith("a"):
+            label = "Angle (degrees)"
+        else:
+            label = field
+        plt.xlabel(label)
+        plt.ylabel("Counts")
+        plt.title("OpenSRIM")
+        plt.legend()
+        plt.show()

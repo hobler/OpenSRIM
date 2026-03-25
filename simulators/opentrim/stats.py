@@ -28,13 +28,14 @@ max_order = 4    # TODO: Make max_order an input parameter, passed via input_par
 assert 1 <= max_order <= 4, "max_order must be between 1 and 4"
 
 
-def init_stats(nelem, input_params):
+def init_stats(NELEM_ION, NELEM_TARGET, input_params):
     """Initialize the stats structured array.
     
     The stats array contains subarrays for all the moments and histograms.
 
     Arguments:
-        nelem: (int) The number of different atom species
+        NELEM_ION: (int) The maximum number of different ion atom species
+        NELEM_TARGET: (int) The maximum number of different target atom species
         input_params: (dict) The input parameters dictionary, used to extract 
             the histogram configurations from the output configuration section.
     
@@ -43,6 +44,11 @@ def init_stats(nelem, input_params):
     """
     global STATS_DTYPE, stats_fields
 
+    follow_recoils = input_params["simulation"]["follow recoils"]
+    NELEM = NELEM_ION + NELEM_TARGET
+
+    # Define short names for the statistics, which will be used to construct the 
+    # keys of the stats structured array 
     short_names = {
         "depth distribution": "x",
         "lateral distribution": "y",
@@ -54,14 +60,28 @@ def init_stats(nelem, input_params):
         "energy": "e",
         "angle": "a",
     }
+
+    # Number of variables to reserve memory for
+    nvar = {
+        "x": NELEM + NELEM_TARGET if follow_recoils else NELEM,
+        "y": NELEM + NELEM_TARGET if follow_recoils else NELEM,
+        "xn": NELEM,
+        "yn": NELEM,
+        "xe": NELEM,
+        "ye": NELEM,
+        "be": NELEM if follow_recoils else NELEM_ION,
+        "ba": NELEM if follow_recoils else NELEM_ION,
+        "te": NELEM if follow_recoils else NELEM_ION,
+        "ta": NELEM if follow_recoils else NELEM_ION,
+    }
     # Build a flattened dictionary "stats_configs" of statistics configurations 
-    # from the output configuration. The keys of the dictionary are constructed 
-    # from the keys in the output configuration, e.g. 
+    # from the output confiuration defined in the input parameters. The keys of 
+    # the dictionary are constructed from the keys in the input parameters, e.g. 
     #   "depth distribution.ion/recoils" -> "x", 
     #   "lateral distribution.nuclear energy deposition" -> "yn", 
     #   "backscattered atoms distribution.energy" -> "be", etc. 
     # The histogram parameters (number of bins, limits, etc.) are taken from 
-    # the corresponding section in the output configuration. 
+    # the corresponding section in the input parameters. 
     output_params = input_params["output"]
     stats_configs = {}
     
@@ -87,50 +107,50 @@ def init_stats(nelem, input_params):
             stats_configs[short_name] = stats_config
 
     # Build a structured array data type of statistics parameters
-    for i, name in enumerate(stats_configs):
+    for i, short_name in enumerate(stats_configs):
         stats_dtype = np.dtype([
             ("score", np.int64),  # whether to score this statistics (use integer for JIT compatibility)
             ("nvar", np.int32),  # number of variables (e.g. atom species) for this statistics
             ("nbins", np.int32),  # number of bins for this statistics
             ("limits", np.float64, (2,)),  # limits for this statistics
             ("bin_width", np.float64),
-            ("counts", np.float64, (nelem,  # TODO: may depend on follow_recoils and other factors
-                                    stats_configs[name]["nbins"] + 2)),
-            ("power_sums", np.float64, (nelem, 2*max_order + 1)),
+            ("counts", np.float64, (nvar[short_name],
+                                    stats_configs[short_name]["nbins"] + 2)),
+            ("power_sums", np.float64, (nvar[short_name], 2*max_order + 1)),
         ], align=True)
 
         if i == 0:
             STATS_DTYPE = np.dtype([
-                (name, stats_dtype),
+                (short_name, stats_dtype),
             ], align=True)
         else:
             STATS_DTYPE = np.dtype(STATS_DTYPE.descr + [
-                (name, stats_dtype),
+                (short_name, stats_dtype),
             ], align=True)
     STATS_DTYPE = np.dtype(STATS_DTYPE.descr, align=True)
 
     # Create the structured array of statistics
     stats = np.recarray(1, dtype=STATS_DTYPE)
-    for name, stats_config in stats_configs.items():
-        stats[0][name]["nvar"] = nelem    # TODO: may depend on follow_recoils and other factors
+    for short_name, stats_config in stats_configs.items():
+        stats[0][short_name]["nvar"] = nvar[short_name]
         for field in stats_config:
             if field not in ["score", "nbins", "limits"]:
                 raise ValueError(f"Unknown histogram config field: {field} "
-                                 f"in {name}")
-            stats[0][name][field] = stats_config[field]
+                                 f"in {short_name}")
+            stats[0][short_name][field] = stats_config[field]
 
-        stats[0][name]["bin_width"] = (
+        stats[0][short_name]["bin_width"] = (
             (stats_config["limits"][1] - stats_config["limits"][0]) 
             / stats_config["nbins"])
-        stats[0][name]["counts"].fill(0.0)
-        stats[0][name]["power_sums"].fill(0.0)
+        stats[0][short_name]["counts"].fill(0.0)
+        stats[0][short_name]["power_sums"].fill(0.0)
 
     if False:
         print("-----------")
         print(f"stats: {stats}")
         print(f"stats fields: {stats.dtype.names}")
-        for name in stats.dtype.names:
-            print(f"   {name}: {stats[name]}")
+        for short_name in stats.dtype.names:
+            print(f"   {short_name}: {stats[short_name]}")
 
     stats_fields = STATS_DTYPE.names
 
@@ -174,23 +194,107 @@ def merge_stats(total_stats, stats):
 
 
 @jit
-def score(stats, proj):
-    """Score a projectile's contribution to the statistics."""
-    ivar = proj["ielem"]
-
-    if proj["is_inside"] and stats["x"]["score"]:
-        x = proj["pos"][0]
-
+def _score(stats_distribution, value, ivar, weight=1.0):
+    """Score a projectile's contribution to a statistics distribution.
+    
+    Arguments:
+        stats: The stats structured array to be updated (modified in-place)
+        value: The value to be scored (e.g. penetration depth)
+        ivar: The index of the variable (e.g. atom species) for which to score
+        weight: The weight of this contribution (default 1.0)
+    """
+    if stats_distribution["score"]:
         for i in range(2*max_order + 1):
-            stats["x"]["power_sums"][ivar, i] += x ** i
+            stats_distribution["power_sums"][ivar, i] += weight * value ** i
 
-        if x < stats["x"]["limits"][0]:
+        if value < stats_distribution["limits"][0]:
             ibin = 0  # Underflow bin
-        elif x < stats["x"]["limits"][1]:
-            ibin = int((x - stats["x"]["limits"][0]) / stats["x"]["bin_width"]) + 1
+        elif value < stats_distribution["limits"][1]:
+            ibin = int((value - stats_distribution["limits"][0]) / 
+                        stats_distribution["bin_width"]) + 1
         else:
             ibin = -1  # Overflow bin
-        stats["x"]["counts"][ivar, ibin] += 1.0
+        stats_distribution["counts"][ivar, ibin] += weight
+
+
+@jit
+def _score_stop(stats, proj):
+    """Score a projectile that has stopped inside the target."""
+    ivar = proj["ielem"]
+    x = proj["pos"][0]
+    y = proj["pos"][1]
+
+    _score(stats["x"], x, ivar)
+    _score(stats["y"], y, ivar)
+
+
+@jit
+def _score_backscattered(stats, proj):
+    """Score a backscattered projectile."""
+    ivar = proj["ielem"]
+    energy = proj["e"]
+    angle = math.degrees(math.atan2(proj["dir"][1], -proj["dir"][0]))
+
+    _score(stats["be"], energy, ivar)
+    _score(stats["ba"], angle, ivar)
+
+
+@jit
+def _score_transmitted(stats, proj):
+    """Score a transmitted projectile."""
+    ivar = proj["ielem"]
+    energy = proj["e"]
+    angle = math.degrees(math.atan2(proj["dir"][1], proj["dir"][0]))
+
+    _score(stats["te"], energy, ivar)
+    _score(stats["ta"], angle, ivar)
+
+
+@jit
+def score_eed(stats, proj, dee):
+    """Score the electronic energy deposition for a projectile."""
+    ivar = proj["ielem"]
+    x = proj["pos"][0]  # TODO: Take center of point and previous point
+    y = proj["pos"][1]
+
+    _score(stats["xe"], x, ivar, weight=dee)
+    _score(stats["ye"], y, ivar, weight=dee)
+
+
+@jit
+def score_ned(stats, proj):
+    """Score the nuclear energy deposition for a projectile."""
+    ivar = proj["ielem"]
+    x = proj["pos"][0]
+    y = proj["pos"][1]
+    ned = proj["e"]
+
+    _score(stats["xn"], x, ivar, weight=ned)
+    _score(stats["yn"], y, ivar, weight=ned)
+
+
+@jit
+def score_start(stats, proj, nelem_target):
+    """Score a projectile at its starting position."""
+    ivar = proj["ielem"] + nelem_target
+    x = proj["pos"][0]
+    y = proj["pos"][1]
+
+    _score(stats["x"], x, ivar)
+    _score(stats["y"], y, ivar)
+
+
+@jit
+def score_end(stats, proj):
+    """Score a projectile that has stopped or left the target."""
+    if proj["is_inside"]:
+        score_ned(stats, proj)
+        _score_stop(stats, proj)
+    else:
+        if proj["dir"][0] < 0:
+            _score_backscattered(stats, proj)
+        else:
+            _score_transmitted(stats, proj)
 
 
 def standardize_moments(stats, ivar):
@@ -286,16 +390,29 @@ def plot_histograms(stats, log=False):
     """Plot the histogram using matplotlib."""
     import matplotlib.pyplot as plt
 
-    hist = stats["x"]
-    for ivar in range(hist["counts"].shape[0]):
-        plt.stairs(hist["counts"][ivar, 1:-1],
-                   edges=np.linspace(hist["limits"][0], hist["limits"][1], 
-                                     hist["nbins"]+1),
-                   label=f"Species {ivar}, Hist 'depth distribution'")
-    if log:
-        plt.yscale("log")
-    plt.xlabel("Penetration depth (A)")
-    plt.ylabel("Counts")
-    plt.title("Histogram of Penetration Depths")
-    plt.legend()
-    plt.show()
+    for field in stats.dtype.names:
+        if not stats[field]["score"]:
+            continue
+        hist = stats[field]
+        for ivar in range(hist["counts"].shape[0]):
+            plt.stairs(hist["counts"][ivar, 1:-1],
+                    edges=np.linspace(hist["limits"][0], hist["limits"][1], 
+                                        hist["nbins"]+1),
+                    label=f"Species {ivar}, Hist '{field}'")
+        if log:
+            plt.yscale("log")
+        if field.startswith("x"):
+            label = "x (A)"
+        elif field.startswith("y"):
+            label = "y (A)"
+        elif field.endswith("e"):
+            label = "Energy (eV)"
+        elif field.endswith("a"):
+            label = "Angle (degrees)"
+        else:
+            label = field
+        plt.xlabel(label)
+        plt.ylabel("Counts")
+        plt.title("OpenSRIM")
+        plt.legend()
+        plt.show()

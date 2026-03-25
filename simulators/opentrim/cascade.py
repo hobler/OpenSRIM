@@ -13,7 +13,7 @@ from .recoil import select_recoil
 from .scatter import scatter
 from .estop import eloss
 from .target import get_layer_index, is_inside_target
-from .stats import score
+from .stats import score_eed, score_ned, score_start, score_end
 
 
 @jit
@@ -59,12 +59,13 @@ def cascade(initial_proj, params, stats):
         proj["pos"] += free_path * proj["dir"]
         proj["ilayer"] = get_layer_index(proj["pos"], params.geometry)
         proj["is_inside"] = is_inside_target(proj["pos"], params.geometry)
+        score_eed(stats, proj, dee) 
 
         # terminate trajectory if the projectile is outside the target, or if 
         # it has no more energy
         if not proj["is_inside"] or proj["e"] <= emin:
             proj_lst.append(proj)
-            score(stats, proj)
+            score_end(stats, proj)
             proj_stack.pop()
             continue
 
@@ -74,7 +75,7 @@ def cascade(initial_proj, params, stats):
         # terminate trajectory if the projectile has no more energy
         if proj["e"] <= emin:
             proj_lst.append(proj)
-            score(stats, proj)
+            score_end(stats, proj)
             proj_stack.pop()
 
         # start a new cascade if the recoil has enough energy to leave its 
@@ -85,6 +86,9 @@ def cascade(initial_proj, params, stats):
             ed = params.materials[imat].displacement_energy[ielem]
         if (params.cascade.follow_recoils and recoil["e"] > ed):
             proj_stack.append(recoil)
+            score_start(stats, recoil, params.nelem_target)
+        else:
+            score_ned(stats, recoil)
 
     # Return fully simulated projectiles in the correct order
     return proj_lst[::-1]

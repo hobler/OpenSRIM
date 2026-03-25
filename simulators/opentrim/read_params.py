@@ -91,58 +91,58 @@ def read_params():
             "depth distribution": {
                 "ion/recoils": {
                     "score": True,       # whether to score depth distribution for both ions and recoils
-                    "nbins": 40,         # number of bins for depth distribution
+                    "nbins": 120,         # number of bins for depth distribution
                     "limits": (0.0, 4000.0), # limits for depth distribution (A)
                 },
                 "nuclear energy deposition": {
                     "score": False,      # whether to record depth distribution for NED events
-                    "nbins": 40,         # number of bins for depth distribution
+                    "nbins": 120,         # number of bins for depth distribution
                     "limits": (0.0, 4000.0), # limits for depth distribution (A)
                 },
                 "electronic energy deposition": {
                     "score": False,      # whether to record depth distribution for EED events
-                    "nbins": 40,         # number of bins for depth distribution
+                    "nbins": 120,         # number of bins for depth distribution
                     "limits": (0.0, 4000.0), # limits for depth distribution (A)
                 }
             },
             "lateral distribution": {
                 "ion/recoils": {
                     "score": True,       # whether to score lateral distribution for both ions and recoils
-                    "nbins": 40,         # number of bins for lateral distribution
+                    "nbins": 120,         # number of bins for lateral distribution
                     "limits": (-2000.0, 2000.0), # limits for lateral distribution (A)
                 },
                 "nuclear energy deposition": {
-                    "score": False,      # whether to record lateral distribution for NED events
-                    "nbins": 40,         # number of bins for lateral distribution
+                    "score": True,      # whether to record lateral distribution for NED events
+                    "nbins": 120,         # number of bins for lateral distribution
                     "limits": (-2000.0, 2000.0), # limits for lateral distribution (A)
                 },
                 "electronic energy deposition": {
-                    "score": False,      # whether to record lateral distribution for EED events
-                    "nbins": 40,         # number of bins for lateral distribution
+                    "score": True,      # whether to record lateral distribution for EED events
+                    "nbins": 120,         # number of bins for lateral distribution
                     "limits": (-2000.0, 2000.0), # limits for lateral distribution (A)
                 }
             },
             "backscattered atoms distribution": {
                 "energy": {
                     "score": True,       # whether to score energy distribution for backscattered atoms
-                    "nbins": 40,         # number of bins for energy distribution
+                    "nbins": 120,         # number of bins for energy distribution
                     "limits": (0.0, 50.0), # limits for energy distribution (keV)
                 },
                 "angle": {
                     "score": True,       # whether to score angle distribution for backscattered atoms
-                    "nbins": 40,         # number of bins for angle distribution
+                    "nbins": 120,         # number of bins for angle distribution
                     "limits": (-90.0, 90.0), # limits for angle distribution
                 },
             },
             "transmitted atoms distribution": {
                 "energy": {
                     "score": True,       # whether to score energy distribution for transmitted atoms
-                    "nbins": 40,         # number of bins for energy distribution
+                    "nbins": 120,         # number of bins for energy distribution
                     "limits": (0.0, 50.0), # limits for energy distribution (keV)
                 },
                 "angle": {
                     "score": True,       # whether to score angle distribution for transmitted atoms
-                    "nbins": 40,         # number of bins for angle distribution
+                    "nbins": 120,         # number of bins for angle distribution
                     "limits": (-90.0, 90.0), # limits for angle distribution
                 },
             },

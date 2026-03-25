@@ -54,7 +54,7 @@ def select_recoil(proj, recoil, params):
     sin_fi = sin(fi)
 
     # Convert direction vector to polar angles
-    # make k point to the smallest dir(:) so sinalf > sqrt(2/3)
+    # make k point to the smallest dir(:) so sin_alpha > sqrt(2/3)
     k = np.argmin(np.abs(dir[:]))
     i = (k + 1) % 3
     j = (i + 1) % 3

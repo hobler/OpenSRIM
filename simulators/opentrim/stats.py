@@ -28,13 +28,14 @@ max_order = 4    # TODO: Make max_order an input parameter, passed via input_par
 assert 1 <= max_order <= 4, "max_order must be between 1 and 4"
 
 
-def init_stats(nelem, input_params):
+def init_stats(NELEM_ION, NELEM_TARGET, input_params):
     """Initialize the stats structured array.
     
     The stats array contains subarrays for all the moments and histograms.
 
     Arguments:
-        nelem: (int) The number of different atom species
+        NELEM_ION: (int) The maximum number of different ion atom species
+        NELEM_TARGET: (int) The maximum number of different target atom species
         input_params: (dict) The input parameters dictionary, used to extract 
             the histogram configurations from the output configuration section.
     
@@ -43,6 +44,11 @@ def init_stats(nelem, input_params):
     """
     global STATS_DTYPE, stats_fields
 
+    follow_recoils = input_params["simulation"]["follow recoils"]
+    NELEM = NELEM_ION + NELEM_TARGET
+
+    # Define short names for the statistics, which will be used to construct the 
+    # keys of the stats structured array 
     short_names = {
         "depth distribution": "x",
         "lateral distribution": "y",
@@ -54,14 +60,28 @@ def init_stats(nelem, input_params):
         "energy": "e",
         "angle": "a",
     }
+
+    # Number of variables to reserve memory for
+    nvar = {
+        "x": NELEM + NELEM_TARGET if follow_recoils else NELEM,
+        "y": NELEM + NELEM_TARGET if follow_recoils else NELEM,
+        "xn": NELEM,
+        "yn": NELEM,
+        "xe": NELEM,
+        "ye": NELEM,
+        "be": NELEM if follow_recoils else NELEM_ION,
+        "ba": NELEM if follow_recoils else NELEM_ION,
+        "te": NELEM if follow_recoils else NELEM_ION,
+        "ta": NELEM if follow_recoils else NELEM_ION,
+    }
     # Build a flattened dictionary "stats_configs" of statistics configurations 
-    # from the output configuration. The keys of the dictionary are constructed 
-    # from the keys in the output configuration, e.g. 
+    # from the output confiuration defined in the input parameters. The keys of 
+    # the dictionary are constructed from the keys in the input parameters, e.g. 
     #   "depth distribution.ion/recoils" -> "x", 
     #   "lateral distribution.nuclear energy deposition" -> "yn", 
     #   "backscattered atoms distribution.energy" -> "be", etc. 
     # The histogram parameters (number of bins, limits, etc.) are taken from 
-    # the corresponding section in the output configuration. 
+    # the corresponding section in the input parameters. 
     output_params = input_params["output"]
     stats_configs = {}
     
@@ -87,50 +107,50 @@ def init_stats(nelem, input_params):
             stats_configs[short_name] = stats_config
 
     # Build a structured array data type of statistics parameters
-    for i, name in enumerate(stats_configs):
+    for i, short_name in enumerate(stats_configs):
         stats_dtype = np.dtype([
             ("score", np.int64),  # whether to score this statistics (use integer for JIT compatibility)
             ("nvar", np.int32),  # number of variables (e.g. atom species) for this statistics
             ("nbins", np.int32),  # number of bins for this statistics
             ("limits", np.float64, (2,)),  # limits for this statistics
             ("bin_width", np.float64),
-            ("counts", np.float64, (nelem,  # TODO: may depend on follow_recoils and other factors
-                                    stats_configs[name]["nbins"] + 2)),
-            ("power_sums", np.float64, (nelem, 2*max_order + 1)),
+            ("counts", np.float64, (nvar[short_name],
+                                    stats_configs[short_name]["nbins"] + 2)),
+            ("power_sums", np.float64, (nvar[short_name], 2*max_order + 1)),
         ], align=True)
 
         if i == 0:
             STATS_DTYPE = np.dtype([
-                (name, stats_dtype),
+                (short_name, stats_dtype),
             ], align=True)
         else:
             STATS_DTYPE = np.dtype(STATS_DTYPE.descr + [
-                (name, stats_dtype),
+                (short_name, stats_dtype),
             ], align=True)
     STATS_DTYPE = np.dtype(STATS_DTYPE.descr, align=True)
 
     # Create the structured array of statistics
     stats = np.recarray(1, dtype=STATS_DTYPE)
-    for name, stats_config in stats_configs.items():
-        stats[0][name]["nvar"] = nelem    # TODO: may depend on follow_recoils and other factors
+    for short_name, stats_config in stats_configs.items():
+        stats[0][short_name]["nvar"] = nvar[short_name]
         for field in stats_config:
             if field not in ["score", "nbins", "limits"]:
                 raise ValueError(f"Unknown histogram config field: {field} "
-                                 f"in {name}")
-            stats[0][name][field] = stats_config[field]
+                                 f"in {short_name}")
+            stats[0][short_name][field] = stats_config[field]
 
-        stats[0][name]["bin_width"] = (
+        stats[0][short_name]["bin_width"] = (
             (stats_config["limits"][1] - stats_config["limits"][0]) 
             / stats_config["nbins"])
-        stats[0][name]["counts"].fill(0.0)
-        stats[0][name]["power_sums"].fill(0.0)
+        stats[0][short_name]["counts"].fill(0.0)
+        stats[0][short_name]["power_sums"].fill(0.0)
 
     if False:
         print("-----------")
         print(f"stats: {stats}")
         print(f"stats fields: {stats.dtype.names}")
-        for name in stats.dtype.names:
-            print(f"   {name}: {stats[name]}")
+        for short_name in stats.dtype.names:
+            print(f"   {short_name}: {stats[short_name]}")
 
     stats_fields = STATS_DTYPE.names
 

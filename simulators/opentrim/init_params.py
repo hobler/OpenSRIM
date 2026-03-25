@@ -104,7 +104,7 @@ def _get_elements_and_materials_params(input_params):
         elements_params: (np.recarray) The elements parameters.
         materials_params: (np.recarray) The materials parameters.
     """
-    global NELEM, NMAT
+    global NELEM, NELEM_ION, NELEM_TARGET, NMAT
     
     # Calculate the atomic fractions for each material from the stoichiometry
     materials = input_params["layer"]
@@ -128,6 +128,8 @@ def _get_elements_and_materials_params(input_params):
                for key in ["symbol", "name", "Z", "M"]}
     element["displacement_energy"] = 0.0
     elements = [element]
+    nelem_ion = 1  # only one ion element for now
+    NELEM_ION = nelem_ion
 
     for mat in materials:
         ielem = []
@@ -141,6 +143,8 @@ def _get_elements_and_materials_params(input_params):
     nelem = len(elements)
     NELEM = nelem   # could be set to max(5, nelem) to avoid frequent 
                     # recompilation of Numba functions when nelem changes
+    nelem_target = nelem - nelem_ion
+    NELEM_TARGET = nelem_target
 
     # Test:
     if False:
@@ -198,7 +202,7 @@ def _get_elements_and_materials_params(input_params):
                 mat["element"][ielem]["displacement energy"])
 #    print(f"materials_params={materials_params}")
 
-    return nelem, elements_params, nmat, materials_params
+    return nelem_target, nelem, elements_params, materials_params
 
 
 def _get_estop_params(input_params, nelem, elements_params):
@@ -404,12 +408,12 @@ def get_params(input_params):
     Returns:
         params: (np.recarray) The input parameters structured array.
     """
-    global NELEM, NMAT
+    global NELEM_ION, NELEM_TARGET
     
     # rearrange parameters and calculate derived parameters
     beam_params = _get_beam_params(input_params)
     geometry_params = _get_geometry_params(input_params)
-    nelem, elements_params, nmat, materials_params = (
+    nelem_target, nelem, elements_params, materials_params = (
         _get_elements_and_materials_params(input_params))
     estop_params = _get_estop_params(input_params, nelem, elements_params)
     recoil_params = _get_recoil_params(input_params)
@@ -421,9 +425,9 @@ def get_params(input_params):
 
     # collect subarrays into a single structured array
     PARAMS_DTYPE = np.dtype([
-        ("rng_seed", np.int64),     # need an even number of int32 for alignment
-        ("nelem", np.int32),        # without padding, which causes trouble with Numba when
-        ("nmat", np.int32),         # align=True
+        ("rng_seed", np.int64),      # need an even number of int32 for alignment
+        ("nelem_target", np.int32),  # without padding, to avoid trouble with Numba when
+        ("nelem", np.int32),         # align=True
         ("beam", beam_params.dtype),
         ("cascade", cascade_params.dtype),
         ("recoil", recoil_params.dtype),
@@ -438,8 +442,8 @@ def get_params(input_params):
     # NOTE: Do not do "params = params[0]", since this would create a structured
     # scalar, which causes issues with parallelization in Numba.
     params[0].rng_seed = input_params["simulation"]["rng_seed"]
+    params[0].nelem_target = nelem_target
     params[0].nelem = nelem
-    params[0].nmat = nmat
     params[0].beam = beam_params
     params[0].cascade = cascade_params
     params[0].recoil = recoil_params
@@ -449,4 +453,4 @@ def get_params(input_params):
     params[0].estop = estop_params
     params[0].scatter = scatter_params
 
-    return params
+    return NELEM_ION, NELEM_TARGET, params

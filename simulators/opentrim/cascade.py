@@ -1,79 +1,94 @@
 """Simulate projectile trajectories.
 
-The trajectory function may call itself recursively to follow recoil
-trajectories.
-
 Available functions:
-    setup: setup module variables.
-    trajectory: simulate one trajectory.
+    cascade: simulate one cascade.
 """
-from select_recoil import get_recoil_position
-from scatter import scatter
-from estop import eloss
-from geometry import is_inside_target
+import os
+from collections import namedtuple
+
 import numpy as np
-from numba import jit
-
-
-def setup():
-    """Setup module variables.
-    
-    Returns:
-        (float): EMIN
-        (float): ED
-    """
-    emin = 5.0  # eV
-    ed = 15.0   # eV
-    return emin, ed
+from numba import jit, typed
+from .mytypes import PROJ_DTYPE, PROJ_NUMBA_DTYPE
+from .recoil import select_recoil
+from .scatter import scatter
+from .estop import eloss
+from .target import get_layer_index, is_inside_target
+from .stats import score_eed, score_ned, score_start, score_end
 
 
 @jit
-def trajectory(initial_proj, sim_params_arr, screen_fun, follow_recoils=False, prealloc=100):
+def cascade(initial_proj, params, stats):
     """Simulate one projectile trajectory.
     
     Parameters:
         initial_proj: (Projectile) the initial state of the first projectile
-        sim_params: (SimParams) Simulation parameters
-        screen_fun (object): Screening function
-        follow_recoils: (bool) whether to follow recoil trajectories
-        prealloc: (int) number of recoil projectiles to pre-allocate space for (for better performance)
+        params: (PARAMS_DTYPE) Simulation parameters
+        stats: (STATS_DTYPE) statistical data container
         
     Returns:
-        (numpy.ndarray[Projectile]) list of final projectile states
+        ndarray[Projectile]: list of final projectile states
     """
-    sim_params = sim_params_arr[0]
-    emin = sim_params.cascade_params.emin
-    ed = sim_params.cascade_params.ed
-    is_magic = (sim_params.scatter_params.pot_model == 'ZBL_magic')
+    GROWTH_FACTOR = 1.5
     
-    proj_lst = np.full(1 if not follow_recoils else prealloc, initial_proj)
-    tail = 0
-    head = 1
+    emin = params.cascade.emin
+    ed = params.cascade.ed
+    
+    # Fully simulated projectiles
+    proj_lst = typed.List.empty_list(PROJ_NUMBA_DTYPE)
+    
+    # Projectiles to be simulated
+    proj_stack = typed.List.empty_list(PROJ_NUMBA_DTYPE)
+    proj_stack.append(initial_proj)
+    
+    # Due to a limitation of Numba, we cannot create a recoil structured array
+    # in select_recoil and return it from there, so we create it here and 
+    # modify it in select_recoil in-place
+    recoil = np.empty(1, dtype=PROJ_DTYPE)[0]
 
-    while tail < head:
-        proj = proj_lst[tail]
-        while proj.e > emin:
-            free_path, p, dirp, recoil_pos = get_recoil_position(proj.pos[:], proj.dir[:], sim_params.recoil_params)
-            
-            dee = eloss(proj, free_path, sim_params.estop_params)
-            proj.e -= dee
-            proj.pos += free_path * proj.dir[:]
-            
-            if not is_inside_target(proj.pos[:], sim_params.geometry_params):
-                proj.is_inside = False
-                break
-            
-            recoil_dir, recoil_e = scatter(proj, p, dirp[:], screen_fun, sim_params.scatter_params, is_magic)        
-            if follow_recoils and recoil_e > ed:
-                if head == proj_lst.size:
-                    proj_lst = np.append(proj_lst, np.full(int(1.5 * proj_lst.size), initial_proj))
-                
-                proj_lst[head].e = recoil_e
-                proj_lst[head].pos[:] = recoil_pos
-                proj_lst[head].dir[:] = recoil_dir
-                proj_lst[head].ispec = 1
-                proj_lst[head].is_inside = True
-                head += 1
-        tail+=1
+    # Loop over collision events until there are no more projectiles to 
+    # simulate
+    while len(proj_stack) > 0:
+        proj = proj_stack[-1]
+    
+        # set recoil parameters (recoil modified in-place)
+        free_path, p, dirp = select_recoil(proj, recoil, params)
 
-    return proj_lst[:head]
+        # step projectile forward considering electronic energy loss
+        dee = eloss(proj, free_path, params.estop, params.materials)
+        proj["e"] -= dee
+        proj["pos"] += free_path * proj["dir"]
+        proj["ilayer"] = get_layer_index(proj["pos"], params.geometry)
+        proj["is_inside"] = is_inside_target(proj["pos"], params.geometry)
+        score_eed(stats, proj, dee) 
+
+        # terminate trajectory if the projectile is outside the target, or if 
+        # it has no more energy
+        if not proj["is_inside"] or proj["e"] <= emin:
+            proj_lst.append(proj)
+            score_end(stats, proj)
+            proj_stack.pop()
+            continue
+
+        # scattering event, modifying proj and recoil in-place
+        scatter(proj, p, dirp, recoil, params.scatter)
+
+        # terminate trajectory if the projectile has no more energy
+        if proj["e"] <= emin:
+            proj_lst.append(proj)
+            score_end(stats, proj)
+            proj_stack.pop()
+
+        # start a new cascade if the recoil has enough energy to leave its 
+        # position
+        if True:
+            imat = recoil["ilayer"]
+            ielem = params.materials[imat].ielem[recoil["ielem"]]
+            ed = params.materials[imat].displacement_energy[ielem]
+        if (params.cascade.follow_recoils and recoil["e"] > ed):
+            proj_stack.append(recoil)
+            score_start(stats, recoil, params.nelem_target)
+        else:
+            score_ned(stats, recoil)
+
+    # Return fully simulated projectiles in the correct order
+    return proj_lst[::-1]

@@ -9,7 +9,8 @@ Available functions:
 from numba import jit
 from numba.experimental import jitclass
 import numpy as np
-from table1d import Table1D
+from .table1d import Table1D
+
 
 @jitclass
 class Apsis:
@@ -46,7 +47,7 @@ class Apsis:
                 df = 1 - dscreen/e
                 delta_r0 = - f / df
                 r0 += delta_r0
-            dr0_de = - r0**2 / (screen - r0 * dscreen)  # pyright: ignore[reportPossiblyUnboundVariable]
+            dr0_de = - r0**2 / (screen - r0 * dscreen)
             energies.append(e)
             apses.append(r0)
             dapses_de.append(dr0_de)
@@ -129,7 +130,7 @@ def plot_iteration_counts(screen_fun_type, n_iter, e_values, p_values, Z1=None, 
     e_idx = np.arange(len(e_values)+1) - 0.5
     p_idx = np.arange(len(p_values)+1) - 0.5
 
-    plt.rcParams.update({'font.size': 14})
+    plt.rcParams.update({"font.size": 14})
     fig = plt.figure(figsize=(8,6))
     ax = plt.gca()
     bounds = np.linspace(-0.5, 4.5, 6)
@@ -138,7 +139,7 @@ def plot_iteration_counts(screen_fun_type, n_iter, e_values, p_values, Z1=None, 
     norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
 
     c = ax.pcolormesh(e_idx - 0.5, p_idx - 0.5, n_iter,
-                      shading='auto', cmap=cmap, norm=norm)
+                      shading="auto", cmap=cmap, norm=norm)
     cbar = fig.colorbar(c, ax=ax, ticks=ticks)
     cbar.set_label(r"number of iterations $n$")
 
@@ -185,8 +186,8 @@ def calc_niter(Z1, Z2, e_values, p_values, coefs):
     return n_iter
 
 if __name__ == "__main__":
-    from zbl import ZBL_screen
-    from nlhlin import NLHlin_screen, read_coefs
+    from .zbl import ZBL_screen
+    from .nlhlin import NLHlin_screen, read_coefs
     
     Z1 = 33
     Z2 = 14

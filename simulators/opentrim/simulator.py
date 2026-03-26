@@ -1,80 +1,84 @@
 import time
-import config
-import numpy as np
-from numba import jit, prange
-import cascade
-import pytrim_stats as statistics
-from mytypes import Projectile
-from nlhlin import NLHlin_screen
-from zbl import ZBL_screen
 
-@jit(cache=config.ENABLE_CACHING, parallel=config.PARALLEL, nogil=config.PARALLEL)
-def simulate(nion, sim_params, coefs, follow_recoils=False, sim_idx=0):
+from . import config
+import numpy as np
+from numba import jit, prange, typed, int32
+import numba as nb
+from . import cascade
+from .mytypes import Projectile, PROJ_DTYPE, PROJ_NUMBA_DTYPE
+from .stats import STATS_DTYPE, merge_stats, zero_stats
+
+
+empty_stats = None
+
+
+def simulate(nion, params, stats, sim_idx=0):
     """Perform simulation on given number of projectiles
     
     Parameters:
         nion: (int) Total number of projectiles to simulate
-        sim_params_tup: (tuple) Simulation parameters (provided by `SimParams.to_tuple()`)
-        follow_recoils: (bool) If the simulation should be performed for recoils aswell
+        params: (PARAMS_DTYPE) Simulation parameters
+        stats: (STATS_DTYPE) Statistical data container to store results in
         sim_idx: (int) Simulation index (for chunked simulations)
-        
-    Returns:
-        tuple[int, np.ndarray, np.ndarray]:
-            Total number of simulated projectiles,
-            Result buffer for `Histogram_1d` class,
-            Result buffer for `Moment_1d` class
+    """
+    global empty_stats
+    
+    if empty_stats is None:
+        empty_stats = stats[0].copy()
+        zero_stats(empty_stats)
+
+    # Construct an array of stats for each ion, since lists cannot be used in 
+    # Numba-jitted functions
+    stats_per_ion = np.array([empty_stats.copy() for _ in range(nion)], 
+                             dtype=STATS_DTYPE)
+
+    _simulate(nion, params, stats_per_ion, sim_idx)
+
+    # Merge stats from each ion into the total stats
+    for i in range(len(stats_per_ion)):
+        merge_stats(stats, stats_per_ion[i])
+
+    return
+
+
+@jit(cache=config.ENABLE_CACHING, parallel=config.PARALLEL, nogil=config.PARALLEL)
+def _simulate(nion, params, stats_per_ion, sim_idx):
+    """Perform simulation on given number of projectiles
+    
+    Parameters:
+        nion: (int) Total number of projectiles to simulate
+        params: (PARAMS_DTYPE) Simulation parameters
+        stats_per_ion: (ndarray[STATS_DTYPE]) Array of stats for each ion
+        sim_idx: (int) Simulation index (for chunked simulations)
     """
     # Initial conditions of the projectile
     proj_init = Projectile(
-        50000.0,                         # energy (eV)
-        np.array([0.0, 0.0, 0.0]),     # position (A)
-        np.array([0.0, 0.0, 1.0]),     # direction (unit vector)
+        params[0].beam.energy,  # energy (eV)
+        np.array([0.0, 0.0, 0.0]),  # position (A)
+        np.array([np.cos(np.radians(params[0].beam.tilt)), 
+                  np.sin(np.radians(params[0].beam.tilt)), 0.0]),
+                  # direction (unit vector)
+        0,
         0,
         True
     )
-    proj_dummy = np.full(1, proj_init)
-    proj_sim = [proj_dummy for _ in range(nion)]
-    z1 = sim_params.scatter_params.z1
-    z2 = sim_params.scatter_params.z2
-
-    # Fixes weird Numba error by passing array instead of single record
-    sim_params_arr = np.full(1, sim_params)
+    proj_dummy_list = typed.List.empty_list(PROJ_NUMBA_DTYPE)
+    proj_sim = [proj_dummy_list for _ in range(nion)]
     
-    # Simulate the trajectories
-    # TODO better-looking alternative?
-    # NOTE single conditional `screen_fun` variable can't be used due to different data types
-    if sim_params.scatter_params.pot_model == 'NLHlin':
-        screen_fun_nlh = (NLHlin_screen(z1, z2, sim_params.scatter_params.rnorm[0], coefs),
-                        NLHlin_screen(z2, z2, sim_params.scatter_params.rnorm[1], coefs))
-        for i in prange(nion):
-            np.random.seed(sim_params_arr[0].rng_seed + sim_idx + i)
-            proj_sim[i] = cascade.trajectory(proj_dummy[0], sim_params_arr, screen_fun_nlh, follow_recoils)
+    proj_dummy = np.full(1, proj_init)
 
-    elif sim_params.scatter_params.pot_model == 'ZBL':
-        screen_fun_zbl = (ZBL_screen(z1, z2, sim_params.scatter_params.rnorm[0], False),
-                        ZBL_screen(z2, z2, sim_params.scatter_params.rnorm[1], False))
-        for i in prange(nion):
-            np.random.seed(sim_params_arr[0].rng_seed + sim_idx + i)
-            proj_sim[i] = cascade.trajectory(proj_dummy[0], sim_params_arr, screen_fun_zbl, follow_recoils)
-
-    else:   # Defaults to 'ZBL_magic'
-        screen_fun_magic = (ZBL_screen(z1, z2, sim_params.scatter_params.rnorm[0], True),
-                        ZBL_screen(z2, z2, sim_params.scatter_params.rnorm[1], True))
-        for i in prange(nion):
-            np.random.seed(sim_params_arr[0].rng_seed + sim_idx + i)
-            proj_sim[i] = cascade.trajectory(proj_dummy[0], sim_params_arr, screen_fun_magic, follow_recoils)
+    # Parallel loop over collision cascades
+    for i in prange(nion):  # ty:ignore[not-iterable]
+        np.random.seed(params[0].rng_seed + sim_idx + i)
+        proj_sim[i] = cascade.cascade(
+            proj_dummy[0], params[0], stats_per_ion[i])
     
     proj_count = 0
-    stat_params = sim_params.stat_params
-    hist = statistics.Histogram_1d(stat_params.nspec, stat_params.nbin, (stat_params.limits[0], stat_params.limits[1]))
-    mom = statistics.Moment_1d(stat_params.nspec, 4)
     for proj_lst in proj_sim:
-        proj_count += proj_lst.size
-        for proj in proj_lst:
-            if proj.is_inside:
-                hist.score(proj.ispec, proj.pos[2])
-                mom.score(proj.ispec, proj.pos[2])
-    return proj_count, hist.results, mom.results
+        proj_count += len(proj_lst)
+    
+    return
+
 
 def simulate_adaptive(avg_chunk_time, nion, *args, **kwargs):
     """Adaptive, chunked simulation with each chunk taking around avg_sim_time seconds
@@ -83,36 +87,24 @@ def simulate_adaptive(avg_chunk_time, nion, *args, **kwargs):
         avg_sim_time: (int) Desired simulation time per in seconds
         nion: (int) Total number of projectiles to simulate
         *args, **kwargs: As in `simulate()`
-        
-    Returns:
-        tuple[int, np.ndarray, np.ndarray]:
-            Total number of simulated projectiles,
-            Result buffer for `Histogram_1d` class,
-            Result buffer for `Moment_1d` class
     """
     # TODO Doesn't work with fixed seed (due to varying chunk sizes)
     min_chunk_size = 100
     chunk_size = min_chunk_size
     processed_count = 0
     
-    total_proj_count = 0
-    total_hist_buf = None
-    total_mom_buf = None
-
     while processed_count < nion:
         current_batch = min(chunk_size, nion - processed_count)
         
         start_time = time.time()
-        proj_count, hist_buf, mom_buf = simulate(current_batch, *args, sim_idx=processed_count, **kwargs)
+        simulate(
+            current_batch,
+            *args,
+            sim_idx=processed_count,
+            **kwargs
+        )
         # NOTE: Saving or adding data to queue can be performed here
         
-        total_proj_count += proj_count
-        if total_hist_buf is None:
-            total_hist_buf = hist_buf.copy()
-            total_mom_buf = mom_buf.copy()
-        else:
-            total_hist_buf += hist_buf
-            total_mom_buf += mom_buf  # pyright: ignore[reportOperatorIssue]
         duration = time.time() - start_time
         
         processed_count += current_batch
@@ -120,7 +112,8 @@ def simulate_adaptive(avg_chunk_time, nion, *args, **kwargs):
         new_chunk = int((current_batch / duration) * avg_chunk_time)
         chunk_size = max(min_chunk_size, new_chunk)
     
-    return total_proj_count, total_hist_buf, total_mom_buf
+    return
+
 
 def simulate_chunked(chunk_size, nion, *args, **kwargs):
     """Chunked simulation for nion projectiles
@@ -129,27 +122,23 @@ def simulate_chunked(chunk_size, nion, *args, **kwargs):
         chunk_size: (int) Size to split total count into
         nion: (int) Total number of projectiles to simulate
         *args, **kwargs: As in `simulate()`
-        
-    Returns:
-        tuple[int, np.ndarray, np.ndarray]:
-            Total number of simulated projectiles,
-            Result buffer for `Histogram_1d` class,
-            Result buffer for `Moment_1d` class
-    """
-    assert nion % chunk_size == 0, "Total projectile count must be a multiple of chunk size"
+    """    
     
-    total_proj_count = 0
-    total_hist_buf = None
-    total_mom_buf = None
-    for processed_count in range(0, nion, chunk_size):
-        proj_count, hist_buf, mom_buf = simulate(chunk_size, *args, sim_idx=processed_count, **kwargs)
+    def _process_chunks(chunk_size, sim_idx):
+        if chunk_size == 0:
+            return
+        
+        simulate(
+            chunk_size,
+            *args,
+            sim_idx=sim_idx,
+            **kwargs
+        )
         # NOTE: Saving can be performed here
         
-        if total_hist_buf is None:
-            total_hist_buf = hist_buf.copy()
-            total_mom_buf = mom_buf.copy()
-        else:
-            total_hist_buf += hist_buf
-            total_mom_buf += mom_buf  # pyright: ignore[reportOperatorIssue]
-        total_proj_count += proj_count
-    return total_proj_count, total_hist_buf, total_mom_buf
+    for processed_count in range(0, nion, chunk_size):
+        _process_chunks(chunk_size, processed_count)
+    remainder = nion % chunk_size
+    _process_chunks(remainder, nion - remainder) # Process remainder
+
+    return

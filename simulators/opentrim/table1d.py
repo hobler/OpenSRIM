@@ -34,12 +34,12 @@ class Table1D:
     
     regular: bool
     powerof2: bool
-    x: float64[:]   # pyright: ignore[reportInvalidTypeForm, reportGeneralTypeIssues]
-    y: float64[:]   # pyright: ignore[reportInvalidTypeForm, reportGeneralTypeIssues]
-    a: float64[:]   # pyright: ignore[reportInvalidTypeForm, reportGeneralTypeIssues]
-    b: float64[:]   # pyright: ignore[reportInvalidTypeForm, reportGeneralTypeIssues]
-    c: Optional[float64[:]] # pyright: ignore[reportInvalidTypeForm, reportGeneralTypeIssues]
-    d: Optional[float64[:]] # pyright: ignore[reportInvalidTypeForm, reportGeneralTypeIssues]
+    x: float64[:]   # ty:ignore[invalid-type-form]
+    y: float64[:]   # ty:ignore[invalid-type-form]
+    a: float64[:]   # ty:ignore[invalid-type-form]
+    b: float64[:]   # ty:ignore[invalid-type-form]
+    c: Optional[float64[:]] # ty:ignore[invalid-type-form]
+    d: Optional[float64[:]] # ty:ignore[invalid-type-form]
     def __init__(self, x, y, dydx=None, regular=False, powerof2=False):
         self.regular = regular
         self.powerof2 = powerof2

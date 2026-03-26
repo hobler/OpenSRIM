@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import QWidget, QVBoxLayout
 
 try:
@@ -9,6 +10,8 @@ except ModuleNotFoundError:  # pragma: no cover
 
 
 class MCResultsPage(QWidget):
+    advanced_requested = pyqtSignal(str)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
@@ -16,6 +19,7 @@ class MCResultsPage(QWidget):
         layout.setSpacing(10)
 
         self._results_widget = MCResultsWidget()
+        self._results_widget.advanced_requested.connect(self.advanced_requested)
         layout.addWidget(self._results_widget)
 
     def get_results_widget(self):

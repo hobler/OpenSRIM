@@ -112,6 +112,7 @@ class MainWindow(QMainWindow):
             pass
 
         self.mc_setup_tab.advanced_requested.connect(self._open_advanced_options)
+        self.mc_results_tab.advanced_requested.connect(self._open_advanced_options)
         self.mc_setup_tab.save_requested.connect(self._handle_save_configuration)
         self.mc_setup_tab.load_requested.connect(self._handle_load_configuration)
         self.advanced_options_tab.atoms_columns_visibility_changed.connect(
@@ -120,6 +121,21 @@ class MainWindow(QMainWindow):
             )
         )
         self.advanced_options_tab.mc_ion_angle_changed.connect(self._apply_mc_ion_angle)
+
+        # Display settings (Advanced Options → MC Results plot area)
+        results_widget = self.mc_results_tab.get_results_widget()
+        self.advanced_options_tab.toolbar_visibility_changed.connect(
+            results_widget.set_plot_toolbar_visible
+        )
+        self.advanced_options_tab.columns_changed.connect(
+            results_widget.set_plot_columns
+        )
+        self.advanced_options_tab.borders_visibility_changed.connect(
+            results_widget.set_plot_borders_visible
+        )
+        self.advanced_options_tab.plot_font_size_changed.connect(
+            results_widget.set_plot_font_size
+        )
 
         # initial sync
         try:

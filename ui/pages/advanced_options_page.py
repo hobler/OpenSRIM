@@ -7,7 +7,9 @@ from PyQt6.QtGui import QCursor, QIcon
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
+    QHBoxLayout,
     QCheckBox,
+    QComboBox,
     QLabel,
     QScrollArea,
     QDoubleSpinBox,
@@ -140,6 +142,10 @@ class AccordionItem(QFrame):
 class AdvancedOptionsPage(QWidget):
     atoms_columns_visibility_changed = pyqtSignal(bool, bool, bool)
     mc_ion_angle_changed = pyqtSignal(float)
+    toolbar_visibility_changed = pyqtSignal(bool)
+    columns_changed = pyqtSignal(int)        # 0=auto, 1, 2, 3
+    borders_visibility_changed = pyqtSignal(bool)
+    plot_font_size_changed = pyqtSignal(float)
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -197,22 +203,63 @@ class AdvancedOptionsPage(QWidget):
         model_l.addWidget(QLabel("Placeholder: advanced model options will be added here."))
         model_l.addStretch(1)
 
+        # --- Display Settings content (MC Results plots) ---
+        display = QWidget(content)
+        display_l = QVBoxLayout(display)
+        display_l.setContentsMargins(0, 0, 0, 0)
+        display_l.setSpacing(8)
+
+        self.chk_toolbars = QCheckBox("Show Plot Toolbars")
+        self.chk_toolbars.setChecked(True)
+        self.chk_toolbars.toggled.connect(self.toolbar_visibility_changed)
+        display_l.addWidget(self.chk_toolbars)
+
+        self.chk_borders = QCheckBox("Show Plot Borders")
+        self.chk_borders.setChecked(True)
+        self.chk_borders.toggled.connect(self.borders_visibility_changed)
+        display_l.addWidget(self.chk_borders)
+
+        font_row = QHBoxLayout()
+        font_row.addWidget(QLabel("Plot Font Size:"))
+        self.spin_plot_font_size = QDoubleSpinBox()
+        self.spin_plot_font_size.setRange(6.0, 30.0)
+        self.spin_plot_font_size.setDecimals(1)
+        self.spin_plot_font_size.setSingleStep(0.5)
+        self.spin_plot_font_size.setSuffix(" pt")
+        self.spin_plot_font_size.setValue(10.0)
+        self.spin_plot_font_size.valueChanged.connect(self.plot_font_size_changed)
+        font_row.addWidget(self.spin_plot_font_size)
+        display_l.addLayout(font_row)
+
+        col_row = QHBoxLayout()
+        col_row.addWidget(QLabel("Grid Columns:"))
+        self.col_combo = QComboBox()
+        self.col_combo.addItems(["Auto", "1", "2", "3"])
+        self.col_combo.currentIndexChanged.connect(self.columns_changed)
+        col_row.addWidget(self.col_combo)
+        display_l.addLayout(col_row)
+        display_l.addStretch(1)
+
         self._acc_ion = AccordionItem("Ion selection", ion, expanded=False, parent=content)
         self._acc_atoms = AccordionItem("Atoms per layer", atoms, expanded=True, parent=content)
         self._acc_model = AccordionItem("Model selection", model, expanded=False, parent=content)
+        self._acc_display = AccordionItem("Display Settings", display, expanded=False, parent=content)
 
         self._accordion_by_id = {
             "ion_selection_mc": self._acc_ion,
             "atoms_per_layer": self._acc_atoms,
             "model_selection": self._acc_model,
+            "display_settings": self._acc_display,
         }
 
-        for item in (self._acc_ion, self._acc_atoms, self._acc_model):
+        self._all_accordions = (self._acc_ion, self._acc_atoms, self._acc_model, self._acc_display)
+        for item in self._all_accordions:
             item.toggled.connect(lambda on, src=item: self._handle_item_toggled(src, on))
 
         content_l.addWidget(self._acc_ion)
         content_l.addWidget(self._acc_atoms)
         content_l.addWidget(self._acc_model)
+        content_l.addWidget(self._acc_display)
         content_l.addStretch(1)
         content.setLayout(content_l)
         scroll.setWidget(content)
@@ -226,7 +273,7 @@ class AdvancedOptionsPage(QWidget):
     def _handle_item_toggled(self, source: AccordionItem, expanded: bool) -> None:
         if not expanded:
             return
-        for item in (self._acc_ion, self._acc_atoms, self._acc_model):
+        for item in self._all_accordions:
             if item is not source:
                 item.set_expanded(False, animate=True)
 
@@ -261,6 +308,12 @@ class AdvancedOptionsPage(QWidget):
                 "show_latt": bool(self.chk_latt.isChecked()),
                 "show_surf": bool(self.chk_surf.isChecked()),
             },
+            "display_settings": {
+                "show_toolbars": bool(self.chk_toolbars.isChecked()),
+                "show_borders": bool(self.chk_borders.isChecked()),
+                "plot_font_size": float(self.spin_plot_font_size.value()),
+                "grid_columns": int(self.col_combo.currentIndex()),
+            },
         }
 
     def apply_config(self, payload: dict) -> None:
@@ -289,6 +342,19 @@ class AdvancedOptionsPage(QWidget):
             self.chk_disp.setChecked(bool(atoms.get("show_disp", self.chk_disp.isChecked())))
             self.chk_latt.setChecked(bool(atoms.get("show_latt", self.chk_latt.isChecked())))
             self.chk_surf.setChecked(bool(atoms.get("show_surf", self.chk_surf.isChecked())))
+
+        disp = payload.get("display_settings") or {}
+        if isinstance(disp, dict):
+            self.chk_toolbars.setChecked(bool(disp.get("show_toolbars", self.chk_toolbars.isChecked())))
+            self.chk_borders.setChecked(bool(disp.get("show_borders", self.chk_borders.isChecked())))
+            if "plot_font_size" in disp:
+                try:
+                    self.spin_plot_font_size.setValue(float(disp.get("plot_font_size", self.spin_plot_font_size.value())))
+                except (TypeError, ValueError):
+                    pass
+            idx = int(disp.get("grid_columns", self.col_combo.currentIndex()))
+            if 0 <= idx < self.col_combo.count():
+                self.col_combo.setCurrentIndex(idx)
 
     def open_section(self, section_id: str) -> None:
         item = self._accordion_by_id.get(section_id)

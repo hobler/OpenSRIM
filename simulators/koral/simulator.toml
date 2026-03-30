@@ -1,0 +1,18 @@
+format_version = 1
+
+id = "koral"
+display_name = "KORAL"
+simulator_kind = "koral"
+is_mc = false
+
+# High-level capability hints (currently informational)
+available_models = ["ZBL", "NLH"]
+default_models = ["ZBL"]
+
+supported_outputs = [
+  "elec_stop",
+  "nucl_stop",
+  "prange",
+  #"long_strag",
+  #"lat_strag",
+]

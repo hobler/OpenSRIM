@@ -1,0 +1,363 @@
+from __future__ import annotations
+
+from typing import Optional
+
+from PyQt6.QtCore import Qt, pyqtSignal, QPropertyAnimation, QEasingCurve
+from PyQt6.QtGui import QCursor, QIcon
+from PyQt6.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QCheckBox,
+    QComboBox,
+    QLabel,
+    QScrollArea,
+    QDoubleSpinBox,
+    QFrame,
+    QPushButton,
+    QStyle,
+)
+
+
+class AccordionItem(QFrame):
+    """Accordion item with animated expand/collapse (based on test.py sample)."""
+
+    toggled = pyqtSignal(bool)
+
+    def __init__(self, title: str, content: QWidget, expanded: bool = True, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self._expanded = expanded
+        self._anim: Optional[QPropertyAnimation] = None
+
+        self.setFrameShape(QFrame.Shape.StyledPanel)
+        self.setObjectName("accordion-item")
+        # Use palette roles (no hard-coded colors) but keep the sample's "modern" layout.
+        self.setStyleSheet(
+            """
+            QFrame#accordion-item {
+                border: 1px solid palette(dark);
+                border-radius: 10px;
+                background: palette(window);
+            }
+            QPushButton#accordion-header {
+                text-align: left;
+                padding: 10px 14px;
+                border: none;
+                font-weight: 600;
+                background: palette(alternate-base);
+                border-top-left-radius: 10px;
+                border-top-right-radius: 10px;
+                border-bottom: 1px solid palette(dark);
+            }
+            QPushButton#accordion-header:hover { background: palette(light); }
+            QFrame#accordion-body {
+                background: palette(base);
+                border-bottom-left-radius: 10px;
+                border-bottom-right-radius: 10px;
+            }
+            """
+        )
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+
+        self.headerBtn = QPushButton(title)
+        self.headerBtn.setObjectName("accordion-header")
+        self.headerBtn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.headerBtn.setIcon(self._icon_for_state(expanded))
+        self.headerBtn.clicked.connect(self.toggle)
+        lay.addWidget(self.headerBtn)
+
+        self.body = QFrame()
+        self.body.setObjectName("accordion-body")
+        self.bodyLay = QVBoxLayout(self.body)
+        self.bodyLay.setContentsMargins(12, 12, 12, 12)
+        self.bodyLay.setSpacing(8)
+        self.bodyLay.addWidget(content)
+        lay.addWidget(self.body)
+
+        self._apply_state(expanded, animate=False)
+
+    def _icon_for_state(self, expanded: bool) -> QIcon:
+        icon = QIcon()
+        icon.addPixmap(
+            self.style().standardPixmap(
+                QStyle.StandardPixmap.SP_ArrowDown if expanded else QStyle.StandardPixmap.SP_ArrowRight
+            )
+        )
+        return icon
+
+    def toggle(self) -> None:
+        self._apply_state(not self._expanded, animate=True)
+
+    def set_expanded(self, expanded: bool, *, animate: bool = True) -> None:
+        if self._expanded == expanded:
+            return
+        self._apply_state(expanded, animate=animate)
+
+    def _apply_state(self, expanded: bool, animate: bool) -> None:
+        self._expanded = expanded
+        self.headerBtn.setIcon(self._icon_for_state(expanded))
+
+        if animate:
+            start = int(self.body.maximumHeight())
+
+            if expanded:
+                self.body.setMaximumHeight(10**6)
+                target = int(self.body.sizeHint().height())
+                self.body.setMaximumHeight(start)
+                self.body.setVisible(True)
+            else:
+                target = 0
+                self.body.setVisible(True)
+
+            anim = QPropertyAnimation(self.body, b"maximumHeight", self)
+            anim.setDuration(160)
+            anim.setStartValue(max(start, 0))
+            anim.setEndValue(target)
+            anim.setEasingCurve(QEasingCurve.Type.InOutCubic)
+            anim.finished.connect(lambda: self._on_anim_finished(expanded))
+            anim.start()
+            self._anim = anim
+        else:
+            if expanded:
+                self.body.setMaximumHeight(16777215)
+                self.body.setVisible(True)
+            else:
+                self.body.setMaximumHeight(0)
+                self.body.setVisible(False)
+
+        self.toggled.emit(expanded)
+
+    def _on_anim_finished(self, expanded: bool) -> None:
+        if expanded:
+            self.body.setMaximumHeight(16777215)
+            self.body.setVisible(True)
+        else:
+            self.body.setMaximumHeight(0)
+            self.body.setVisible(False)
+
+
+class AdvancedOptionsPage(QWidget):
+    atoms_columns_visibility_changed = pyqtSignal(bool, bool, bool)
+    mc_ion_angle_changed = pyqtSignal(float)
+    toolbar_visibility_changed = pyqtSignal(bool)
+    columns_changed = pyqtSignal(int)        # 0=auto, 1, 2, 3
+    borders_visibility_changed = pyqtSignal(bool)
+    plot_font_size_changed = pyqtSignal(float)
+
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(10, 10, 10, 10)
+        root.setSpacing(10)
+
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+
+        content = QWidget(scroll)
+        content_l = QVBoxLayout(content)
+        content_l.setContentsMargins(0, 0, 0, 0)
+        content_l.setSpacing(10)
+
+        # --- Ion selection content ---
+        ion = QWidget(content)
+        ion_l = QVBoxLayout(ion)
+        ion_l.setContentsMargins(0, 0, 0, 0)
+        ion_l.setSpacing(8)
+        ion_l.addWidget(QLabel("Angle of Incidence"))
+
+        ion_l.addWidget(QLabel("MC Setup"))
+        self.spin_mc_ion_angle = QDoubleSpinBox()
+        self.spin_mc_ion_angle.setRange(0.0, 90.0)
+        self.spin_mc_ion_angle.setDecimals(1)
+        self.spin_mc_ion_angle.setSuffix(" °")
+        self.spin_mc_ion_angle.setValue(0.0)
+        ion_l.addWidget(self.spin_mc_ion_angle)
+        ion_l.addStretch(1)
+
+        # --- Atoms per layer content ---
+        atoms = QWidget(content)
+        atoms_l = QVBoxLayout(atoms)
+        atoms_l.setContentsMargins(0, 0, 0, 0)
+        atoms_l.setSpacing(8)
+        atoms_l.addWidget(QLabel("Atoms per layer: Table columns"))
+        self.chk_disp = QCheckBox("Show Disp (eV)")
+        self.chk_latt = QCheckBox("Show Latt (eV)")
+        self.chk_surf = QCheckBox("Show Surf (eV)")
+        self.chk_disp.setChecked(False)
+        self.chk_latt.setChecked(False)
+        self.chk_surf.setChecked(False)
+        atoms_l.addWidget(self.chk_disp)
+        atoms_l.addWidget(self.chk_latt)
+        atoms_l.addWidget(self.chk_surf)
+        atoms_l.addStretch(1)
+
+        # --- Model selection content (placeholder) ---
+        model = QWidget(content)
+        model_l = QVBoxLayout(model)
+        model_l.setContentsMargins(0, 0, 0, 0)
+        model_l.setSpacing(8)
+        model_l.addWidget(QLabel("Placeholder: advanced model options will be added here."))
+        model_l.addStretch(1)
+
+        # --- Display Settings content (MC Results plots) ---
+        display = QWidget(content)
+        display_l = QVBoxLayout(display)
+        display_l.setContentsMargins(0, 0, 0, 0)
+        display_l.setSpacing(8)
+
+        self.chk_toolbars = QCheckBox("Show Plot Toolbars")
+        self.chk_toolbars.setChecked(True)
+        self.chk_toolbars.toggled.connect(self.toolbar_visibility_changed)
+        display_l.addWidget(self.chk_toolbars)
+
+        self.chk_borders = QCheckBox("Show Plot Borders")
+        self.chk_borders.setChecked(True)
+        self.chk_borders.toggled.connect(self.borders_visibility_changed)
+        display_l.addWidget(self.chk_borders)
+
+        font_row = QHBoxLayout()
+        font_row.addWidget(QLabel("Plot Font Size:"))
+        self.spin_plot_font_size = QDoubleSpinBox()
+        self.spin_plot_font_size.setRange(6.0, 30.0)
+        self.spin_plot_font_size.setDecimals(1)
+        self.spin_plot_font_size.setSingleStep(0.5)
+        self.spin_plot_font_size.setSuffix(" pt")
+        self.spin_plot_font_size.setValue(10.0)
+        self.spin_plot_font_size.valueChanged.connect(self.plot_font_size_changed)
+        font_row.addWidget(self.spin_plot_font_size)
+        display_l.addLayout(font_row)
+
+        col_row = QHBoxLayout()
+        col_row.addWidget(QLabel("Grid Columns:"))
+        self.col_combo = QComboBox()
+        self.col_combo.addItems(["Auto", "1", "2", "3"])
+        self.col_combo.currentIndexChanged.connect(self.columns_changed)
+        col_row.addWidget(self.col_combo)
+        display_l.addLayout(col_row)
+        display_l.addStretch(1)
+
+        self._acc_ion = AccordionItem("Ion selection", ion, expanded=False, parent=content)
+        self._acc_atoms = AccordionItem("Atoms per layer", atoms, expanded=True, parent=content)
+        self._acc_model = AccordionItem("Model selection", model, expanded=False, parent=content)
+        self._acc_display = AccordionItem("Display Settings", display, expanded=False, parent=content)
+
+        self._accordion_by_id = {
+            "ion_selection_mc": self._acc_ion,
+            "atoms_per_layer": self._acc_atoms,
+            "model_selection": self._acc_model,
+            "display_settings": self._acc_display,
+        }
+
+        self._all_accordions = (self._acc_ion, self._acc_atoms, self._acc_model, self._acc_display)
+        for item in self._all_accordions:
+            item.toggled.connect(lambda on, src=item: self._handle_item_toggled(src, on))
+
+        content_l.addWidget(self._acc_ion)
+        content_l.addWidget(self._acc_atoms)
+        content_l.addWidget(self._acc_model)
+        content_l.addWidget(self._acc_display)
+        content_l.addStretch(1)
+        content.setLayout(content_l)
+        scroll.setWidget(content)
+        root.addWidget(scroll)
+
+        self.chk_disp.toggled.connect(self._emit_atoms_visibility)
+        self.chk_latt.toggled.connect(self._emit_atoms_visibility)
+        self.chk_surf.toggled.connect(self._emit_atoms_visibility)
+        self.spin_mc_ion_angle.valueChanged.connect(self._emit_mc_ion_angle)
+
+    def _handle_item_toggled(self, source: AccordionItem, expanded: bool) -> None:
+        if not expanded:
+            return
+        for item in self._all_accordions:
+            if item is not source:
+                item.set_expanded(False, animate=True)
+
+    def _emit_atoms_visibility(self) -> None:
+        self.atoms_columns_visibility_changed.emit(
+            bool(self.chk_disp.isChecked()),
+            bool(self.chk_latt.isChecked()),
+            bool(self.chk_surf.isChecked()),
+        )
+
+    def _emit_mc_ion_angle(self, value: float) -> None:
+        self.mc_ion_angle_changed.emit(float(value))
+
+    # Backwards-compat helper: treat set_ion_angle as the MC angle.
+    def set_ion_angle(self, value: float) -> None:
+        self.set_mc_ion_angle(value)
+
+    def set_mc_ion_angle(self, value: float) -> None:
+        self.spin_mc_ion_angle.blockSignals(True)
+        try:
+            self.spin_mc_ion_angle.setValue(float(value))
+        finally:
+            self.spin_mc_ion_angle.blockSignals(False)
+
+    def collect_config(self) -> dict:
+        return {
+            "ion": {
+                "mc_angle": float(self.spin_mc_ion_angle.value()),
+            },
+            "atoms_per_layer": {
+                "show_disp": bool(self.chk_disp.isChecked()),
+                "show_latt": bool(self.chk_latt.isChecked()),
+                "show_surf": bool(self.chk_surf.isChecked()),
+            },
+            "display_settings": {
+                "show_toolbars": bool(self.chk_toolbars.isChecked()),
+                "show_borders": bool(self.chk_borders.isChecked()),
+                "plot_font_size": float(self.spin_plot_font_size.value()),
+                "grid_columns": int(self.col_combo.currentIndex()),
+            },
+        }
+
+    def apply_config(self, payload: dict) -> None:
+        if not isinstance(payload, dict):
+            return
+        ion = payload.get("ion") or {}
+        if isinstance(ion, dict):
+            if "mc_angle" in ion:
+                try:
+                    self.set_mc_ion_angle(float(ion.get("mc_angle", 0.0)))
+                except (TypeError, ValueError):
+                    pass
+
+            # Backwards-compat: older configs used ion.angle (apply to MC).
+            if ("mc_angle" not in ion) and ("angle" in ion):
+                try:
+                    v = float(ion.get("angle", 0.0))
+                except (TypeError, ValueError):
+                    v = None
+                if v is not None:
+                    self.set_mc_ion_angle(v)
+
+        atoms = payload.get("atoms_per_layer") or {}
+        if isinstance(atoms, dict):
+            # Keep signals enabled so UI reacts (column visibility etc.)
+            self.chk_disp.setChecked(bool(atoms.get("show_disp", self.chk_disp.isChecked())))
+            self.chk_latt.setChecked(bool(atoms.get("show_latt", self.chk_latt.isChecked())))
+            self.chk_surf.setChecked(bool(atoms.get("show_surf", self.chk_surf.isChecked())))
+
+        disp = payload.get("display_settings") or {}
+        if isinstance(disp, dict):
+            self.chk_toolbars.setChecked(bool(disp.get("show_toolbars", self.chk_toolbars.isChecked())))
+            self.chk_borders.setChecked(bool(disp.get("show_borders", self.chk_borders.isChecked())))
+            if "plot_font_size" in disp:
+                try:
+                    self.spin_plot_font_size.setValue(float(disp.get("plot_font_size", self.spin_plot_font_size.value())))
+                except (TypeError, ValueError):
+                    pass
+            idx = int(disp.get("grid_columns", self.col_combo.currentIndex()))
+            if 0 <= idx < self.col_combo.count():
+                self.col_combo.setCurrentIndex(idx)
+
+    def open_section(self, section_id: str) -> None:
+        item = self._accordion_by_id.get(section_id)
+        if not item:
+            return
+        item.set_expanded(True, animate=True)

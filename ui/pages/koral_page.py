@@ -48,6 +48,39 @@ except Exception:  # pragma: no cover
     load_ui_parameters = None  # type: ignore
 
 
+def _load_density_table() -> dict[str, float]:
+    """Load atomic densities from material_densities.csv.
+
+    Returns a dict mapping upper-case element symbol to atomic number density
+    in atoms/cm³.  The CSV column ``dens`` is stored as atoms/Å³ × 100
+    (SRIM convention), so we convert: dens_atoms_cm3 = dens_csv × 1e22.
+    """
+    csv_path = Path(__file__).parents[2] / "data" / "material_densities" / "material_densities.csv"
+    table: dict[str, float] = {}
+    try:
+        with open(csv_path, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = [p.strip() for p in line.split(",")]
+                if len(parts) < 4:
+                    continue
+                symbol = parts[0].upper()
+                try:
+                    dens_csv = float(parts[3])
+                except ValueError:
+                    continue
+                # dens column is in units of 0.01 atoms/Å³  →  multiply by 1e22 to get atoms/cm³
+                table[symbol] = dens_csv * 1.0e22
+    except OSError:
+        pass
+    return table
+
+
+_DENSITY_TABLE: dict[str, float] = _load_density_table()
+
+
 class _KoralWorker(QObject):
     finished = pyqtSignal(list)
     error = pyqtSignal(str)
@@ -450,6 +483,31 @@ class KoralPage(QWidget):
         request = self._collect_calculation_request()
         self._last_request = request
 
+        # Print request in __main__.py style for debugging
+        ion = request.get("ion", {})
+        tgt = request.get("target", {})
+        elements = tgt.get("elements", [])
+        z_targets = [e.get("Z") for e in elements]
+        m_targets = [e.get("mass_amu") for e in elements]
+        d_target = tgt.get("number_density_atoms_cm3", 0.0)
+        compound_corr = tgt.get("compound_correction", 1.0)
+        s_e_f = [compound_corr] * len(elements)
+        print("--- KORAL run settings ---")
+        print(f"  method='ZBL',")
+        print(f"  z_ion={ion.get('Z')},")
+        print(f"  m_ion={ion.get('mass_amu')},")
+        print(f"  z_target={z_targets},")
+        print(f"  m_target={m_targets},")
+        print(f"  d_target={d_target / 1e24:.5f},  # atoms/Å³  ({d_target:.4e} atoms/cm³)")
+        print(f"  s_e_f={s_e_f},")
+        energy = request.get("energy", {})
+        energy_min = energy.get("min_keV", "?")
+        energy_max = energy.get("max_keV", "?")
+        print(f"  start_energy={energy_min},  # keV")
+        print(f"  stop_energy={energy_max},  # keV")
+        print(f"  nr_values=100)")
+        print("--------------------------")
+
         # Basic input validation
         ion_symbol = str(request.get("ion", {}).get("symbol") or "").strip()
         if not ion_symbol:
@@ -666,10 +724,13 @@ class KoralPage(QWidget):
                 }
             )
 
-        # Provide SRIM-like defaults for atomic density so physics models can produce non-zero linear stopping.
-        # If/when a real density input exists in the UI, this should use that.
-        number_density_atoms_cm3 = 6.1238e22
-        # Estimate mass density from atomic density and average atomic mass.
+        # Read atomic number density from the UI spinner (weighted from DB, user-overridable).
+        number_density_atoms_cm3 = (
+            float(self.spin_target_density.value())
+            if hasattr(self, "spin_target_density")
+            else 0.0
+        )
+        # Estimate mass density from atomic density and stoichiometry-weighted atomic mass.
         total_ratio = sum(float(e.get("ratio", 0.0) or 0.0) for e in elements) if elements else 0.0
         avg_mass_amu = 0.0
         if total_ratio > 0.0:
@@ -694,6 +755,8 @@ class KoralPage(QWidget):
             requested.append("lat_strag")
         if hasattr(self, "chk_nucl_strag") and self.chk_nucl_strag.isChecked():
             requested.append("nucl_stop")
+        if hasattr(self, "chk_nucl_strag_qn") and self.chk_nucl_strag_qn.isChecked():
+            requested.append("nucl_strag")
         if hasattr(self, "chk_elec_hop") and self.chk_elec_hop.isChecked():
             requested.append("elec_stop")
 
@@ -896,7 +959,9 @@ class KoralPage(QWidget):
             self.figure.clear()
             ax = self.figure.add_subplot(111)
             ax.set_title("KORAL results")
-            ax.set_xlabel("Energy (keV)")
+            ax.set_xlabel("Energy (eV)")
+            ax.set_xscale("log")
+            ax.set_yscale("log")
 
             # Use the same units as the table/export (UI converts from SI base units)
             range_unit = "Ång"
@@ -932,7 +997,7 @@ class KoralPage(QWidget):
             plotted_any = False
             for res in norm:
                 mid = str(res.get("model_id", "model"))
-                energies = res.get("energies_keV")
+                energies = [e * 1e3 for e in (res.get("energies_keV") or [])]  # keV -> eV
                 outputs = res.get("outputs")
                 if not isinstance(energies, list) or not isinstance(outputs, dict):
                     continue
@@ -968,7 +1033,7 @@ class KoralPage(QWidget):
                         except Exception:
                             plot_vals = vals
 
-                    ax.plot(energies, plot_vals, marker="o", label=label)
+                    ax.plot(energies, plot_vals, linewidth=1.0, label=label)
                     plotted_any = True
 
             if plotted_any:
@@ -1637,6 +1702,7 @@ class KoralPage(QWidget):
             "chk_long_strag",
             "chk_lat_strag",
             "chk_nucl_strag",
+            "chk_nucl_strag_qn",
             "chk_elec_hop",
         ):
             if hasattr(self, name):
@@ -1650,6 +1716,8 @@ class KoralPage(QWidget):
             output["cmb_nucl_stop_unit"] = self.cmb_nucl_stop_unit.currentText()
         if hasattr(self, "spin_compound_corr"):
             output["compound_corr"] = float(self.spin_compound_corr.value())
+        if hasattr(self, "spin_target_density"):
+            output["target_density"] = float(self.spin_target_density.value())
         if hasattr(self, "sw_koral_mode"):
             output["sw_koral_mode"] = bool(self.sw_koral_mode.isChecked())
         if hasattr(self, "all_none_chk"):
@@ -1745,6 +1813,7 @@ class KoralPage(QWidget):
                 "chk_long_strag",
                 "chk_lat_strag",
                 "chk_nucl_strag",
+                "chk_nucl_strag_qn",
                 "chk_elec_hop",
             ):
                 if hasattr(self, name) and name in output:
@@ -1783,6 +1852,13 @@ class KoralPage(QWidget):
             if hasattr(self, "spin_compound_corr") and "compound_corr" in output:
                 try:
                     self.spin_compound_corr.setValue(float(output.get("compound_corr", self.spin_compound_corr.value())))
+                except (TypeError, ValueError):
+                    pass
+
+            if hasattr(self, "spin_target_density") and "target_density" in output:
+                try:
+                    self.spin_target_density.setValue(float(output["target_density"]))
+                    self._density_user_override = True
                 except (TypeError, ValueError):
                     pass
 
@@ -1873,7 +1949,7 @@ class KoralPage(QWidget):
         grid.addWidget(QLabel("Energy min (keV)"), 0, 2, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self.energy_min = QDoubleSpinBox()
         self.energy_min.setRange(0.0, 1e6)
-        self.energy_min.setDecimals(2)
+        self.energy_min.setDecimals(4)
         self.energy_min.setValue(10.0)
         self.energy_min.setMaximumWidth(130)
         self.energy_min.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
@@ -1991,6 +2067,26 @@ class KoralPage(QWidget):
         self.elem_pick_btn.element_selected.connect(self.on_target_element_selected)
         self.elem_table.itemChanged.connect(self._handle_element_item_changed)
         self.elem_table.cellDoubleClicked.connect(self._handle_element_cell_double_clicked)
+
+        # Density row below the table
+        density_row = QWidget(box)
+        density_layout = QHBoxLayout(density_row)
+        density_layout.setContentsMargins(0, 0, 0, 0)
+        density_layout.setSpacing(6)
+        density_layout.addWidget(QLabel("Target Density (atoms/cm³)"))
+        self.spin_target_density = QDoubleSpinBox()
+        self.spin_target_density.setRange(0.0, 1.0e24)
+        self.spin_target_density.setDecimals(4)
+        self.spin_target_density.setSingleStep(1.0e21)
+        self.spin_target_density.setValue(0.0)
+        self.spin_target_density.setToolTip(
+            "Weighted atomic number density of the target compound.\n"
+            "Auto-filled from the material database when elements are added.\n"
+            "You can override this value manually."
+        )
+        density_layout.addWidget(self.spin_target_density, 1)
+        density_layout.addStretch(1)
+        v.addWidget(density_row)
 
         # Ensure the action row is visible even when empty.
         self._refresh_element_table()
@@ -2191,6 +2287,31 @@ class KoralPage(QWidget):
 
         self._updating_elements_table = False
 
+        # Update the weighted target density from the database.
+        # Only auto-fill when the user has not manually edited the spinner
+        # (we detect this by checking _density_user_override).
+        if not getattr(self, "_density_user_override", False):
+            self._update_density_from_elements()
+
+    def _update_density_from_elements(self) -> None:
+        """Compute stoichiometry-weighted atomic density and update the spinner."""
+        if not hasattr(self, "spin_target_density"):
+            return
+        entries = self.element_entries
+        total_ratio = sum(float(e.get("ratio", 0.0) or 0.0) for e in entries)
+        if total_ratio <= 0.0 or not entries:
+            return
+        weighted_density = 0.0
+        for e in entries:
+            symbol = (e.get("element") or {}).get("symbol", "")
+            w = float(e.get("ratio", 0.0) or 0.0) / total_ratio
+            dens = _DENSITY_TABLE.get(symbol.upper(), 0.0)
+            weighted_density += w * dens
+        if weighted_density > 0.0:
+            self.spin_target_density.blockSignals(True)
+            self.spin_target_density.setValue(weighted_density)
+            self.spin_target_density.blockSignals(False)
+
     def _handle_element_item_changed(self, item):
         if self._updating_elements_table:
             return
@@ -2256,10 +2377,12 @@ class KoralPage(QWidget):
         self._output_option_widgets["prange"] = [self.chk_prange, self.cmb_prange]
 
         row_long = QHBoxLayout()
-        self.chk_long_strag = QCheckBox("Long. Straggling")
+        self.chk_long_strag = QCheckBox("Long. Straggling (not implemented)")
+        self.chk_long_strag.setEnabled(False)
         self.cmb_long_strag = QComboBox()
         self.cmb_long_strag.clear()
         self.cmb_long_strag.addItems(self.state.unit_options)
+        self.cmb_long_strag.setEnabled(False)
         row_long.addWidget(self.chk_long_strag)
         row_long.addStretch(1)
         row_long.addWidget(self.cmb_long_strag)
@@ -2267,10 +2390,12 @@ class KoralPage(QWidget):
         self._output_option_widgets["long_strag"] = [self.chk_long_strag, self.cmb_long_strag]
 
         row_lat = QHBoxLayout()
-        self.chk_lat_strag = QCheckBox("Lat. Straggling")
+        self.chk_lat_strag = QCheckBox("Lat. Straggling (not implemented)")
+        self.chk_lat_strag.setEnabled(False)
         self.cmb_lat_strag = QComboBox()
         self.cmb_lat_strag.clear()
         self.cmb_lat_strag.addItems(self.state.unit_options)
+        self.cmb_lat_strag.setEnabled(False)
         row_lat.addWidget(self.chk_lat_strag)
         row_lat.addStretch(1)
         row_lat.addWidget(self.cmb_lat_strag)
@@ -2284,7 +2409,6 @@ class KoralPage(QWidget):
         self.cmb_nucl_stop_unit = QComboBox()
         self.cmb_nucl_stop_unit.addItems(
             [
-                "L.S.S. reduced units",
                 "eV/Å",
                 "keV/µm",
                 "MeV/mm",
@@ -2292,11 +2416,19 @@ class KoralPage(QWidget):
                 "MeV/(mg/cm²)",
                 "keV/(mg/cm²)",
                 "eV/(10¹⁵ atoms/cm²)",
+                "L.S.S. reduced units",
             ]
         )
         row_nucl.addWidget(self.cmb_nucl_stop_unit)
         v.addLayout(row_nucl)
         self._output_option_widgets["nucl_stop"] = [self.chk_nucl_strag, self.cmb_nucl_stop_unit]
+
+        row_nucl_strag = QHBoxLayout()
+        self.chk_nucl_strag_qn = QCheckBox("Nuclear Straggling (Qn)")
+        row_nucl_strag.addWidget(self.chk_nucl_strag_qn)
+        row_nucl_strag.addStretch(1)
+        v.addLayout(row_nucl_strag)
+        self._output_option_widgets["nucl_strag"] = [self.chk_nucl_strag_qn]
 
         row_elect = QHBoxLayout()
         self.chk_elec_hop = QCheckBox("Electron Stopping")
@@ -2305,7 +2437,6 @@ class KoralPage(QWidget):
         self.cmb_elec_stop_unit = QComboBox()
         self.cmb_elec_stop_unit.addItems(
             [
-                "L.S.S. reduced units",
                 "eV/Å",
                 "keV/µm",
                 "MeV/mm",
@@ -2313,6 +2444,7 @@ class KoralPage(QWidget):
                 "MeV/(mg/cm²)",
                 "keV/(mg/cm²)",
                 "eV/(10¹⁵ atoms/cm²)",
+                "L.S.S. reduced units",
             ]
         )
         row_elect.addWidget(self.cmb_elec_stop_unit)

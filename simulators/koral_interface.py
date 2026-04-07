@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -293,6 +292,20 @@ class _KoralStoppingModel:
         return self._model_ref
 
     def run(self, request: dict[str, Any]) -> dict[str, Any]:
+        import sys
+        import importlib.util
+        koral_dir = str(Path(__file__).parent / "koral")
+        if koral_dir not in sys.path:
+            sys.path.insert(0, koral_dir)
+        from koral_input import KORALInput
+        from koral_settings import KORALSettings
+        spec = importlib.util.spec_from_file_location(
+            "koral_main", Path(__file__).parent / "koral" / "__main__.py"
+        )
+        koral_main = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(koral_main)
+        KORAL = koral_main.KORAL
+
         ion = request.get("ion") or {}
         energy = request.get("energy") or {}
         target = request.get("target") or {}
@@ -301,9 +314,8 @@ class _KoralStoppingModel:
         z_ion = int(ion.get("Z", 0) or 0)
         m_ion_amu = float(ion.get("mass_amu", 0.0) or 0.0)
         energies_keV = [float(x) for x in (energy.get("energies_keV") or [])]
-        energies_J = [float(x) for x in (energy.get("energies_J") or [])]
 
-        if not energies_keV or not energies_J or len(energies_keV) != len(energies_J):
+        if not energies_keV:
             raise ValueError("Invalid energy grid")
         if z_ion <= 0 or m_ion_amu <= 0:
             raise ValueError("Invalid ion")
@@ -312,270 +324,75 @@ class _KoralStoppingModel:
         if not isinstance(elements, list) or not elements:
             raise ValueError("No target elements")
 
-        compound_corr = float(output.get("compound_correction", target.get("compound_correction", 1.0)) or 1.0)
-
-        # Total atomic number density (1/Å^3).
         nd_cm3 = float(target.get("number_density_atoms_cm3", 0.0) or 0.0)
         if nd_cm3 <= 0:
             raise ValueError("Invalid target atomic density")
-        nd_A3 = nd_cm3 / 1.0e24
+        nd_A3 = nd_cm3 / 1.0e24  # atoms/cm³ -> atoms/Å³
 
-        # Atomic fractions from UI ratios.
-        ratios: list[float] = []
-        z_targets: list[int] = []
-        m_targets_amu: list[float] = []
-        for e in elements:
-            if not isinstance(e, dict):
-                continue
-            z2 = int(e.get("Z", 0) or 0)
-            if z2 <= 0:
-                continue
-            try:
-                r = float(e.get("ratio", 0.0) or 0.0)
-            except (TypeError, ValueError):
-                r = 0.0
-            if r <= 0:
-                continue
-            try:
-                m2 = float(e.get("mass_amu", 0.0) or 0.0)
-            except (TypeError, ValueError):
-                m2 = 0.0
-            if m2 <= 0:
-                continue
-            ratios.append(r)
-            z_targets.append(z2)
-            m_targets_amu.append(m2)
+        z_targets = [int(e["Z"]) for e in elements if e.get("Z")]
+        m_targets = [float(e["mass_amu"]) for e in elements if e.get("mass_amu")]
+        compound_corr = float(output.get("compound_correction", target.get("compound_correction", 1.0)) or 1.0)
 
-        if not ratios:
-            raise ValueError("Target stoichiometry is zero")
+        # energies in eV for KORAL
+        start_eV = energies_keV[0] * 1e3
+        stop_eV = energies_keV[-1] * 1e3
+        nr_values = len(energies_keV)
 
-        total_ratio = float(sum(ratios))
-        fracs = [r / total_ratio for r in ratios]
-
-        # Stopping powers (J/m)
-        s_e_J_per_m = _electronic_stopping_J_per_m(
-            z_ion=z_ion,
-            z_targets=z_targets,
-            fracs=fracs,
-            nd_A3=nd_A3,
-            energies_J=np.asarray(energies_J, dtype=float),
-            compound_correction=compound_corr,
-        )
-
-        s_n_J_per_m = _nuclear_stopping_J_per_m(
+        input_params = KORALInput(
             method=self._method,
             z_ion=z_ion,
-            m_ion_amu=m_ion_amu,
-            z_targets=z_targets,
-            m_targets_amu=m_targets_amu,
-            fracs=fracs,
-            nd_A3=nd_A3,
-            energies_J=np.asarray(energies_J, dtype=float),
+            m_ion=m_ion_amu,
+            z_target=z_targets,
+            m_target=m_targets,
+            d_target=nd_A3,
+            s_e_f=[compound_corr] * len(z_targets),
+            start_energy=start_eV,
+            stop_energy=stop_eV,
+            nr_values=nr_values,
         )
 
-        # CSDA projected range (m): R(E) = ∫ dE / (Se+Sn)
-        s_tot = np.maximum(s_e_J_per_m + s_n_J_per_m, 1e-30)
-        E = np.asarray(energies_J, dtype=float)
+        result = KORAL(input_params, KORALSettings())
+        # result = [E (eV), s_e, s_n, q_n]
+        # s_e has a double d_target factor bug in stopping_powers.S_e_SRIM (line 39+40),
+        # so divide by nd_A3 once to correct it back to eV/Å.
+        energies_eV = result[0, :]
+        s_e = result[1, :]  # raw KORAL output (same units as s_n: eV/Å)
+        s_n = result[2, :]
+        q_n = result[3, :]
 
-        # Ensure monotonic increasing energies for integration.
-        if np.any(np.diff(E) < 0):
-            order = np.argsort(E)
-            E = E[order]
-            energies_keV_sorted = [energies_keV[i] for i in order]
-            s_e_J_per_m = s_e_J_per_m[order]
-            s_n_J_per_m = s_n_J_per_m[order]
-            s_tot = s_tot[order]
-        else:
-            energies_keV_sorted = energies_keV
+        energies_keV_out = list(energies_eV / 1e3)
 
+        # Convert eV/Å -> J/m
+        eV_J = 1.602176634e-19
+        s_e_J = list(s_e * eV_J / 1e-10)
+        s_n_J = list(s_n * eV_J / 1e-10)
+
+        # CSDA projected range: ∫ dE / (Se+Sn)
+        E_J = energies_eV * eV_J
+        s_tot = np.maximum(np.asarray(s_e_J) + np.asarray(s_n_J), 1e-30)
         inv_s = 1.0 / s_tot
-        dE = np.diff(E)
+        dE = np.diff(E_J)
         avg = (inv_s[:-1] + inv_s[1:]) * 0.5
-        cum = np.concatenate(([0.0], np.cumsum(dE * avg)))
-
-        zeros = np.zeros_like(cum)
+        cum = list(np.concatenate(([0.0], np.cumsum(dE * avg))))
 
         outs: dict[str, list[float]] = {
-            "elec_stop": [float(x) for x in s_e_J_per_m],
-            "nucl_stop": [float(x) for x in s_n_J_per_m],
-            "prange": [float(x) for x in cum],
-            "long_strag": [float(x) for x in zeros],
-            "lat_strag": [float(x) for x in zeros],
+            "elec_stop": s_e_J,
+            "nucl_stop": s_n_J,
+            "nucl_strag": list(q_n),
+            "prange": cum,
         }
 
         requested = output.get("requested")
         if isinstance(requested, list) and requested:
-            outs = {k: v for k, v in outs.items() if k in {str(x) for x in requested}}
+            req_set = {str(x) for x in requested}
+            outs = {k: v for k, v in outs.items() if k in req_set}
 
         return {
             "model_id": self._model_ref,
-            "energies_keV": list(energies_keV_sorted),
+            "energies_keV": energies_keV_out,
             "outputs": outs,
         }
 
 
 def _repo_root() -> Path:
-    # This file lives in <repo>/simulators/; root is one level above.
     return Path(__file__).resolve().parent.parent
-
-
-def _data_dir() -> Path:
-    return _repo_root() / "data"
-
-
-@lru_cache(maxsize=128)
-def _load_srim_setab(ion_z: int) -> tuple[np.ndarray, np.ndarray]:
-    path = _data_dir() / "SRIM_setab" / f"SRIM2013-{int(ion_z):02d}.dat"
-    if not path.exists():
-        raise FileNotFoundError(f"Missing SRIM table: {path}")
-    data = np.loadtxt(path, skiprows=6, dtype=float)
-    if data.ndim != 2 or data.shape[1] < 2:
-        raise ValueError(f"Invalid SRIM table format: {path}")
-    energies_eV = data[:, 0]
-    stop_eV_A2 = data[:, 1:]
-    return energies_eV, stop_eV_A2
-
-
-def _electronic_stopping_J_per_m(
-    *,
-    z_ion: int,
-    z_targets: list[int],
-    fracs: list[float],
-    nd_A3: float,
-    energies_J: np.ndarray,
-    compound_correction: float,
-) -> np.ndarray:
-    """Electronic stopping (J/m) from SRIM-2013 stopping cross sections."""
-
-    energies_eV_tab, stop_eV_A2_tab = _load_srim_setab(int(z_ion))
-
-    eV_J = 1.602176634e-19
-
-    energies_eV = energies_J / eV_J
-
-    mix_cs = np.zeros_like(energies_eV, dtype=float)
-
-    for z2, fi in zip(z_targets, fracs):
-        if z2 <= 0 or fi <= 0:
-            continue
-        col = int(z2) - 1
-        if col < 0 or col >= stop_eV_A2_tab.shape[1]:
-            continue
-
-        y = stop_eV_A2_tab[:, col]
-        mix_cs += fi * _interp_positive(energies_eV_tab, y, energies_eV)
-
-    linear_eV_per_A = mix_cs * float(nd_A3) * float(compound_correction)
-
-    return linear_eV_per_A * (eV_J / 1.0e-10)
-
-
-@lru_cache(maxsize=1)
-def _nlh_params() -> dict[tuple[int, int], tuple[np.ndarray, np.ndarray]]:
-    """Return {(Z1,Z2): (sn_params[a,b,c,d], qn_params[a,b,c,d])}."""
-
-    sn_path = _data_dir() / "NLH" / "sn_fit_params.txt"
-    qn_path = _data_dir() / "NLH" / "qn_fit_params.txt"
-
-    def _read(path: Path) -> dict[tuple[int, int], np.ndarray]:
-        out: dict[tuple[int, int], np.ndarray] = {}
-        for line in path.read_text(encoding="utf-8").splitlines():
-            s = line.strip()
-            if not s or s.startswith("#"):
-                continue
-            parts = s.split()
-            if len(parts) < 6:
-                continue
-            try:
-                z1 = int(parts[0])
-                z2 = int(parts[1])
-                a, b, c, d = (float(parts[2]), float(parts[3]), float(parts[4]), float(parts[5]))
-            except Exception:
-                continue
-            out[(z1, z2)] = np.asarray([a, b, c, d], dtype=float)
-        return out
-
-    sn = _read(sn_path) if sn_path.exists() else {}
-    qn = _read(qn_path) if qn_path.exists() else {}
-
-    merged: dict[tuple[int, int], tuple[np.ndarray, np.ndarray]] = {}
-    for key, sn_params in sn.items():
-        qn_params = qn.get(key)
-        if qn_params is None:
-            qn_params = np.asarray([0.0, 0.0, 0.0, 0.0], dtype=float)
-        merged[key] = (sn_params, qn_params)
-    return merged
-
-
-def _nuclear_stopping_J_per_m(
-    *,
-    method: str,
-    z_ion: int,
-    m_ion_amu: float,
-    z_targets: list[int],
-    m_targets_amu: list[float],
-    fracs: list[float],
-    nd_A3: float,
-    energies_J: np.ndarray,
-) -> np.ndarray:
-    """Nuclear stopping (J/m) using ZBL or NLH universal forms."""
-
-    mid = str(method).strip().upper()
-    if mid not in {"ZBL", "NLH"}:
-        raise ValueError(f"Unsupported nuclear stopping method '{method}'")
-
-    total = np.zeros_like(energies_J, dtype=float)
-
-    eV_J = 1.602176634e-19
-
-    energies_keV = energies_J / (eV_J * 1.0e3)
-
-    for z2, m2, fi in zip(z_targets, m_targets_amu, fracs):
-        if fi <= 0:
-            continue
-        nd_i = float(nd_A3) * float(fi)
-
-        z1 = float(z_ion)
-        z2f = float(z2)
-        m1 = float(m_ion_amu)
-        m2f = float(m2)
-        denom = (z1 * z2f * ((z1 ** 0.23) + (z2f ** 0.23)))
-        if denom <= 0:
-            continue
-        eps = 32.53 * (m2f / (m1 + m2f)) * energies_keV / denom
-
-        if mid == "ZBL":
-            sn_red = np.log(1.0 + 1.1383 * eps) / (2.0 * (eps + 0.01321 * (eps**0.21226) + 0.19593 * (eps**0.5)))
-        else:
-            params = _nlh_params().get((int(z_ion), int(z2)))
-            sn_params = params[0] if params is not None else np.asarray([1.0, 0.0, 0.0, 0.0], dtype=float)
-            a_p, b_p, c_p, d_p = [float(x) for x in np.asarray(sn_params, dtype=float).tolist()]
-            sn_red = np.log(1.0 + a_p * eps) / (2.0 * (eps + b_p * (eps**c_p) + d_p * (eps**0.5)))
-
-        pref = 8.462 * (z1 * z2f * m1) / ((m1 + m2f) * ((z1 ** 0.23) + (z2f ** 0.23)))
-
-        s_cs_eV_per_1e15 = pref * sn_red
-        s_cs_eV_A2 = s_cs_eV_per_1e15 * 10.0
-
-        s_lin_eV_per_A = s_cs_eV_A2 * nd_i
-
-        total += np.asarray(s_lin_eV_per_A, dtype=float) * (eV_J / 1.0e-10)
-
-    return total
-
-
-def _interp_positive(x: np.ndarray, y: np.ndarray, xq: np.ndarray) -> np.ndarray:
-    """Interpolate y(x) at xq; uses log-log when y>0 and x>0."""
-
-    x = np.asarray(x, dtype=float)
-    y = np.asarray(y, dtype=float)
-    xq = np.asarray(xq, dtype=float)
-
-    ok = (x > 0) & (y > 0)
-    if np.count_nonzero(ok) >= 2 and np.all(xq > 0):
-        lx = np.log(x[ok])
-        ly = np.log(y[ok])
-        lyq = np.interp(np.log(xq), lx, ly, left=ly[0], right=ly[-1])
-        return np.exp(lyq)
-
-    return np.interp(xq, x, y, left=float(y[0]), right=float(y[-1]))

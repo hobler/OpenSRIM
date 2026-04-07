@@ -1,2 +1,14 @@
 gewichteten dichten übergeben
 mit db vergelichen ob verbindung bereits definiert ist
+Auf koral ist energy unten abgeschnitten
+Lateral und longitudinal straggling
+zweite masse: des häufigsten isotops -> ion default, andere ist mittelwert gewichtet mit natürlichem vorkommen der Isotope
+in periodensystem vorschau: surface binding energy, zwei massen, 
+mc setup surface binding energy bei atoms per layer erweitern
+mc setup damage in atoms per layer
+vorauswahl ion/recoil in output options
+koral fix einbauen ohne möglichkeit
+default werte in mc setup aus read_parmas nehmen und nur user defined überschreiben
+anzahl der pins sind auf 120 soll user ändern können
+
+toml file read_params erstellen

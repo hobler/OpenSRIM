@@ -1038,6 +1038,7 @@ class KoralPage(QWidget):
 
             if plotted_any:
                 ax.legend()
+            self.figure.tight_layout()
             self.canvas.draw_idle()
 
         # Table (SRIM-like ordering)
@@ -2492,8 +2493,8 @@ class KoralPage(QWidget):
     def _toggle_all_options(self, state):
         # Toggle all checkboxes between checked and unchecked based on all_none_chk
         new_state = self.all_none_chk.isChecked()
-        for checkbox in [self.chk_prange, self.chk_long_strag, self.chk_lat_strag, self.chk_nucl_strag, self.chk_elec_hop]:
-            if checkbox.isVisible():
+        for checkbox in [self.chk_prange, self.chk_nucl_strag, self.chk_nucl_strag_qn, self.chk_elec_hop]:
+            if checkbox.isEnabled() and checkbox.isVisible():
                 checkbox.setChecked(new_state)
 
     def _build_koral_plot_list_section(self) -> QGroupBox:

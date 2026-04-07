@@ -18,6 +18,11 @@ from PyQt6.QtWidgets import (
 
 from state import AppState
 from ui.widgets.periodic_table_picker import PeriodicTableButton, PeriodicTableDialog
+
+try:
+    from simulators.opentrim.read_params import read_params as _read_opentrim_params
+except Exception:
+    _read_opentrim_params = None  # type: ignore
 from ui.dialogs.compound_dictionary_dialog import CompoundDictionaryDialog
 
 try:
@@ -198,6 +203,7 @@ class MCSetupPage(QWidget):
             "simulator": self.simulator_combo.currentText() if hasattr(self, "simulator_combo") else "",
         }
         output_meta = {
+            "nbins": int(self.spin_nbins.value()) if hasattr(self, "spin_nbins") else 120,
             "traj_start": bool(self.chk_traj_start.isChecked()) if hasattr(self, "chk_traj_start") else False,
             "traj_end": bool(self.chk_traj_end.isChecked()) if hasattr(self, "chk_traj_end") else False,
             "traj_collisions": bool(self.chk_traj_coll.isChecked()) if hasattr(self, "chk_traj_coll") else False,
@@ -301,6 +307,11 @@ class MCSetupPage(QWidget):
                     self.simulator_combo.setCurrentIndex(idx)
 
         output = payload.get("output") or {}
+        if hasattr(self, "spin_nbins") and "nbins" in output:
+            try:
+                self.spin_nbins.setValue(int(output["nbins"]))
+            except (TypeError, ValueError):
+                pass
         for attr, key in (
             ("chk_traj_start", "traj_start"),
             ("chk_traj_end", "traj_end"),
@@ -965,6 +976,31 @@ class MCSetupPage(QWidget):
 
         scroll.setWidget(content)
         v.addWidget(scroll, 1)
+
+        # nbins row below the scroll area
+        nbins_row = QHBoxLayout()
+        nbins_row.setContentsMargins(0, 4, 0, 0)
+        nbins_row.addWidget(QLabel("Number of bins:"))
+        self.spin_nbins = QSpinBox()
+        self.spin_nbins.setRange(10, 10000)
+        self.spin_nbins.setSingleStep(10)
+        _default_nbins = 120
+        if _read_opentrim_params is not None:
+            try:
+                _p = _read_opentrim_params()
+                _default_nbins = int(
+                    _p.get("output", {})
+                    .get("depth_distribution", {})
+                    .get("ion_recoils", {})
+                    .get("nbins", 120)
+                )
+            except Exception:
+                pass
+        self.spin_nbins.setValue(_default_nbins)
+        self.spin_nbins.setToolTip("Number of bins for depth and lateral distributions")
+        nbins_row.addWidget(self.spin_nbins)
+        nbins_row.addStretch(1)
+        v.addLayout(nbins_row)
         return box
 
     # -------- footer / logs / progress ----------
@@ -980,17 +1016,28 @@ class MCSetupPage(QWidget):
         ions_row = QHBoxLayout()
         ions_row.setSpacing(8)
 
+        _default_nions = 10000
+        _default_update = 100
+        if _read_opentrim_params is not None:
+            try:
+                _p = _read_opentrim_params()
+                _sim = _p.get("simulation", {})
+                _default_nions = int(_sim.get("nions", 10000))
+                _default_update = int(_sim.get("nions_update", 100))
+            except Exception:
+                pass
+
         ions_row.addWidget(QLabel("No. of Ions"))
         self.no_of_ions_spin = QSpinBox()
         self.no_of_ions_spin.setRange(1, 1_000_000_000)
-        self.no_of_ions_spin.setValue(10000)
+        self.no_of_ions_spin.setValue(_default_nions)
         ions_row.addWidget(self.no_of_ions_spin)
 
         ions_row.addSpacing(8)
         ions_row.addWidget(QLabel("Update after Ions"))
         self.update_after_ions_spin = QSpinBox()
         self.update_after_ions_spin.setRange(1, 1_000_000_000)
-        self.update_after_ions_spin.setValue(100)
+        self.update_after_ions_spin.setValue(_default_update)
         ions_row.addWidget(self.update_after_ions_spin)
 
         ions_row.addStretch(1)

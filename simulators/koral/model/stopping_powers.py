@@ -1,4 +1,5 @@
 import os
+from typing import Callable
 
 import numpy as np
 import scipy.constants as constants
@@ -23,7 +24,7 @@ def Q_u(s_u: list[float],
 def S_e_SRIM(z_ion: int,
             z_target: list[int],
             d_target: float,
-            s_e_f: list[float]) -> callable[[list[float]], list[float]]:
+            s_e_f: list[float]) -> Callable[[list[float]], list[float]]:
     # TODO: define file path globally
     srim_setab_dir = './data/SRIM_setab/'
     filename = f'SRIM2013-{z_ion:02d}.dat'

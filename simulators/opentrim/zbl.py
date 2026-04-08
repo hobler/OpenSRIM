@@ -15,7 +15,9 @@ Available functions:
 """
 from math import sqrt
 import numpy as np
+from scipy.optimize import brentq
 from numba import jit
+from numba.core.extending import register_jitable
 
 
 # Constants for ZBL screening function
@@ -29,30 +31,84 @@ B1 = 0.94229
 B2 = 0.4029
 B3 = 0.20162
 
-A0B0 = A0 * B0
-A1B1 = A1 * B1
-A2B2 = A2 * B2
-A3B3 = A3 * B3
+def get_coefs(Z1, Z2):
+    """Read ZBL coefficients and calculate derived parameters.
 
-@jit
-def zbl_screen(r):
+    Parameters:
+        Z1 (int): Atomic number of atom 1
+        Z2 (int): Atomic number of atom 2
+
+    Returns:
+        rnorm (float): Normalization length (RNORM)
+        a (ndarray): Coefficients for the screening function
+        b (ndarray): Screening lengths (1/RNORM)
+        r34 (float): Maximum range for piecewise approximation of the 
+            potential (RNORM)
+        k (ndarray): Array of coefficients for the piecewise approximation
+    """
+    rnorm = 0.4685 / (Z1**0.23 + Z2**0.23)
+    a = np.array([A0, A1, A2, A3])
+    b = np.array([B0, B1, B2, B3])
+
+   # Calculate parameters for the piecewise approximation
+    def screen_fun(r):
+        exp = np.exp(-b*r)
+        screen = np.sum(a*exp)
+        dscreen = - np.sum(a*b*exp)
+        return screen, dscreen
+    
+    # k2/R part
+    def fun2(r):
+        screen, dscreen = screen_fun(r)
+        return screen + r * dscreen
+
+    r_touch2 = brentq(fun2, 0.0, 40.0)
+    k2 = r_touch2 * screen_fun(r_touch2)[0]
+
+    # k3/R^3 part
+    def fun3(r):
+        screen, dscreen = screen_fun(r)
+        return screen + 1/3 * r * dscreen
+
+    r_touch3 = brentq(fun3, 0.0, 40.0)
+    k3 = r_touch3**3 * screen_fun(r_touch3)[0]
+
+    # 1 - k1*R part
+    k1 = 1 / (4*k2)
+
+    k = np.array([k1, k2, k3])
+    
+    # Radius beyond which the piecewise approximation is not used anymore
+    r34 = r_touch3
+
+    return rnorm, a, b, r34, k
+
+
+@register_jitable
+def screen_fun(r, pot_coefs):
     """Calculate the ZBL screening function and its derivative.
 
     Parameters:
         r (float): Distance (RNORM)
+        pot_coefs: Parameters needed for the evaluation of the
+            screening function
+            
     Returns:
         (float): ZBL screening function at distance r
-        (float): derivative of ZBL screening function at distance r (1/RNORM)
+        (float): derivative of ZBL screening function at distance r
+            (1/RNORM)
     """
-    exp0 = np.exp(-B0 * r)
-    exp1 = np.exp(-B1 * r)
-    exp2 = np.exp(-B2 * r)
-    exp3 = np.exp(-B3 * r)
+    r = np.asarray(r)
+    a = pot_coefs.a[:4]
+    b = pot_coefs.b[:4]
 
-    screen = (A0*exp0 + A1*exp1 + A2*exp2 + A3*exp3)
-    dscreen = (- A0B0*exp0 - A1B1*exp1 - A2B2*exp2 - A3B3*exp3)
-    
+    exp = np.exp(-np.outer(r, b))
+    screen = np.sum(a*exp, axis=1)
+    dscreen = - np.sum(a*b*exp, axis=1)
+
     return screen, dscreen
+
+
 
 
 # Constants for apsis estimation for the ZBL potential
@@ -64,12 +120,14 @@ R23sq = K3 / K2
 NITER = 1           # number of Newton-Raphson iterations
 
 @jit
-def estimate_apsis(e, p):
+def estimate_apsis(e, p, pot_coefs):
     """Estimate the distance of closest approach (apsis) in a colllision.
 
     Parameters:
         e (float): energy of projectile before the collision (ENORM)
         p (float): impact parameter (RNORM)
+        pot_coefs: Parameters needed for the evaluation of the
+            screening function
 
     Returns:
         (float): Estimated apsis of the collision (RNORM)
@@ -87,13 +145,14 @@ def estimate_apsis(e, p):
         r0 = sqrt(r0sq)
     
     # Do Newton-Raphson iterations to improve the estimate
+    r0 = np.asarray(r0)
     for _ in range(NITER):
-        screen, dscreen = zbl_screen(r0)
-        numerator = r0*(r0-screen/e) - p**2
-        denominator = 2*r0 - (screen+r0*dscreen)/e
+        screen, dscreen = screen_fun(r0, pot_coefs)
+        numerator = r0*(r0-screen[0]/e) - p**2
+        denominator = 2*r0 - (screen[0]+r0*dscreen[0])/e
         r0 -= numerator/denominator
 
-        residuum = 1 - screen/(e*r0) - p**2/r0**2
+        residuum = 1 - screen[0]/(e*r0) - p**2/r0**2
         if abs(residuum) < 1e-4:
             break
 
@@ -107,21 +166,23 @@ C4 = 14.813
 C5 = 9.3066
 
 @jit
-def magic(e, p):
+def magic(e, p, pot_coefs):
     """Calculate CM scattering angle using Biersack's magic formula.
 
     Parameters:
         e (float): energy of projectile before the collision (ENORM)
         p (float): impact parameter (RNORM)
-    
+        pot_coefs: Parameters needed for the evaluation of the
+            screening function
+
     Returns:
         (float): cosine of half the scattering angle in the center-of-mass 
             system
     """
-    r0 = estimate_apsis(e, p)
-    screen, dscreen = zbl_screen(r0)
+    r0 = estimate_apsis(e, p, pot_coefs)
+    screen, dscreen = screen_fun(r0, pot_coefs)
 
-    rho = 2*(e*r0-screen) / (screen/r0-dscreen)
+    rho = 2*(e*r0-screen[0]) / (screen[0]/r0-dscreen[0])
     sqrte = sqrt(e)
     alpha = 1 + C1/sqrte
     beta = (C2+sqrte) / (C3+sqrte)

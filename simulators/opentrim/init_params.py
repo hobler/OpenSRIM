@@ -8,7 +8,8 @@ from collections import namedtuple
 from math import sqrt
 import numpy as np
 #from . import cm_scatter
-from .nlhlin import read_coefs
+from . import nlhlin
+from . import zbl
 
 
 def _get_nlhlin_coefs(z1, z2):
@@ -288,27 +289,24 @@ def _get_scatter_params(input_params, nelem, elements_params):
         scatter_params: (np.recarray) The scattering parameters.
     """
     pot_model = input_params["models"]["potential"]
-    if input_params["models"]["scattering integrals"]["algorithm"] == "magic":
-        pot_model += "_magic"
+    integrate_algorithm = (
+        input_params["models"]["scattering integrals"]["algorithm"])
 
     rnorm = np.empty((NELEM, NELEM), dtype=np.float64)
     enorm = np.empty((NELEM, NELEM), dtype=np.float64)
     dirfac = np.empty((NELEM, NELEM), dtype=np.float64)
     denfac = np.empty((NELEM, NELEM), dtype=np.float64)
 
-    if pot_model == "NLHlin":
-        NLHLIN_COEFS_DTYPE = np.dtype([
-            ("a1", np.float64),
-            ("b1", np.float64),
-            ("a2", np.float64),
-            ("b2", np.float64),
-            ("a3", np.float64),
-            ("b3", np.float64),
-            ("c", np.float64),
-            ("d", np.float64),
-            ("rmax", np.float64),
-        ], align=True)
-        nlhlin_coefs = np.empty((NELEM, NELEM), dtype=NLHLIN_COEFS_DTYPE)
+    POT_COEFS_DTYPE = np.dtype([
+        ("a", np.float64, (4,)),
+        ("b", np.float64, (4,)),
+        ("c", np.float64),
+        ("d", np.float64),
+        ("rmax", np.float64),
+        ("r34", np.float64),
+        ("k", np.float64, (4,)),
+    ], align=True)
+    pot_coefs = np.empty((NELEM, NELEM), dtype=POT_COEFS_DTYPE)
 
     for ielem1 in range(nelem):
         for ielem2 in range(nelem):
@@ -317,57 +315,47 @@ def _get_scatter_params(input_params, nelem, elements_params):
             m1 = elements_params[ielem1].M
             m2 = elements_params[ielem2].M
             m1_m2 = m1 / m2
-
-            if pot_model.startswith("ZBL"):
-                rnorm[ielem1, ielem2] = 0.4685 / (z1**0.23 + z2**0.23)
-            elif pot_model.startswith("NLHlin"):
-                rnorm[ielem1, ielem2] = 0.4685 / (sqrt(sqrt(z1) + sqrt(z2)))
-            enorm[ielem1, ielem2] = (14.39979 * z1 * z2 / rnorm[ielem1, ielem2] 
-                                    * (1 + m1_m2))
             dirfac[ielem1, ielem2] = 2 / (1 + m1_m2)
             denfac[ielem1, ielem2] = 4 * m1_m2 / (1 + m1_m2)**2
-            
+
             if pot_model == "NLHlin":
-                a1, b1, a2, b2, a3, b3, rmax = _get_nlhlin_coefs(z1, z2)
-                b1 *= rnorm[ielem1, ielem2]
-                b2 *= rnorm[ielem1, ielem2]
-                b3 *= rnorm[ielem1, ielem2]
-                c = 1.0 - (a1 + a2 + a3)
-                rmax /= rnorm[ielem1, ielem2]
-                d = (a1*np.exp(-b1*rmax) + a2*np.exp(-b2*rmax) 
-                    + a3*np.exp(-b3*rmax) + c)
-                nlhlin_coefs[ielem1, ielem2]["a1"] = a1
-                nlhlin_coefs[ielem1, ielem2]["b1"] = b1
-                nlhlin_coefs[ielem1, ielem2]["a2"] = a2
-                nlhlin_coefs[ielem1, ielem2]["b2"] = b2
-                nlhlin_coefs[ielem1, ielem2]["a3"] = a3
-                nlhlin_coefs[ielem1, ielem2]["b3"] = b3
-                nlhlin_coefs[ielem1, ielem2]["c"] = c
-                nlhlin_coefs[ielem1, ielem2]["d"] = d
-                nlhlin_coefs[ielem1, ielem2]["rmax"] = rmax 
+                rnorm_, a, b, c, d, r34, rmax, k = nlhlin.get_coefs(z1, z2)
+                pot_coefs[ielem1, ielem2]["c"] = c
+                pot_coefs[ielem1, ielem2]["d"] = d
+                pot_coefs[ielem1, ielem2]["rmax"] = rmax
+            else:
+                rnorm_, a, b, r34, k = zbl.get_coefs(z1, z2)
+                pot_coefs[ielem1, ielem2]["c"] = 0.0
+                pot_coefs[ielem1, ielem2]["d"] = 0.0
+                pot_coefs[ielem1, ielem2]["rmax"] = np.inf
+            rnorm[ielem1, ielem2] = rnorm_
+            pot_coefs[ielem1, ielem2]["a"][:len(a)] = a
+            pot_coefs[ielem1, ielem2]["b"][:len(b)] = b
+            pot_coefs[ielem1, ielem2]["r34"] = r34
+            pot_coefs[ielem1, ielem2]["k"][:len(k)] = k
+
+            enorm[ielem1, ielem2] = (14.39979 * z1 * z2 / rnorm[ielem1, ielem2] 
+                                    * (1 + m1_m2))
 
     SCATTER_PARAMS_DTYPE = np.dtype([
-        ("pot_model", "<U12"),
+        ("pot_model", "<U16"),
+        ("integrate_algorithm", "<U8"),
         ("enorm", np.float64, (NELEM, NELEM)),
         ("rnorm", np.float64, (NELEM, NELEM)),
         ("dirfac", np.float64, (NELEM, NELEM)),
         ("denfac", np.float64, (NELEM, NELEM)),
+        ("pot_coefs", POT_COEFS_DTYPE, (NELEM, NELEM)),
     ], align=True)
-
-    if pot_model == "NLHlin":
-        SCATTER_PARAMS_DTYPE = np.dtype(SCATTER_PARAMS_DTYPE.descr + [
-            ("nlhlin_coefs", NLHLIN_COEFS_DTYPE, (NELEM, NELEM)),
-        ], align=True)
 
     scatter_params = np.recarray(1, dtype=SCATTER_PARAMS_DTYPE)
     scatter_params[0].pot_model = pot_model
+    scatter_params[0].integrate_algorithm = integrate_algorithm
     scatter_params[0].enorm = enorm
     scatter_params[0].rnorm = rnorm
     scatter_params[0].dirfac = dirfac
     scatter_params[0].denfac = denfac
-    if pot_model == "NLHlin":
-        scatter_params.nlhlin_coefs = nlhlin_coefs
-    
+    scatter_params[0].pot_coefs = pot_coefs
+
     return scatter_params
 
 

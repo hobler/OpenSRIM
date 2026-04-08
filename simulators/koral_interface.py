@@ -293,14 +293,18 @@ class _KoralStoppingModel:
 
     def run(self, request: dict[str, Any]) -> dict[str, Any]:
         import sys
+        import os
+        import shutil
+        import tempfile
         import importlib.util
-        koral_dir = str(Path(__file__).parent / "koral")
-        if koral_dir not in sys.path:
-            sys.path.insert(0, koral_dir)
-        from koral_input import KORALInput
-        from koral_settings import KORALSettings
+
+        koral_dir = Path(__file__).parent / "koral"
+        koral_dir_str = str(koral_dir)
+        if koral_dir_str not in sys.path:
+            sys.path.insert(0, koral_dir_str)
+
         spec = importlib.util.spec_from_file_location(
-            "koral_main", Path(__file__).parent / "koral" / "__main__.py"
+            "koral_main", koral_dir / "__main__.py"
         )
         koral_main = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(koral_main)
@@ -329,56 +333,121 @@ class _KoralStoppingModel:
             raise ValueError("Invalid target atomic density")
         nd_A3 = nd_cm3 / 1.0e24  # atoms/cm³ -> atoms/Å³
 
-        z_targets = [int(e["Z"]) for e in elements if e.get("Z")]
-        m_targets = [float(e["mass_amu"]) for e in elements if e.get("mass_amu")]
-        compound_corr = float(output.get("compound_correction", target.get("compound_correction", 1.0)) or 1.0)
+        z_targets: list[int] = []
+        m_targets: list[float] = []
+        c_targets: list[float] = []
+        for e in elements:
+            if not isinstance(e, dict):
+                continue
+            try:
+                z = int(e.get("Z", 0) or 0)
+                m = float(e.get("mass_amu", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                continue
+            if z <= 0 or m <= 0:
+                continue
+            try:
+                ratio = float(e.get("ratio", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                ratio = 0.0
+            if ratio <= 0:
+                continue
+            z_targets.append(z)
+            m_targets.append(m)
+            c_targets.append(ratio)
+
+        if not z_targets:
+            raise ValueError("No valid target elements")
+
+        # The new KORAL main expects d_target as a list (one entry per element).
+        # It represents the total atomic number density of the compound in
+        # atoms/Å³; per-element weighting is done via c_target fractions.
+        d_targets = [nd_A3] * len(z_targets)
 
         # energies in eV for KORAL
         start_eV = energies_keV[0] * 1e3
         stop_eV = energies_keV[-1] * 1e3
         nr_values = len(energies_keV)
 
-        input_params = KORALInput(
+        toml_text = _build_koral_input_toml(
             method=self._method,
             z_ion=z_ion,
             m_ion=m_ion_amu,
-            z_target=z_targets,
-            m_target=m_targets,
-            d_target=nd_A3,
-            s_e_f=[compound_corr] * len(z_targets),
-            start_energy=start_eV,
-            stop_energy=stop_eV,
+            z_targets=z_targets,
+            m_targets=m_targets,
+            d_targets=d_targets,
+            c_targets=c_targets,
+            start_eV=start_eV,
+            stop_eV=stop_eV,
             nr_values=nr_values,
         )
 
-        result = KORAL(input_params, KORALSettings())
-        # result rows: E (eV), s_e, s_n, q_n, Rp, sigma_x, sigma_z
-        energies_eV = result[0, :]
-        s_e     = result[1, :]
-        s_n     = result[2, :]
-        q_n     = result[3, :]
-        Rp      = result[4, :]   # Å
-        sigma_x = result[5, :]   # Å
-        sigma_z = result[6, :]   # Å
+        # Create a dedicated temp dir per run for KORAL's file-based I/O.
+        tmp_dir = tempfile.mkdtemp(prefix="koral_run_")
+        try:
+            toml_path = Path(tmp_dir) / "koral_input.toml"
+            toml_path.write_text(toml_text, encoding="utf-8")
 
-        energies_keV_out = list(energies_eV / 1e3)
+            # KORAL loads SRIM stopping power tables via the relative path
+            # './data/SRIM_setab/'. Temporarily chdir to the repo root so that
+            # relative path resolves correctly.
+            repo_root = _repo_root()
+            prev_cwd = os.getcwd()
+            try:
+                os.chdir(str(repo_root))
+                rc = KORAL(str(tmp_dir))
+            finally:
+                os.chdir(prev_cwd)
+
+            if rc != 1:
+                raise RuntimeError(f"KORAL returned error code {rc}")
+
+            csv_path = Path(tmp_dir) / "koral.csv"
+            if not csv_path.exists():
+                raise RuntimeError("KORAL did not produce output koral.csv")
+
+            data = np.loadtxt(str(csv_path), delimiter=";", comments="#")
+            if data.ndim == 1:
+                data = data.reshape(1, -1)
+            if data.shape[1] < 7:
+                raise RuntimeError(f"Unexpected koral.csv shape: {data.shape}")
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+        # koral.csv columns:
+        #   0: E        [eV]
+        #   1: R_p      [Å]
+        #   2: sigma_x  [Å]   (longitudinal straggling)
+        #   3: sigma_z  [Å]   (lateral straggling)
+        #   4: S_e      [eV/Å]
+        #   5: S_n      [eV/Å]
+        #   6: Q_n      [eV²/Å]
+        E_eV      = data[:, 0]
+        R_p_A     = data[:, 1]
+        sigma_x_A = data[:, 2]
+        sigma_z_A = data[:, 3]
+        S_e_evA   = data[:, 4]
+        S_n_evA   = data[:, 5]
+        Q_n_ev2A  = data[:, 6]
+
+        energies_keV_out = [float(x) for x in (E_eV / 1e3)]
 
         # Convert eV/Å -> J/m
         eV_J = 1.602176634e-19
-        s_e_J = list(s_e * eV_J / 1e-10)
-        s_n_J = list(s_n * eV_J / 1e-10)
+        A_to_m = 1e-10
+        s_e_J = [float(x) for x in (S_e_evA * eV_J / A_to_m)]
+        s_n_J = [float(x) for x in (S_n_evA * eV_J / A_to_m)]
 
         # Convert Å -> m
-        A_to_m = 1e-10
-        prange_m  = list(Rp      * A_to_m)
-        sigma_x_m = list(sigma_x * A_to_m)
-        sigma_z_m = list(sigma_z * A_to_m)
+        prange_m  = [float(x) for x in (R_p_A     * A_to_m)]
+        sigma_x_m = [float(x) for x in (sigma_x_A * A_to_m)]
+        sigma_z_m = [float(x) for x in (sigma_z_A * A_to_m)]
 
         outs: dict[str, list[float]] = {
-            "elec_stop": s_e_J,
-            "nucl_stop": s_n_J,
-            "nucl_strag": list(q_n),
-            "prange":    prange_m,
+            "elec_stop":  s_e_J,
+            "nucl_stop":  s_n_J,
+            "nucl_strag": [float(x) for x in Q_n_ev2A],
+            "prange":     prange_m,
             "long_strag": sigma_x_m,
             "lat_strag":  sigma_z_m,
         }
@@ -393,6 +462,57 @@ class _KoralStoppingModel:
             "energies_keV": energies_keV_out,
             "outputs": outs,
         }
+
+
+def _build_koral_input_toml(
+    *,
+    method: str,
+    z_ion: int,
+    m_ion: float,
+    z_targets: list[int],
+    m_targets: list[float],
+    d_targets: list[float],
+    c_targets: list[float],
+    start_eV: float,
+    stop_eV: float,
+    nr_values: int,
+) -> str:
+    """Build the TOML input file expected by simulators/koral/__main__.py.
+
+    The new KORAL main function reads [settings] and [params] sections from a
+    TOML file placed in its working directory.
+    """
+
+    def _fmt_float(v: float) -> str:
+        return repr(float(v))
+
+    def _fmt_int_list(xs: list[int]) -> str:
+        return "[" + ", ".join(str(int(x)) for x in xs) + "]"
+
+    def _fmt_float_list(xs: list[float]) -> str:
+        return "[" + ", ".join(repr(float(x)) for x in xs) + "]"
+
+    lines = [
+        "[settings]",
+        "nr_iterations = 1",
+        'integration_method = "LSODA"',
+        "rtol = 1e-6",
+        "atol = 1e-6",
+        "",
+        "[params]",
+        f'method = "{str(method).upper()}"',
+        f"z_ion = {int(z_ion)}",
+        f"m_ion = {_fmt_float(m_ion)}",
+        f"z_target = {_fmt_int_list(z_targets)}",
+        f"m_target = {_fmt_float_list(m_targets)}",
+        f"d_target = {_fmt_float_list(d_targets)}",
+        f"c_target = {_fmt_float_list(c_targets)}",
+        f"start_energy = {_fmt_float(start_eV)}",
+        f"stop_energy = {_fmt_float(stop_eV)}",
+        f"nr_values = {int(nr_values)}",
+        "",
+    ]
+    return "\n".join(lines)
 
 
 def _repo_root() -> Path:

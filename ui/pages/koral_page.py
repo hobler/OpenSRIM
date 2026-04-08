@@ -145,7 +145,6 @@ class KoralPage(QWidget):
         self._logs_dialog = None
         self._logs_list_widget = None
         self.run_button = None
-        self._working_directory: Optional[str] = None
 
         self._output_option_widgets: dict[str, list[QWidget]] = {}
 
@@ -466,38 +465,14 @@ class KoralPage(QWidget):
         save_btn.setToolTip("Save KORAL configuration and results")
         save_btn.clicked.connect(self._handle_save_koral)
 
-        self._wd_btn = QPushButton("Working dir: (not set)")
-        self._wd_btn.setToolTip("Select the working directory for simulation outputs")
-        self._wd_btn.clicked.connect(self._choose_working_directory)
-
         layout.addWidget(log_container, 2)
-        layout.addWidget(self._wd_btn)
         layout.addWidget(load_btn)
         layout.addWidget(save_btn)
         layout.addWidget(self.run_button)
 
         return footer
 
-    def _choose_working_directory(self) -> None:
-        path = QFileDialog.getExistingDirectory(
-            self,
-            "Select working directory",
-            self._working_directory or str(Path.home()),
-        )
-        if not path:
-            return
-        self._working_directory = str(path)
-        short = Path(path).name or path
-        self._wd_btn.setText(f"Working dir: {short}")
-        self._wd_btn.setToolTip(path)
-        self.add_log_entry(f"Working directory set to: {path}")
-
     def _handle_run_clicked(self) -> None:
-        if not self._working_directory:
-            QMessageBox.warning(
-                self, "KORAL", "Please set a working directory before running the simulation."
-            )
-            return
         self._start_calculation_async()
 
     # -------- Save / Load KORAL (.toml) ----------

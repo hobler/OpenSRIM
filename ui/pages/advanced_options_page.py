@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QScrollArea,
     QDoubleSpinBox,
+    QSpinBox,
     QFrame,
     QPushButton,
     QStyle,
@@ -187,20 +188,29 @@ class AdvancedOptionsPage(QWidget):
         self.chk_disp = QCheckBox("Show Disp (eV)")
         self.chk_latt = QCheckBox("Show Latt (eV)")
         self.chk_surf = QCheckBox("Show Surf (eV)")
-        self.chk_disp.setChecked(False)
-        self.chk_latt.setChecked(False)
-        self.chk_surf.setChecked(False)
+        self.chk_disp.setChecked(True)
+        self.chk_latt.setChecked(True)
+        self.chk_surf.setChecked(True)
         atoms_l.addWidget(self.chk_disp)
         atoms_l.addWidget(self.chk_latt)
         atoms_l.addWidget(self.chk_surf)
         atoms_l.addStretch(1)
 
-        # --- Model selection content (placeholder) ---
+        # --- Model selection content ---
         model = QWidget(content)
         model_l = QVBoxLayout(model)
         model_l.setContentsMargins(0, 0, 0, 0)
         model_l.setSpacing(8)
-        model_l.addWidget(QLabel("Placeholder: advanced model options will be added here."))
+        nbins_row = QHBoxLayout()
+        nbins_row.addWidget(QLabel("Number of bins:"))
+        self.spin_nbins = QSpinBox()
+        self.spin_nbins.setRange(10, 10000)
+        self.spin_nbins.setSingleStep(10)
+        self.spin_nbins.setValue(120)
+        self.spin_nbins.setToolTip("Number of bins for depth and lateral distributions")
+        nbins_row.addWidget(self.spin_nbins)
+        nbins_row.addStretch(1)
+        model_l.addLayout(nbins_row)
         model_l.addStretch(1)
 
         # --- Display Settings content (MC Results plots) ---
@@ -308,6 +318,9 @@ class AdvancedOptionsPage(QWidget):
                 "show_latt": bool(self.chk_latt.isChecked()),
                 "show_surf": bool(self.chk_surf.isChecked()),
             },
+            "model_selection": {
+                "nbins": int(self.spin_nbins.value()),
+            },
             "display_settings": {
                 "show_toolbars": bool(self.chk_toolbars.isChecked()),
                 "show_borders": bool(self.chk_borders.isChecked()),
@@ -342,6 +355,13 @@ class AdvancedOptionsPage(QWidget):
             self.chk_disp.setChecked(bool(atoms.get("show_disp", self.chk_disp.isChecked())))
             self.chk_latt.setChecked(bool(atoms.get("show_latt", self.chk_latt.isChecked())))
             self.chk_surf.setChecked(bool(atoms.get("show_surf", self.chk_surf.isChecked())))
+
+        model_sel = payload.get("model_selection") or {}
+        if isinstance(model_sel, dict) and "nbins" in model_sel:
+            try:
+                self.spin_nbins.setValue(int(model_sel["nbins"]))
+            except (TypeError, ValueError):
+                pass
 
         disp = payload.get("display_settings") or {}
         if isinstance(disp, dict):

@@ -352,13 +352,14 @@ class _KoralStoppingModel:
         )
 
         result = KORAL(input_params, KORALSettings())
-        # result = [E (eV), s_e, s_n, q_n]
-        # s_e has a double d_target factor bug in stopping_powers.S_e_SRIM (line 39+40),
-        # so divide by nd_A3 once to correct it back to eV/Å.
+        # result rows: E (eV), s_e, s_n, q_n, Rp, sigma_x, sigma_z
         energies_eV = result[0, :]
-        s_e = result[1, :]  # raw KORAL output (same units as s_n: eV/Å)
-        s_n = result[2, :]
-        q_n = result[3, :]
+        s_e     = result[1, :]
+        s_n     = result[2, :]
+        q_n     = result[3, :]
+        Rp      = result[4, :]   # Å
+        sigma_x = result[5, :]   # Å
+        sigma_z = result[6, :]   # Å
 
         energies_keV_out = list(energies_eV / 1e3)
 
@@ -367,19 +368,19 @@ class _KoralStoppingModel:
         s_e_J = list(s_e * eV_J / 1e-10)
         s_n_J = list(s_n * eV_J / 1e-10)
 
-        # CSDA projected range: ∫ dE / (Se+Sn)
-        E_J = energies_eV * eV_J
-        s_tot = np.maximum(np.asarray(s_e_J) + np.asarray(s_n_J), 1e-30)
-        inv_s = 1.0 / s_tot
-        dE = np.diff(E_J)
-        avg = (inv_s[:-1] + inv_s[1:]) * 0.5
-        cum = list(np.concatenate(([0.0], np.cumsum(dE * avg))))
+        # Convert Å -> m
+        A_to_m = 1e-10
+        prange_m  = list(Rp      * A_to_m)
+        sigma_x_m = list(sigma_x * A_to_m)
+        sigma_z_m = list(sigma_z * A_to_m)
 
         outs: dict[str, list[float]] = {
             "elec_stop": s_e_J,
             "nucl_stop": s_n_J,
             "nucl_strag": list(q_n),
-            "prange": cum,
+            "prange":    prange_m,
+            "long_strag": sigma_x_m,
+            "lat_strag":  sigma_z_m,
         }
 
         requested = output.get("requested")

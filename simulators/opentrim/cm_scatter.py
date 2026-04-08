@@ -8,7 +8,8 @@ energy, and impact parameter, using Gauss-Legendre quadrature.
 from numba import jit
 import numpy as np
 from scipy.special import roots_legendre
-from .zbl import zbl_screen, estimate_apsis
+from . import nlhlin
+from . import zbl
 
 # TODO: Put ROOTS_LEGENDRE into params, since global variables might not
 # work with cached jit functions.
@@ -16,32 +17,7 @@ ROOTS_LEGENDRE = roots_legendre(4)
 
 
 @jit
-def calc_phi_chi(u, r0):#, screen_fun):
-    """Calculate the screening function and chi at the given u values.
-
-    phi is evaluated at r0/(1-u**2).
-    chi is the difference of phi and phi0 (=phi(r0)) divided by u^2, with a 
-    Taylor expansion used for small u to avoid numerical issues.
-
-    Parameters:
-        u (array-like): Integration variable.
-        r0 (float): Distance of closest approach (RNORM).
-        screen_fun (callable object): Function to calculate the screening 
-            function for given distance r (RNORM).
-    Returns:
-        (float): Value of chi function.
-    """
-    # u = np.asarray(u)
-#    phi0, dphi0 = screen_fun(r0)
-#    phi, _ = screen_fun(r0/(1-u**2))
-    phi0, dphi0 = zbl_screen(r0)
-    phi, _ = zbl_screen(r0/(1-u**2))
-    chi = np.where(u < 3e-4, phi0 - r0*dphi0, (phi0 - phi*(1-u**2)) / u**2)
-    return phi, chi
-
-
-@jit
-def scatter_integrals(e, p, pot_model):
+def scatter_integrals(e, p, pot_model, pot_coefs):
     """Calculate scattering angle and time integral.
 
     The calculation uses Gauss-Legendre quadrature with a fixed number of
@@ -51,34 +27,32 @@ def scatter_integrals(e, p, pot_model):
     Parameters:
         e (float): Reduced energy.
         p (float): Reduced impact parameter.
-        pot_model (str): Name of the potential model to be used.
+        pot_model (str): The potential model to use ("ZBL" or "NLHlin").
+        pot_coefs: Parameters for the potential model.
     
     Returns:
         (float): Scattering angle (rad)
         (float): Time integral (RNORM).
     """
-    if pot_model.startswith("ZBL"):
-        # screen_fun = zbl_screen
-        rmax = np.inf
-    elif pot_model.startswith("NLHlin"):
-        raise NotImplementedError("NLHlin potential not implemented yet")
-    else:
-        raise ValueError(f"Unknown potential model {pot_model}")
-    
-    if p >= rmax:
+    if p >= pot_coefs.rmax:
         return 0.0, 0.0
     elif p == 0.0:
         return np.pi, 0.0
     
-    # TODO: Use more general apsis calculation ffrom the apsis module
-    if pot_model.startswith("ZBL"):
-        r0 = estimate_apsis(e, p)
-    else:
-        raise NotImplementedError("Apsis estimation not implemented for this "
-                                  "potential model")
+    r0, _ = get_apsis(e, p, pot_model, pot_coefs)
+
+    def calc_phi_chi(u):
+        if pot_model == "ZBL":
+            phi0, dphi0 = zbl.screen_fun(r0, pot_coefs)
+            phi, _ = zbl.screen_fun(r0/(1-u**2), pot_coefs)
+        else:
+            phi0, dphi0 = nlhlin.screen_fun(r0, pot_coefs)
+            phi, _ = nlhlin.screen_fun(r0/(1-u**2), pot_coefs)
+        chi = np.where(u < 3e-4, phi0 - r0*dphi0, (phi0 - phi*(1-u**2)) / u**2)
+        return phi, chi
 
     def integrands(u):
-        phi, chi = calc_phi_chi(u, r0)#, screen_fun)
+        phi, chi = calc_phi_chi(u)
         rho = r0 / (e*p**2)
         g = np.sqrt(rho*chi + (2-u**2))
         integrand_theta = 1 / g
@@ -88,6 +62,7 @@ def scatter_integrals(e, p, pot_model):
     def integrand_two_arccos(u):
         return 4 / np.sqrt(2 - u**2)
 
+    rmax = pot_coefs.rmax
     umax = np.sqrt(1 - r0 / rmax)
     u_vals, weights = ROOTS_LEGENDRE
     u_vals = 0.5 * umax * (u_vals + 1)
@@ -105,3 +80,74 @@ def scatter_integrals(e, p, pot_model):
             - 2 * p * np.sum(weights * integrand_tau_vals))
 
     return theta, tau
+
+
+@jit
+def get_apsis(e, p, pot_model, pot_coefs):
+    """Calculate the distance of closest approach (apsis) in a colllision.
+
+    As initial condition for Newton's method is calculated from a 
+    piecewise approximation to the screening function.
+
+    Parameters:
+        e (float): energy of projectile before the collision (ENORM)
+        p (float): impact parameter (RNORM)
+        pot_model (str): The potential model to use ("ZBL" or "NLHlin").
+        pot_coefs: Parameters for the potential model.
+
+    Returns:
+        r0 (float): Estimated apsis of the collision (RNORM)
+        count(int): Number of iterations used to converge the apsis
+    """
+    psq = p**2
+    k1, k2, k3, k4 = pot_coefs.k[:4]
+    r34 = pot_coefs.r34
+    rmax = pot_coefs.rmax
+    
+    # Initial condition: Assume r0 > r34
+    if rmax is np.inf:  # Use TRIM85 algorithm
+        r0 = max(1e-10, p)
+        r0_try = -2.7 * np.log(e*r0)
+        if r0_try > p:
+            r0_try = -2.7 * np.log(e*r0_try)
+            if r0_try > p:
+                r0 = r0_try
+        done = r0 > r34
+    else:
+        if psq > r34**2 - k3/(e*r34**2):
+            a = e + k4
+            b = - k4 * rmax
+            c = - e * psq
+            r0 = (-b + np.sqrt(b**2 - 4*a*c)) / (2*a)
+            done = True
+        else:
+            done = False
+
+    # Initial condition: Use piecewise approximation if r0 <= r34
+    if not done:
+        r0sq = psq + k2/e
+        if r0sq > k3 / k2:
+            r0 = np.sqrt(psq/2 + np.sqrt(psq**2/4 + k3/e))
+        elif r0sq >= k2 / k1:
+            r0 = np.sqrt(r0sq)
+        else:
+            r0 = (1 + np.sqrt(1 + 4*e*(e+k1)*psq)) / (2*(e+k1))
+
+    # Newton iteration
+    delta_r0 = np.inf
+
+    def fun(r):
+        if pot_model == "ZBL":
+            screen, dscreen = zbl.screen_fun(r, pot_coefs)
+        else:
+            screen, dscreen = nlhlin.screen_fun(r, pot_coefs)
+        return r - screen[0]/e - p**2/r, 1 - dscreen[0]/e + p**2/r**2
+    
+    count = 0
+    while abs(delta_r0) > 1e-3 * r0:
+        f, df = fun(r0)
+        delta_r0 = - f / df
+        r0 += delta_r0
+        count += 1
+
+    return r0, count

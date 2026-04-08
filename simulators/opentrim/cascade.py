@@ -28,8 +28,6 @@ def cascade(initial_proj, params, stats):
     Returns:
         ndarray[Projectile]: list of final projectile states
     """
-    GROWTH_FACTOR = 1.5
-    
     emin = params.cascade.emin
     ed = params.cascade.ed
     

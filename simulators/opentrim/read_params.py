@@ -71,7 +71,7 @@ def read_params():
             "potential": "ZBL",  # potential model for scattering
             "scattering integrals": {
                 "algorithm": "magic",  # algorithm for numerical integration of scattering integrals
-                                                # "magic" or "Guass-Legendre"
+                                                # "magic" or "Legendre"
                 "n_absc": 4,       # number of abscissas for numerical integration of scattering integrals
             },
             "electronic stopping": "Lindhard",  # model for electronic stopping power

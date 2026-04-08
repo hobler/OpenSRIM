@@ -56,7 +56,8 @@ if __name__ == "__main__":
     print("Startup time:", time.time() - start)
     iter_cnt = 1
     counts = [10000, 10000] #[10000]
-    chunk_size = 100
+    #counts = [10000]
+    chunk_size = 10
     # avg_chunk_time = 0.1    # seconds
     
     proj_counts = [[] for _ in range(len(counts))]

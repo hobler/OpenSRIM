@@ -29,7 +29,7 @@ def KORAL(working_directory_path: str) -> int:
         atol=toml['settings']['atol']
     )
     
-    f_target = np.divide(toml['params']['c_target'], np.sum(toml['params']['c_target']))
+    f_targets = np.divide(toml['params']['c_target'], np.sum(toml['params']['c_target']))
 
     # start_time = time.time()
     E = np.geomspace(toml['params']['start_energy'],
@@ -49,7 +49,7 @@ def KORAL(working_directory_path: str) -> int:
     for i, z_target in enumerate(toml['params']['z_target']):
         m_target = toml['params']['m_target'][i]
         d_target = toml['params']['d_target'][i]
-        f_target = f_target[i]
+        f_target = f_targets[i]
 
         mu_target = misc.mu(toml['params']['m_ion'], m_target)
         mu_targets.append(mu_target)

@@ -47,19 +47,43 @@ def KORAL(input_params: KORALInput, settings: KORALSettings) -> list[list[float]
             (1-2*mu)*q_n(e)
         )
 
-    return np.array([E,s_e(E),s_n(E),q_n(E)])
+    S_e = s_e(E)
+    S_n = s_n(E)
+    Q_n = q_n(E)
+    S_tot = np.maximum(S_e + S_n, 1e-30)
+
+    # CSDA projected range Rp(E) = ∫₀ᴱ dE' / S_tot(E')
+    inv_s = 1.0 / S_tot
+    dE = np.diff(E)
+    avg_inv_s = (inv_s[:-1] + inv_s[1:]) * 0.5
+    Rp = np.concatenate(([0.0], np.cumsum(dE * avg_inv_s)))
+
+    # Longitudinal straggling σ_x²(E) = ∫₀ᴱ Q_n / S_tot² dE'
+    integrand_x = Q_n / S_tot**2
+    avg_x = (integrand_x[:-1] + integrand_x[1:]) * 0.5
+    sigma_x2 = np.concatenate(([0.0], np.cumsum(dE * avg_x)))
+    sigma_x = np.sqrt(np.maximum(sigma_x2, 0.0))
+
+    # Lateral straggling σ_z²(E) = ∫₀ᴱ Q_n · Rp / S_tot dE'
+    integrand_z = Q_n * Rp / S_tot
+    avg_z = (integrand_z[:-1] + integrand_z[1:]) * 0.5
+    sigma_z2 = np.concatenate(([0.0], np.cumsum(dE * avg_z)))
+    sigma_z = np.sqrt(np.maximum(sigma_z2, 0.0))
+
+    # result rows: E, S_e, S_n, Q_n, Rp, sigma_x, sigma_z
+    return np.array([E, S_e, S_n, Q_n, Rp, sigma_x, sigma_z])
 
 if __name__ == '__main__':
     from matplotlib import pyplot as plt
 
     input_params = KORALInput(
-        method='ZBL',
+        method='NLH',
         z_ion=33,
         m_ion=74.992,
         z_target=[14],
         m_target=[28.085],
-        d_target=0.04996, # TODO: feld enthält alle dichten
-        s_e_f=[1], # TODO: ein Wert für s_e_corr
+        d_target=0.04996,
+        s_e_f=[1],
         start_energy=1,
         stop_energy=10e6,
         nr_values=100)
@@ -67,8 +91,33 @@ if __name__ == '__main__':
     settings = KORALSettings()
 
     result = KORAL(input_params, settings)
-    plt.loglog(result[0,:], result[1,:])
-    plt.loglog(result[0,:], result[2,:])
-    plt.loglog(result[0,:], result[3,:])
-    plt.grid(True)
+    E       = result[0, :]
+    S_e     = result[1, :]
+    S_n     = result[2, :]
+    Q_n     = result[3, :]
+    Rp      = result[4, :]
+    sigma_x = result[5, :]
+    sigma_z = result[6, :]
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+
+    ax1.loglog(E, S_e,  label='S_e')
+    ax1.loglog(E, S_n,  label='S_n')
+    ax1.loglog(E, Q_n,  label='Q_n')
+    ax1.set_xlabel('Energy (eV)')
+    ax1.set_ylabel('Stopping (eV/Å)')
+    ax1.legend()
+    ax1.grid(True)
+    ax1.set_title('Stopping Powers')
+
+    ax2.loglog(E, Rp,      label='Rp (proj. range)')
+    ax2.loglog(E, sigma_x, label='σ_x (long. straggling)')
+    ax2.loglog(E, sigma_z, label='σ_z (lat. straggling)')
+    ax2.set_xlabel('Energy (eV)')
+    ax2.set_ylabel('Distance (Å)')
+    ax2.legend()
+    ax2.grid(True)
+    ax2.set_title('Range & Straggling')
+
+    plt.tight_layout()
     plt.show()

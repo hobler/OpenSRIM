@@ -14,6 +14,6 @@ supported_outputs = [
   "nucl_stop",
   "nucl_strag",
   "prange",
-  #"long_strag",
-  #"lat_strag",
+  "long_strag",
+  "lat_strag",
 ]

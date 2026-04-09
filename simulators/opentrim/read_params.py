@@ -74,7 +74,8 @@ def read_params():
                                                 # "magic" or "Legendre"
                 "n_absc": 4,       # number of abscissas for numerical integration of scattering integrals
             },
-            "electronic stopping": "Lindhard",  # model for electronic stopping power
+            "electronic stopping": "SRIM",  # model for electronic stopping power
+                                                # "Lindhard" or "SRIM"
             "Lindhard correction": {
                 "B->Si": 1.5,       # Correction factor to Lindhard stopping power for B->Si
                 "Si->Si": 1.0,      # Correction factor to Lindhard stopping power for Si->Si

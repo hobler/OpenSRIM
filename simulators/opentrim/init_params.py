@@ -219,37 +219,60 @@ def _get_estop_params(input_params, nelem, elements_params):
     """
     ### Define electronic stopping parameters
     model = input_params["models"]["electronic stopping"]
-    if model != "Lindhard":
-        raise ValueError(f"Unsupported electronic stopping model: {model}")
 
-    # Correction factors to Lindhard stopping power
-    corr_lindhard = np.ones((NELEM, NELEM))  # default = 1.0
-    for corr in input_params["models"]["Lindhard correction"]:
-        elem1, elem2 = corr.split("->")
+    if model == "Lindhard":
+        # Correction factors to Lindhard stopping power
+        corr_lindhard = np.ones((NELEM, NELEM))  # default = 1.0
+        for corr in input_params["models"]["Lindhard correction"]:
+            elem1, elem2 = corr.split("->")
+            for ielem1 in range(nelem):
+                for ielem2 in range(nelem):
+                    if (elements_params[ielem1].symbol.strip() == elem1 and 
+                        elements_params[ielem2].symbol.strip() == elem2):
+                        corr_lindhard[ielem1, ielem2] = (
+                            input_params["models"]["Lindhard correction"][corr])
+
+        # Prefactor for Lindhard stopping (sqrt(eV)*A^2)
+        fac_lindhard = np.empty((NELEM, NELEM))
         for ielem1 in range(nelem):
+            z1 = elements_params[ielem1].Z
+            m1 = elements_params[ielem1].M
             for ielem2 in range(nelem):
-                if (elements_params[ielem1].symbol.strip() == elem1 and 
-                    elements_params[ielem2].symbol.strip() == elem2):
-                    corr_lindhard[ielem1, ielem2] = (
-                        input_params["models"]["Lindhard correction"][corr])
+                z2 = elements_params[ielem2].Z
+                fac_lindhard[ielem1, ielem2] = (
+                    corr_lindhard[ielem1, ielem2] * 1.212 * z1**(7/6) * z2 
+                    / ((z1**(2/3) + z2**(2/3))**(3/2) * sqrt(m1)) )
 
-    # Prefactor for Lindhard stopping (sqrt(eV)*A^2)
-    fac_lindhard = np.empty((NELEM, NELEM))
-    for ielem1 in range(nelem):
-        z1 = elements_params[ielem1].Z
-        m1 = elements_params[ielem1].M
-        for ielem2 in range(nelem):
-            z2 = elements_params[ielem2].Z
-            fac_lindhard[ielem1, ielem2] = (
-                corr_lindhard[ielem1, ielem2] * 1.212 * z1**(7/6) * z2 
-                / ((z1**(2/3) + z2**(2/3))**(3/2) * sqrt(m1)) )
+    elif model == "SRIM":
+        path = os.path.join(os.path.dirname(__file__), "../../data/SRIM_setab/")
+        srim_energies = np.empty(219, dtype=np.float64)
+        srim_table = np.empty((NELEM, NELEM, 219), dtype=np.float64)
+        for ielem1 in range(nelem):
+            z1 = elements_params[ielem1].Z
+            filename = os.path.join(path, f'SRIM2013-{z1:02d}.dat')
+            srim_energies = np.loadtxt(filename, skiprows=6, usecols=0)
+            for ielem2 in range(nelem):
+                z2 = elements_params[ielem2].Z
+                srim_table[ielem1, ielem2] = np.loadtxt(
+                    filename, skiprows=6, usecols=z2)
+
+    else:
+        raise ValueError(f"Unknown electronic stopping model: {model}")
 
     ESTOP_PARAMS_DTYPE = np.dtype([
+        ("model", "<U8"),
         ("fac_lindhard", np.float64, (NELEM, NELEM)),
+        ("srim_energies", np.float64, 219),  # for possible future use
+        ("srim_table", np.float64, (NELEM, NELEM, 219)),  # for possible future use
     ], align=True)
 
     estop_params = np.recarray(1, dtype=ESTOP_PARAMS_DTYPE)
-    estop_params[0].fac_lindhard = fac_lindhard
+    estop_params[0].model = model
+    if model == "Lindhard":
+        estop_params[0].fac_lindhard = fac_lindhard
+    elif model == "SRIM":
+        estop_params[0].srim_energies = srim_energies
+        estop_params[0].srim_table = srim_table
 
     return estop_params
 

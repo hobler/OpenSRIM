@@ -12,6 +12,20 @@ import numpy as np
 from numba import jit
 
 
+@jit
+def estop_lindhard(e, fac_lindhard):
+    """Calculate the Lindhard electronic stopping power for a given energy.
+
+    Parameters:
+        e (float): projectile energy (eV)
+        fac_lindhard (float): pre-factor for the Lindhard stopping power
+    
+    Returns:
+        (float): electronic stopping cross section (eV*A^2)
+    """
+    return fac_lindhard * sqrt(e)
+
+
 @jit(inline = "always")
 def eloss(proj, free_path, estop_params, materials_params):
     """Calculate the electronic energy loss over a given free path length.
@@ -25,18 +39,22 @@ def eloss(proj, free_path, estop_params, materials_params):
     Returns:
         (float): energy loss (eV)
     """
+    e = proj["e"]
     imat = proj["ilayer"]
     ielem1 = proj["ielem"]
 
-    weighted_fac_lindhard = 0.0
+    weighted_se = 0.0
     for i in range(materials_params.nelem[imat]):
         ielem2 = materials_params.ielem[imat, i]
+        if estop_params.model == "Lindhard":
+            se = estop_lindhard(e, estop_params.fac_lindhard[ielem1, ielem2])
+        else:
+            se = np.interp(e, estop_params.srim_energies, 
+                           estop_params.srim_table[ielem1, ielem2])
         atomic_fraction = materials_params.atomic_fraction[imat, i]
-        weighted_fac_lindhard += (
-            atomic_fraction * estop_params.fac_lindhard[ielem1, ielem2])
+        weighted_se += atomic_fraction * se
     
-    dee = (weighted_fac_lindhard * sqrt(proj["e"]) 
-           * materials_params.density[imat] * free_path)
+    dee = weighted_se * materials_params.density[imat] * free_path
 
     if dee > proj["e"]:
         dee = proj["e"]

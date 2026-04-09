@@ -57,7 +57,7 @@ if __name__ == "__main__":
     iter_cnt = 1
     counts = [10000, 10000] #[10000]
     #counts = [10000]
-    chunk_size = 10
+    chunk_size = 100
     # avg_chunk_time = 0.1    # seconds
     
     proj_counts = [[] for _ in range(len(counts))]

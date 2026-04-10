@@ -180,21 +180,40 @@ class KoralPage(QWidget):
 
         ion_box = self.build_ion_data()
         target_box = self.build_input_elements()
+        model_box = self._build_model_selection()
 
-        # Top row: Ion Selection | Target Data (horizontally resizable)
-        top = QSplitter(Qt.Orientation.Horizontal)
-        top.addWidget(ion_box)
-        top.addWidget(target_box)
+        # Left column: Ion Selection / Target Data / Model Selection
+        left_col = QSplitter(Qt.Orientation.Vertical)
+        left_col.addWidget(ion_box)
+        left_col.addWidget(target_box)
+        left_col.addWidget(model_box)
         try:
-            top.setStretchFactor(0, 0)
-            top.setStretchFactor(1, 1)
+            left_col.setStretchFactor(0, 0)
+            left_col.setStretchFactor(1, 1)
+            left_col.setStretchFactor(2, 0)
         except Exception:
             pass
 
-        middle = QSplitter(Qt.Orientation.Vertical)  # adjustable height
-        middle.addWidget(top)
-        middle.addWidget(self._build_koral_bottom_section())
-        layout.addWidget(middle)
+        # Right column: Output Options / Plot+List
+        right_col = QSplitter(Qt.Orientation.Vertical)
+        right_col.addWidget(self._build_koral_left_options())
+        right_col.addWidget(self._build_koral_plot_list_section())
+        try:
+            right_col.setStretchFactor(0, 0)
+            right_col.setStretchFactor(1, 1)
+        except Exception:
+            pass
+
+        # Main two-column splitter
+        main_splitter = QSplitter(Qt.Orientation.Horizontal)
+        main_splitter.addWidget(left_col)
+        main_splitter.addWidget(right_col)
+        try:
+            main_splitter.setStretchFactor(0, 0)
+            main_splitter.setStretchFactor(1, 1)
+        except Exception:
+            pass
+        layout.addWidget(main_splitter)
 
         layout.addWidget(self._build_koral_footer())
 
@@ -1697,13 +1716,6 @@ class KoralPage(QWidget):
             btn.setFixedSize(22, 22)
             btn.setToolTip(f"Hint '{hint_id}' not available")
             return btn
-
-    def _build_koral_bottom_section(self) -> QSplitter:
-        splitter = QSplitter(Qt.Orientation.Horizontal)  # Use QSplitter for horizontal resizing
-        splitter.addWidget(self._build_model_selection())  # Add "Model Selection" as its own column
-        splitter.addWidget(self._build_koral_left_options())  # Add "Ausgabe Optionen"
-        splitter.addWidget(self._build_koral_plot_list_section())  # Add "Range / Straggling"
-        return splitter
 
     def _build_model_selection(self) -> QGroupBox:
         box = QGroupBox("")

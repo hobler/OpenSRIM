@@ -12,7 +12,7 @@ default_models = ["ZBL"]
 supported_outputs = [
   "elec_stop",
   "nucl_stop",
-  "nucl_strag",
+  #"nucl_strag",
   "prange",
   "long_strag",
   "lat_strag",

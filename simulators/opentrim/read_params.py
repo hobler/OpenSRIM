@@ -2,7 +2,7 @@ import tomllib
 from pathlib import Path
 
 
-def read_params(toml_path) -> dict:
+def read_params(toml_path = None) -> dict:
     """Read input parameters from a TOML file.
 
     Args:
@@ -12,6 +12,8 @@ def read_params(toml_path) -> dict:
     Returns:
         dict: A dictionary containing the input parameters.
     """
+    if toml_path is None:
+        toml_path = "defaults.toml"
     toml_path = Path(toml_path)
     toml_path_fallback = Path(__file__).parent / Path(toml_path)
     if not toml_path.is_file():

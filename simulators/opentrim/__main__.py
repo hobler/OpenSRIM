@@ -35,10 +35,10 @@ from .init_params import get_params  # defines the params structured array
 from .stats import init_stats, zero_stats, print_moments, plot_histograms  # defines the stats structured array
 from .simulator import simulate, simulate_chunked, simulate_adaptive  # noqa: F401
 
-if len(sys.argv) < 2:
+if len(sys.argv) == 2 and sys.argv[1] in ["-h", "--help", "help"]:
     print(f"Usage: python -m {__package__} <CONFIG_PATH>")
-    exit(1)
-input_params = read_params(sys.argv[1])
+    exit()
+input_params = read_params(sys.argv[1] if len(sys.argv) != 1 else None)
 NELEM_ION, NELEM_TARGET, params = get_params(input_params)
 stats = init_stats(NELEM_ION, NELEM_TARGET, input_params)
 

@@ -11,7 +11,7 @@ follow_recoils = true       # whether to follow recoils in the simulation
 nions          = 10000      # number of ions to simulate
 nions_update   = 100        # update progress every n ions
 rng_seed       = 12345      # random seed for reproducibility
-workdir        = "../../data/sim_results"       # working directory for output files
+workdir        = "../../data/opentrim/results/default"       # working directory for output files
 
 
 # -----------------------------------------------------------------------------

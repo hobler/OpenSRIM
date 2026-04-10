@@ -138,4 +138,4 @@ dmypy.json
 todo
 
 # Simulation results
-data/sim_results
+data/opentrim/results

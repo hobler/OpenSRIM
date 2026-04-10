@@ -83,7 +83,7 @@ class MainWindow(QMainWindow):
         # Force dot as decimal separator globally (independent of OS locale).
         QLocale.setDefault(QLocale(QLocale.Language.C))
 
-        self.setWindowTitle("KORAL / MC Simulation")
+        self.setWindowTitle("OpenSRIM")
 
         self.state = AppState()
 
@@ -349,11 +349,23 @@ def main():
     from PyQt6.QtWidgets import QApplication
     from PyQt6.QtCore import QLocale
 
+    import signal
+
     QLocale.setDefault(QLocale(QLocale.Language.C))
 
     app = QApplication(sys.argv)
     win = MainWindow()
     win.show()
+
+    # Allow Ctrl+C from the terminal to quit the application.
+    # Qt blocks Python's signal handling while the event loop runs; a periodic
+    # timer gives Python a chance to process SIGINT.
+    signal.signal(signal.SIGINT, lambda *_: app.quit())
+    sigint_timer = QTimer()
+    sigint_timer.setInterval(200)
+    sigint_timer.timeout.connect(lambda: None)
+    sigint_timer.start()
+
     sys.exit(app.exec())
 
 

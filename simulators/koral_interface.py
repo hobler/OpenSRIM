@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -293,6 +292,24 @@ class _KoralStoppingModel:
         return self._model_ref
 
     def run(self, request: dict[str, Any]) -> dict[str, Any]:
+        import sys
+        import os
+        import shutil
+        import tempfile
+        import importlib.util
+
+        koral_dir = Path(__file__).parent / "koral"
+        koral_dir_str = str(koral_dir)
+        if koral_dir_str not in sys.path:
+            sys.path.insert(0, koral_dir_str)
+
+        spec = importlib.util.spec_from_file_location(
+            "koral_main", koral_dir / "__main__.py"
+        )
+        koral_main = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(koral_main)
+        KORAL = koral_main.KORAL
+
         ion = request.get("ion") or {}
         energy = request.get("energy") or {}
         target = request.get("target") or {}
@@ -301,9 +318,8 @@ class _KoralStoppingModel:
         z_ion = int(ion.get("Z", 0) or 0)
         m_ion_amu = float(ion.get("mass_amu", 0.0) or 0.0)
         energies_keV = [float(x) for x in (energy.get("energies_keV") or [])]
-        energies_J = [float(x) for x in (energy.get("energies_J") or [])]
 
-        if not energies_keV or not energies_J or len(energies_keV) != len(energies_J):
+        if not energies_keV:
             raise ValueError("Invalid energy grid")
         if z_ion <= 0 or m_ion_amu <= 0:
             raise ValueError("Invalid ion")
@@ -312,270 +328,192 @@ class _KoralStoppingModel:
         if not isinstance(elements, list) or not elements:
             raise ValueError("No target elements")
 
-        compound_corr = float(output.get("compound_correction", target.get("compound_correction", 1.0)) or 1.0)
-
-        # Total atomic number density (1/Å^3).
         nd_cm3 = float(target.get("number_density_atoms_cm3", 0.0) or 0.0)
         if nd_cm3 <= 0:
             raise ValueError("Invalid target atomic density")
-        nd_A3 = nd_cm3 / 1.0e24
+        nd_A3 = nd_cm3 / 1.0e24  # atoms/cm³ -> atoms/Å³
 
-        # Atomic fractions from UI ratios.
-        ratios: list[float] = []
         z_targets: list[int] = []
-        m_targets_amu: list[float] = []
+        m_targets: list[float] = []
+        c_targets: list[float] = []
         for e in elements:
             if not isinstance(e, dict):
                 continue
-            z2 = int(e.get("Z", 0) or 0)
-            if z2 <= 0:
+            try:
+                z = int(e.get("Z", 0) or 0)
+                m = float(e.get("mass_amu", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                continue
+            if z <= 0 or m <= 0:
                 continue
             try:
-                r = float(e.get("ratio", 0.0) or 0.0)
+                ratio = float(e.get("ratio", 0.0) or 0.0)
             except (TypeError, ValueError):
-                r = 0.0
-            if r <= 0:
+                ratio = 0.0
+            if ratio <= 0:
                 continue
-            try:
-                m2 = float(e.get("mass_amu", 0.0) or 0.0)
-            except (TypeError, ValueError):
-                m2 = 0.0
-            if m2 <= 0:
-                continue
-            ratios.append(r)
-            z_targets.append(z2)
-            m_targets_amu.append(m2)
+            z_targets.append(z)
+            m_targets.append(m)
+            c_targets.append(ratio)
 
-        if not ratios:
-            raise ValueError("Target stoichiometry is zero")
+        if not z_targets:
+            raise ValueError("No valid target elements")
 
-        total_ratio = float(sum(ratios))
-        fracs = [r / total_ratio for r in ratios]
+        # The new KORAL main expects d_target as a list (one entry per element).
+        # It represents the total atomic number density of the compound in
+        # atoms/Å³; per-element weighting is done via c_target fractions.
+        d_targets = [nd_A3] * len(z_targets)
 
-        # Stopping powers (J/m)
-        s_e_J_per_m = _electronic_stopping_J_per_m(
-            z_ion=z_ion,
-            z_targets=z_targets,
-            fracs=fracs,
-            nd_A3=nd_A3,
-            energies_J=np.asarray(energies_J, dtype=float),
-            compound_correction=compound_corr,
-        )
+        # energies in eV for KORAL
+        start_eV = energies_keV[0] * 1e3
+        stop_eV = energies_keV[-1] * 1e3
+        nr_values = len(energies_keV)
 
-        s_n_J_per_m = _nuclear_stopping_J_per_m(
+        toml_text = _build_koral_input_toml(
             method=self._method,
             z_ion=z_ion,
-            m_ion_amu=m_ion_amu,
+            m_ion=m_ion_amu,
             z_targets=z_targets,
-            m_targets_amu=m_targets_amu,
-            fracs=fracs,
-            nd_A3=nd_A3,
-            energies_J=np.asarray(energies_J, dtype=float),
+            m_targets=m_targets,
+            d_targets=d_targets,
+            c_targets=c_targets,
+            start_eV=start_eV,
+            stop_eV=stop_eV,
+            nr_values=nr_values,
         )
 
-        # CSDA projected range (m): R(E) = ∫ dE / (Se+Sn)
-        s_tot = np.maximum(s_e_J_per_m + s_n_J_per_m, 1e-30)
-        E = np.asarray(energies_J, dtype=float)
+        # Create a dedicated temp dir per run for KORAL's file-based I/O.
+        tmp_dir = tempfile.mkdtemp(prefix="koral_run_")
+        try:
+            toml_path = Path(tmp_dir) / "koral_input.toml"
+            toml_path.write_text(toml_text, encoding="utf-8")
 
-        # Ensure monotonic increasing energies for integration.
-        if np.any(np.diff(E) < 0):
-            order = np.argsort(E)
-            E = E[order]
-            energies_keV_sorted = [energies_keV[i] for i in order]
-            s_e_J_per_m = s_e_J_per_m[order]
-            s_n_J_per_m = s_n_J_per_m[order]
-            s_tot = s_tot[order]
-        else:
-            energies_keV_sorted = energies_keV
+            # KORAL loads SRIM stopping power tables via the relative path
+            # './data/SRIM_setab/'. Temporarily chdir to the repo root so that
+            # relative path resolves correctly.
+            repo_root = _repo_root()
+            prev_cwd = os.getcwd()
+            try:
+                os.chdir(str(repo_root))
+                rc = KORAL(str(tmp_dir))
+            finally:
+                os.chdir(prev_cwd)
 
-        inv_s = 1.0 / s_tot
-        dE = np.diff(E)
-        avg = (inv_s[:-1] + inv_s[1:]) * 0.5
-        cum = np.concatenate(([0.0], np.cumsum(dE * avg)))
+            if rc != 1:
+                raise RuntimeError(f"KORAL returned error code {rc}")
 
-        zeros = np.zeros_like(cum)
+            csv_path = Path(tmp_dir) / "koral.csv"
+            if not csv_path.exists():
+                raise RuntimeError("KORAL did not produce output koral.csv")
+
+            data = np.loadtxt(str(csv_path), delimiter=";", comments="#")
+            if data.ndim == 1:
+                data = data.reshape(1, -1)
+            if data.shape[1] < 7:
+                raise RuntimeError(f"Unexpected koral.csv shape: {data.shape}")
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+        # koral.csv columns:
+        #   0: E        [eV]
+        #   1: R_p      [Å]
+        #   2: sigma_x  [Å]   (longitudinal straggling)
+        #   3: sigma_z  [Å]   (lateral straggling)
+        #   4: S_e      [eV/Å]
+        #   5: S_n      [eV/Å]
+        #   6: Q_n      [eV²/Å]
+        E_eV      = data[:, 0]
+        R_p_A     = data[:, 1]
+        sigma_x_A = data[:, 2]
+        sigma_z_A = data[:, 3]
+        S_e_evA   = data[:, 4]
+        S_n_evA   = data[:, 5]
+        Q_n_ev2A  = data[:, 6]
+
+        energies_keV_out = [float(x) for x in (E_eV / 1e3)]
+
+        # Convert eV/Å -> J/m
+        eV_J = 1.602176634e-19
+        A_to_m = 1e-10
+        s_e_J = [float(x) for x in (S_e_evA * eV_J / A_to_m)]
+        s_n_J = [float(x) for x in (S_n_evA * eV_J / A_to_m)]
+
+        # Convert Å -> m
+        prange_m  = [float(x) for x in (R_p_A     * A_to_m)]
+        sigma_x_m = [float(x) for x in (sigma_x_A * A_to_m)]
+        sigma_z_m = [float(x) for x in (sigma_z_A * A_to_m)]
 
         outs: dict[str, list[float]] = {
-            "elec_stop": [float(x) for x in s_e_J_per_m],
-            "nucl_stop": [float(x) for x in s_n_J_per_m],
-            "prange": [float(x) for x in cum],
-            "long_strag": [float(x) for x in zeros],
-            "lat_strag": [float(x) for x in zeros],
+            "elec_stop":  s_e_J,
+            "nucl_stop":  s_n_J,
+            "nucl_strag": [float(x) for x in Q_n_ev2A],
+            "prange":     prange_m,
+            "long_strag": sigma_x_m,
+            "lat_strag":  sigma_z_m,
         }
 
         requested = output.get("requested")
         if isinstance(requested, list) and requested:
-            outs = {k: v for k, v in outs.items() if k in {str(x) for x in requested}}
+            req_set = {str(x) for x in requested}
+            outs = {k: v for k, v in outs.items() if k in req_set}
 
         return {
             "model_id": self._model_ref,
-            "energies_keV": list(energies_keV_sorted),
+            "energies_keV": energies_keV_out,
             "outputs": outs,
         }
 
 
-def _repo_root() -> Path:
-    # This file lives in <repo>/simulators/; root is one level above.
-    return Path(__file__).resolve().parent.parent
-
-
-def _data_dir() -> Path:
-    return _repo_root() / "data"
-
-
-@lru_cache(maxsize=128)
-def _load_srim_setab(ion_z: int) -> tuple[np.ndarray, np.ndarray]:
-    path = _data_dir() / "SRIM_setab" / f"SRIM2013-{int(ion_z):02d}.dat"
-    if not path.exists():
-        raise FileNotFoundError(f"Missing SRIM table: {path}")
-    data = np.loadtxt(path, skiprows=6, dtype=float)
-    if data.ndim != 2 or data.shape[1] < 2:
-        raise ValueError(f"Invalid SRIM table format: {path}")
-    energies_eV = data[:, 0]
-    stop_eV_A2 = data[:, 1:]
-    return energies_eV, stop_eV_A2
-
-
-def _electronic_stopping_J_per_m(
-    *,
-    z_ion: int,
-    z_targets: list[int],
-    fracs: list[float],
-    nd_A3: float,
-    energies_J: np.ndarray,
-    compound_correction: float,
-) -> np.ndarray:
-    """Electronic stopping (J/m) from SRIM-2013 stopping cross sections."""
-
-    energies_eV_tab, stop_eV_A2_tab = _load_srim_setab(int(z_ion))
-
-    eV_J = 1.602176634e-19
-
-    energies_eV = energies_J / eV_J
-
-    mix_cs = np.zeros_like(energies_eV, dtype=float)
-
-    for z2, fi in zip(z_targets, fracs):
-        if z2 <= 0 or fi <= 0:
-            continue
-        col = int(z2) - 1
-        if col < 0 or col >= stop_eV_A2_tab.shape[1]:
-            continue
-
-        y = stop_eV_A2_tab[:, col]
-        mix_cs += fi * _interp_positive(energies_eV_tab, y, energies_eV)
-
-    linear_eV_per_A = mix_cs * float(nd_A3) * float(compound_correction)
-
-    return linear_eV_per_A * (eV_J / 1.0e-10)
-
-
-@lru_cache(maxsize=1)
-def _nlh_params() -> dict[tuple[int, int], tuple[np.ndarray, np.ndarray]]:
-    """Return {(Z1,Z2): (sn_params[a,b,c,d], qn_params[a,b,c,d])}."""
-
-    sn_path = _data_dir() / "NLH" / "sn_fit_params.txt"
-    qn_path = _data_dir() / "NLH" / "qn_fit_params.txt"
-
-    def _read(path: Path) -> dict[tuple[int, int], np.ndarray]:
-        out: dict[tuple[int, int], np.ndarray] = {}
-        for line in path.read_text(encoding="utf-8").splitlines():
-            s = line.strip()
-            if not s or s.startswith("#"):
-                continue
-            parts = s.split()
-            if len(parts) < 6:
-                continue
-            try:
-                z1 = int(parts[0])
-                z2 = int(parts[1])
-                a, b, c, d = (float(parts[2]), float(parts[3]), float(parts[4]), float(parts[5]))
-            except Exception:
-                continue
-            out[(z1, z2)] = np.asarray([a, b, c, d], dtype=float)
-        return out
-
-    sn = _read(sn_path) if sn_path.exists() else {}
-    qn = _read(qn_path) if qn_path.exists() else {}
-
-    merged: dict[tuple[int, int], tuple[np.ndarray, np.ndarray]] = {}
-    for key, sn_params in sn.items():
-        qn_params = qn.get(key)
-        if qn_params is None:
-            qn_params = np.asarray([0.0, 0.0, 0.0, 0.0], dtype=float)
-        merged[key] = (sn_params, qn_params)
-    return merged
-
-
-def _nuclear_stopping_J_per_m(
+def _build_koral_input_toml(
     *,
     method: str,
     z_ion: int,
-    m_ion_amu: float,
+    m_ion: float,
     z_targets: list[int],
-    m_targets_amu: list[float],
-    fracs: list[float],
-    nd_A3: float,
-    energies_J: np.ndarray,
-) -> np.ndarray:
-    """Nuclear stopping (J/m) using ZBL or NLH universal forms."""
+    m_targets: list[float],
+    d_targets: list[float],
+    c_targets: list[float],
+    start_eV: float,
+    stop_eV: float,
+    nr_values: int,
+) -> str:
+    """Build the TOML input file expected by simulators/koral/__main__.py.
 
-    mid = str(method).strip().upper()
-    if mid not in {"ZBL", "NLH"}:
-        raise ValueError(f"Unsupported nuclear stopping method '{method}'")
+    The new KORAL main function reads [settings] and [params] sections from a
+    TOML file placed in its working directory.
+    """
 
-    total = np.zeros_like(energies_J, dtype=float)
+    def _fmt_float(v: float) -> str:
+        return repr(float(v))
 
-    eV_J = 1.602176634e-19
+    def _fmt_int_list(xs: list[int]) -> str:
+        return "[" + ", ".join(str(int(x)) for x in xs) + "]"
 
-    energies_keV = energies_J / (eV_J * 1.0e3)
+    def _fmt_float_list(xs: list[float]) -> str:
+        return "[" + ", ".join(repr(float(x)) for x in xs) + "]"
 
-    for z2, m2, fi in zip(z_targets, m_targets_amu, fracs):
-        if fi <= 0:
-            continue
-        nd_i = float(nd_A3) * float(fi)
-
-        z1 = float(z_ion)
-        z2f = float(z2)
-        m1 = float(m_ion_amu)
-        m2f = float(m2)
-        denom = (z1 * z2f * ((z1 ** 0.23) + (z2f ** 0.23)))
-        if denom <= 0:
-            continue
-        eps = 32.53 * (m2f / (m1 + m2f)) * energies_keV / denom
-
-        if mid == "ZBL":
-            sn_red = np.log(1.0 + 1.1383 * eps) / (2.0 * (eps + 0.01321 * (eps**0.21226) + 0.19593 * (eps**0.5)))
-        else:
-            params = _nlh_params().get((int(z_ion), int(z2)))
-            sn_params = params[0] if params is not None else np.asarray([1.0, 0.0, 0.0, 0.0], dtype=float)
-            a_p, b_p, c_p, d_p = [float(x) for x in np.asarray(sn_params, dtype=float).tolist()]
-            sn_red = np.log(1.0 + a_p * eps) / (2.0 * (eps + b_p * (eps**c_p) + d_p * (eps**0.5)))
-
-        pref = 8.462 * (z1 * z2f * m1) / ((m1 + m2f) * ((z1 ** 0.23) + (z2f ** 0.23)))
-
-        s_cs_eV_per_1e15 = pref * sn_red
-        s_cs_eV_A2 = s_cs_eV_per_1e15 * 10.0
-
-        s_lin_eV_per_A = s_cs_eV_A2 * nd_i
-
-        total += np.asarray(s_lin_eV_per_A, dtype=float) * (eV_J / 1.0e-10)
-
-    return total
+    lines = [
+        "[settings]",
+        "nr_iterations = 1",
+        'integration_method = "LSODA"',
+        "rtol = 1e-6",
+        "atol = 1e-6",
+        "",
+        "[params]",
+        f'method = "{str(method).upper()}"',
+        f"z_ion = {int(z_ion)}",
+        f"m_ion = {_fmt_float(m_ion)}",
+        f"z_target = {_fmt_int_list(z_targets)}",
+        f"m_target = {_fmt_float_list(m_targets)}",
+        f"d_target = {_fmt_float_list(d_targets)}",
+        f"c_target = {_fmt_float_list(c_targets)}",
+        f"start_energy = {_fmt_float(start_eV)}",
+        f"stop_energy = {_fmt_float(stop_eV)}",
+        f"nr_values = {int(nr_values)}",
+        "",
+    ]
+    return "\n".join(lines)
 
 
-def _interp_positive(x: np.ndarray, y: np.ndarray, xq: np.ndarray) -> np.ndarray:
-    """Interpolate y(x) at xq; uses log-log when y>0 and x>0."""
-
-    x = np.asarray(x, dtype=float)
-    y = np.asarray(y, dtype=float)
-    xq = np.asarray(xq, dtype=float)
-
-    ok = (x > 0) & (y > 0)
-    if np.count_nonzero(ok) >= 2 and np.all(xq > 0):
-        lx = np.log(x[ok])
-        ly = np.log(y[ok])
-        lyq = np.interp(np.log(xq), lx, ly, left=ly[0], right=ly[-1])
-        return np.exp(lyq)
-
-    return np.interp(xq, x, y, left=float(y[0]), right=float(y[-1]))
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parent.parent

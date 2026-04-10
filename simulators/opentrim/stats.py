@@ -44,19 +44,19 @@ def init_stats(NELEM_ION, NELEM_TARGET, input_params):
     """
     global STATS_DTYPE, stats_fields
 
-    follow_recoils = input_params["simulation"]["follow recoils"]
+    follow_recoils = input_params["simulation"]["follow_recoils"]
     NELEM = NELEM_ION + NELEM_TARGET
 
     # Define short names for the statistics, which will be used to construct the 
     # keys of the stats structured array 
     short_names = {
-        "depth distribution": "x",
-        "lateral distribution": "y",
-        "backscattered atoms distribution": "b",
-        "transmitted atoms distribution": "t",
-        "ion/recoils": "",
-        "nuclear energy deposition": "n",
-        "electronic energy deposition": "e",
+        "depth_distribution": "x",
+        "lateral_distribution": "y",
+        "backscattered_atoms": "b",
+        "transmitted_atoms": "t",
+        "ion_recoils": "",
+        "nuclear_energy_deposition": "n",
+        "electronic_energy_deposition": "e",
         "energy": "e",
         "angle": "a",
     }

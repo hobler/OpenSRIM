@@ -190,7 +190,7 @@ def _get_elements_and_materials_params(input_params):
     for imat, mat in enumerate(materials):
         materials_params[imat].name = mat["name"]
         materials_params[imat].density = mat["density"]
-        materials_params[imat].compound_correction = mat["compound correction"]
+        materials_params[imat].compound_correction = mat["compound_correction"]
         materials_params[imat].gas = mat["gas"]
         materials_params[imat].nelem = mat["nelem"]
         for ielem in range(mat["nelem"]):
@@ -200,7 +200,7 @@ def _get_elements_and_materials_params(input_params):
             materials_params[imat].cumulative_fraction[ielem] = (
                 np.sum(mat["atomic_fractions"][:ielem+1]))
             materials_params[imat].displacement_energy[ielem] = (
-                mat["element"][ielem]["displacement energy"])
+                mat["element"][ielem]["displacement_energy"])
 #    print(f"materials_params={materials_params}")
 
     return nelem_target, nelem, elements_params, materials_params
@@ -218,19 +218,19 @@ def _get_estop_params(input_params, nelem, elements_params):
         estop_params: (np.recarray) The electronic stopping parameters.
     """
     ### Define electronic stopping parameters
-    model = input_params["models"]["electronic stopping"]
+    model = input_params["models"]["electronic_stopping"]
 
     if model == "Lindhard":
         # Correction factors to Lindhard stopping power
         corr_lindhard = np.ones((NELEM, NELEM))  # default = 1.0
-        for corr in input_params["models"]["Lindhard correction"]:
+        for corr in input_params["models"]["lindhard_correction"]:
             elem1, elem2 = corr.split("->")
             for ielem1 in range(nelem):
                 for ielem2 in range(nelem):
                     if (elements_params[ielem1].symbol.strip() == elem1 and 
                         elements_params[ielem2].symbol.strip() == elem2):
                         corr_lindhard[ielem1, ielem2] = (
-                            input_params["models"]["Lindhard correction"][corr])
+                            input_params["models"]["lindhard_correction"][corr])
 
         # Prefactor for Lindhard stopping (sqrt(eV)*A^2)
         fac_lindhard = np.empty((NELEM, NELEM))
@@ -313,7 +313,7 @@ def _get_scatter_params(input_params, nelem, elements_params):
     """
     pot_model = input_params["models"]["potential"]
     integrate_algorithm = (
-        input_params["models"]["scattering integrals"]["algorithm"])
+        input_params["models"]["scattering_integrals"]["algorithm"])
 
     rnorm = np.empty((NELEM, NELEM), dtype=np.float64)
     enorm = np.empty((NELEM, NELEM), dtype=np.float64)
@@ -399,7 +399,7 @@ def _get_cascade_params(input_params):
 
     cascade_params = np.recarray(1, dtype=CASCADE_PARAMS_DTYPE)
     cascade_params[0].follow_recoils = (
-        input_params["simulation"]["follow recoils"])
+        input_params["simulation"]["follow_recoils"])
     cascade_params[0].emin = 5.0
     cascade_params[0].ed = 15.0
 

@@ -1,51 +1,43 @@
 import os
-from typing import Callable
+from collections.abc import Callable
 
 import numpy as np
 import scipy.constants as constants
 from scipy.interpolate import PchipInterpolator
 
-def S_u(gamma: list[float],
-        e_u: list[float],
-        a_u: list[float],
+def S_u(gamma: float,
+        e_u: float,
+        a_u: float,
         d_target: float) -> float:
     return (
         np.multiply(np.multiply(gamma, e_u), np.pow(a_u, 2)) * constants.pi * d_target
     )
 
-def Q_u(s_u: list[float],
-        gamma: list[float],
-        e_u: list[float],
-        d_target: float) -> list[float]:
+def Q_u(s_u: float,
+        gamma: float,
+        e_u: float) -> float:
     return (
-        np.multiply(s_u, np.multiply(gamma, e_u)) * d_target
+        np.multiply(s_u, np.multiply(gamma, e_u))
     )
 
 def S_e_SRIM(z_ion: int,
-            z_target: list[int],
+            z_target: int,
             d_target: float,
-            s_e_f: list[float]) -> Callable[[list[float]], list[float]]:
+            f_target: float) -> Callable[[list[float]], list[float]]:
     # TODO: define file path globally
     srim_setab_dir = './data/SRIM_setab/'
     filename = f'SRIM2013-{z_ion:02d}.dat'
 
-    se_vals = []
-    e = None
-    for z in z_target:
-        data = np.loadtxt(os.path.join(srim_setab_dir, filename), skiprows=6, dtype=float)
-        if e is None:
-            e = data[:, 0]
-        # TODO: check if implementation is correct
-        se_vals.append(data[:, z] * d_target)
-    s_e = np.inner(np.atleast_2d(se_vals).T, np.atleast_2d(s_e_f)).T[0] * d_target
-    print(s_e)
+    data = np.loadtxt(os.path.join(srim_setab_dir, filename), skiprows=6, dtype=float)
+    e = data[:,0]
+    s_e = np.multiply(np.multiply(data[:, z_target], d_target), f_target)
     return PchipInterpolator(e, s_e)
 
 
 ###############################################################################
 # Universal ZBL
 ###############################################################################
-def S_n_ZBL(epsilon: list[float], s_u: list[float]):
+def S_n_ZBL(epsilon: list[float], s_u: float) -> list[float]:
     """Calculates the universal nuclear stopping power $S_n(\epsilon)$
 
     $$
@@ -63,7 +55,7 @@ def S_n_ZBL(epsilon: list[float], s_u: list[float]):
         np.divide(numerator, denominator)
     )
 
-def Q_n_ZBL(epsilon: list[float], q_u: list[float]):
+def Q_n_ZBL(epsilon: list[float], q_u: float) -> list[float]:
     """Calculates the nuclear energy loss $Q_n(E)$
 
     $$
@@ -81,7 +73,7 @@ def Q_n_ZBL(epsilon: list[float], q_u: list[float]):
 ###############################################################################
 # NLH
 ###############################################################################
-def S_n_NLH(epsilon: list[float], params: list[float], s_u: list[float]):
+def S_n_NLH(epsilon: list[float], params: list[float], s_u: float) -> list[float]:
     a, b, c, d = params
 
     numerator = s_u * np.log(1 + a*epsilon)
@@ -91,7 +83,7 @@ def S_n_NLH(epsilon: list[float], params: list[float], s_u: list[float]):
         np.divide(numerator, denominator)
     )
 
-def Q_n_NLH(epsilon: list[float], params: list[float], q_u: list[float]):
+def Q_n_NLH(epsilon: list[float], params: list[float], q_u: float) -> list[float]:
     a, b, c, d = params
 
     denominator = (4 + a*epsilon**b + c*epsilon**d)

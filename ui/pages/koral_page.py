@@ -2467,7 +2467,7 @@ class KoralPage(QWidget):
 
         action_cell = QWidget(self.elem_table)
         action_l = QHBoxLayout(action_cell)
-        action_l.setContentsMargins(0, 0, 0, 0)
+        action_l.setContentsMargins(4, 0, 0, 0)
         action_l.setSpacing(6)
         if hasattr(self, "elem_pick_btn") and self.elem_pick_btn is not None:
             action_l.addWidget(self.elem_pick_btn)
@@ -2585,6 +2585,13 @@ class KoralPage(QWidget):
         v.addLayout(row_lat)
         self._output_option_widgets["lat_strag"] = [self.chk_lat_strag, self.cmb_lat_strag]
 
+        row_nucl_strag = QHBoxLayout()
+        self.chk_nucl_strag_qn = QCheckBox("Nuclear Straggling (Qn)")
+        row_nucl_strag.addWidget(self.chk_nucl_strag_qn)
+        row_nucl_strag.addStretch(1)
+        v.addLayout(row_nucl_strag)
+        self._output_option_widgets["nucl_strag"] = [self.chk_nucl_strag_qn]
+
         row_nucl = QHBoxLayout()
         self.chk_nucl_strag = QCheckBox("Nuclear Stopping")
         row_nucl.addWidget(self.chk_nucl_strag)
@@ -2605,13 +2612,6 @@ class KoralPage(QWidget):
         row_nucl.addWidget(self.cmb_nucl_stop_unit)
         v.addLayout(row_nucl)
         self._output_option_widgets["nucl_stop"] = [self.chk_nucl_strag, self.cmb_nucl_stop_unit]
-
-        row_nucl_strag = QHBoxLayout()
-        self.chk_nucl_strag_qn = QCheckBox("Nuclear Straggling (Qn)")
-        row_nucl_strag.addWidget(self.chk_nucl_strag_qn)
-        row_nucl_strag.addStretch(1)
-        v.addLayout(row_nucl_strag)
-        self._output_option_widgets["nucl_strag"] = [self.chk_nucl_strag_qn]
 
         row_elect = QHBoxLayout()
         self.chk_elec_hop = QCheckBox("Electron Stopping")
@@ -2646,18 +2646,7 @@ class KoralPage(QWidget):
         row_corr.addWidget(self.spin_compound_corr)
         v.addLayout(row_corr)
 
-        row_switch = QHBoxLayout()
-        row_switch.addWidget(QLabel("Plot"))
-        self.sw_koral_mode = ToggleSwitch()
-        self.sw_koral_mode.setChecked(False)  # False = Plot, True = List
-        row_switch.addWidget(self.sw_koral_mode)
-        row_switch.addWidget(QLabel("List"))
-        row_switch.addStretch(1)
-        v.addLayout(row_switch)
-
-        self.sw_koral_mode.toggled.connect(self._update_koral_plot_view)
-
-        # --- "All" checkbox ganz unten, leicht links eingerückt ---
+        # --- "All" checkbox ---
         v.addStretch(1)
         all_row = QHBoxLayout()
         all_row.addSpacing(10)
@@ -2669,6 +2658,17 @@ class KoralPage(QWidget):
         all_row.addWidget(self.all_none_chk)
         all_row.addStretch(1)
         v.addLayout(all_row)
+
+        row_switch = QHBoxLayout()
+        row_switch.addWidget(QLabel("Plot"))
+        self.sw_koral_mode = ToggleSwitch()
+        self.sw_koral_mode.setChecked(False)  # False = Plot, True = List
+        row_switch.addWidget(self.sw_koral_mode)
+        row_switch.addWidget(QLabel("List"))
+        row_switch.addStretch(1)
+        v.addLayout(row_switch)
+
+        self.sw_koral_mode.toggled.connect(self._update_koral_plot_view)
 
         return box
 
@@ -2703,6 +2703,7 @@ class KoralPage(QWidget):
         ax.set_title("KORAL results")
         ax.set_xlabel("Energy (eV)")
         ax.set_ylabel("Value")
+        self.figure.tight_layout()
 
         # Wrap toolbar+canvas into a single movable widget
         self._plot_grid = grid

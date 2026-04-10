@@ -87,8 +87,6 @@ class MainWindow(QMainWindow):
 
         self.state = AppState()
 
-        self._create_standard_menu_bar()
-
         self.tab_widget = QTabWidget()
         self.setCentralWidget(self.tab_widget)
 
@@ -216,10 +214,8 @@ class MainWindow(QMainWindow):
         self.view_menu.menuAction().setVisible(False)
         self.export_menu.menuAction().setVisible(False)
 
-    def _on_tab_changed(self, index: int):
-        is_mc_results_tab = self.tab_widget.tabText(index) == "MC Results"
-        self.view_menu.menuAction().setVisible(is_mc_results_tab)
-        self.export_menu.menuAction().setVisible(is_mc_results_tab)
+    def _on_tab_changed(self, _index: int):
+        pass
 
     def _open_advanced_options(self, section_id: str):
         self.tab_widget.setCurrentWidget(self.advanced_options_tab)

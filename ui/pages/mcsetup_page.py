@@ -506,7 +506,7 @@ class MCSetupPage(QWidget):
         header_l = QHBoxLayout(header)
         header_l.setContentsMargins(0, 0, 0, 0)
         header_l.setSpacing(6)
-        title_lbl = QLabel("Target layer selection", header)
+        title_lbl = QLabel("Target Layer Selection", header)
         title_lbl.setStyleSheet("font-weight: 600;")
         header_l.addWidget(title_lbl)
         header_l.addWidget(self._hint_btn("target_layers", parent=header))
@@ -587,7 +587,7 @@ class MCSetupPage(QWidget):
 
         cell = QWidget(self.layers_table)
         cell_l = QHBoxLayout(cell)
-        cell_l.setContentsMargins(0, 0, 0, 0)
+        cell_l.setContentsMargins(4, 0, 0, 0)
         cell_l.setSpacing(6)
         add_layer = QPushButton("+", cell)
         add_layer.setToolTip("Add layer")
@@ -1342,7 +1342,7 @@ class MCSetupPage(QWidget):
 
         action_cell = QWidget(self.elem_table)
         action_l = QHBoxLayout(action_cell)
-        action_l.setContentsMargins(0, 0, 0, 0)
+        action_l.setContentsMargins(4, 0, 0, 0)
         action_l.setSpacing(6)
         if hasattr(self, "elem_pick_btn") and self.elem_pick_btn is not None:
             action_l.addWidget(self.elem_pick_btn)

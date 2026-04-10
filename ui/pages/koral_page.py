@@ -1480,8 +1480,27 @@ class KoralPage(QWidget):
             if any(_has_key(r) for r in norm):
                 keys_present.append(k)
 
+        def _format_length_no_unit(v_m: float, unit: str, *, use_comma: bool = False) -> str:
+            """Format length value without the unit suffix."""
+            val = self._length_from_m(v_m, unit)
+            u = str(unit)
+            if u == "Ång":
+                s = f"{int(round(val))}"
+            else:
+                s = f"{val:.3g}"
+            return s.replace(".", ",") if use_comma else s
+
+        def _format_energy_no_unit(e_keV: float, *, use_comma: bool = False) -> str:
+            """Format energy in keV without the unit suffix."""
+            try:
+                e = float(e_keV)
+            except (TypeError, ValueError):
+                e = 0.0
+            s = f"{e:.2f}"
+            return s.replace(".", ",") if use_comma else s
+
         def line_for_point(e_keV: float, outs: dict, i: int) -> str:
-            energy = self._format_energy_label(e_keV, use_comma=True).rjust(12)
+            energy = _format_energy_no_unit(e_keV, use_comma=True).rjust(12)
             vals: list[str] = []
             for k in keys_present:
                 series = outs.get(k)
@@ -1508,7 +1527,7 @@ class KoralPage(QWidget):
                         unit_for_k = range_unit_long
                     elif k == "lat_strag":
                         unit_for_k = range_unit_lat
-                    vals.append(self._format_length(v, unit_for_k, use_comma=True).rjust(10))
+                    vals.append(_format_length_no_unit(v, unit_for_k, use_comma=True).rjust(10))
             return f"  {energy}  " + " ".join(vals)
 
         now_dt = datetime.now()
@@ -1586,6 +1605,11 @@ class KoralPage(QWidget):
         out_lines.append("")
         out_lines.append("        Ion        dE/dx      dE/dx     Projected  Longitudinal   Lateral")
         out_lines.append("       Energy      Elec.      Nuclear     Range     Straggling   Straggling")
+        # Unit abbreviations for range columns
+        _ru = "A" if range_unit == "Ång" else range_unit
+        _rlu = "A" if range_unit_long == "Ång" else range_unit_long
+        _rla = "A" if range_unit_lat == "Ång" else range_unit_lat
+        out_lines.append(f"       [keV]     [eV/Ang]   [eV/Ang]     [{_ru}]        [{_rlu}]        [{_rla}]")
         out_lines.append("  --------------  ---------- ---------- ----------  ----------  ----------")
 
         multi = len(norm) > 1
@@ -2235,6 +2259,7 @@ class KoralPage(QWidget):
         if vh is not None:
             vh.setVisible(False)
         self.elem_table.setAlternatingRowColors(True)
+        self.elem_table.setColumnHidden(7, True)
         self.elem_table.setColumnHidden(8, True)
         self.elem_table.setColumnHidden(9, True)
         self.elem_table.setColumnHidden(10, True)

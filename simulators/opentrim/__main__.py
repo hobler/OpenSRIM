@@ -35,8 +35,10 @@ from .init_params import get_params  # defines the params structured array
 from .stats import init_stats, zero_stats, print_moments, plot_histograms  # defines the stats structured array
 from .simulator import simulate, simulate_chunked, simulate_adaptive  # noqa: F401
 
-
-input_params = read_params()
+if len(sys.argv) < 2:
+    print(f"Usage: python -m {__package__} <CONFIG_PATH>")
+    exit(1)
+input_params = read_params(sys.argv[1])
 NELEM_ION, NELEM_TARGET, params = get_params(input_params)
 stats = init_stats(NELEM_ION, NELEM_TARGET, input_params)
 
@@ -55,9 +57,8 @@ if __name__ == "__main__":
     
     print("Startup time:", time.time() - start)
     iter_cnt = 1
-    counts = [10000, 10000] #[10000]
-    #counts = [10000]
-    chunk_size = 100
+    counts = [input_params["simulation"]["nions"]]
+    chunk_size = input_params["simulation"]["nions_update"]
     # avg_chunk_time = 0.1    # seconds
     
     proj_counts = [[] for _ in range(len(counts))]
@@ -70,7 +71,7 @@ if __name__ == "__main__":
 
             start_time = time.time()
             # simulate_adaptive(avg_chunk_time, c, params, stats)
-            simulate_chunked(chunk_size, c, params, stats)
+            simulate_chunked(chunk_size, c, params, stats, input_params)
             # simulate(c, params, stats, sim_idx=0)
             times[i].append(time.time() - start_time)
             

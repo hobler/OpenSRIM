@@ -51,10 +51,12 @@ def _generate_hardcoded_data():
 
     for _ in range(n_traj):
         n_pts = int(rng.integers(18, 70))
-        steps = rng.normal(loc=0.0, scale=14.0, size=(n_pts, 2))
-        xy = np.cumsum(steps, axis=0)
-        x = xy[:, 0]
-        y = xy[:, 1]
+        # x = depth direction (positive drift = ion penetrates into material)
+        # y = lateral direction (zero mean)
+        x_steps = rng.normal(loc=28.0, scale=12.0, size=n_pts)
+        y_steps = rng.normal(loc=0.0, scale=14.0, size=n_pts)
+        x = np.concatenate([[0.0], np.cumsum(x_steps)])
+        y = np.concatenate([[0.0], np.cumsum(y_steps)])
         trajectories_xy.append((x, y))
 
         collisions = max(0, n_pts - 1)
@@ -149,6 +151,20 @@ def _generate_hardcoded_data():
     def _safe_percentile(values: np.ndarray, q: float) -> float:
         return float(np.percentile(values, q)) if values.size else 0.0
 
+    def _skewness(values: np.ndarray) -> float:
+        if values.size < 2:
+            return 0.0
+        centered = values - float(np.mean(values))
+        var = float(np.mean(centered**2))
+        return float(np.mean(centered**3) / var**1.5) if var > 1e-12 else 0.0
+
+    def _kurtosis(values: np.ndarray) -> float:
+        if values.size < 2:
+            return 0.0
+        centered = values - float(np.mean(values))
+        var = float(np.mean(centered**2))
+        return float(np.mean(centered**4) / var**2 - 3.0) if var > 1e-12 else 0.0
+
     def _safe_peak_center(values: np.ndarray, bins: int, limits: tuple[float, float]) -> float:
         if values.size == 0:
             return 0.0
@@ -160,22 +176,22 @@ def _generate_hardcoded_data():
     def plot_traj_start(ax):
         ax.scatter(start_x, start_y, s=18, alpha=0.75, color="#3274A1")
         _set_equal_limits(ax, start_x, start_y)
-        ax.set_xlabel("X (A)")
-        ax.set_ylabel("Y (A)")
+        ax.set_xlabel("X / Depth (A)")
+        ax.set_ylabel("Y / Lateral (A)")
         ax.set_title("Trajectories: Start")
 
     def plot_traj_end(ax):
         ax.scatter(end_x, end_y, s=18, alpha=0.75, color="#E1812C")
         _set_equal_limits(ax, end_x, end_y)
-        ax.set_xlabel("X (A)")
-        ax.set_ylabel("Y (A)")
+        ax.set_xlabel("X / Depth (A)")
+        ax.set_ylabel("Y / Lateral (A)")
         ax.set_title("Trajectories: End")
 
     def plot_traj_collisions(ax):
         ax.scatter(collision_x, collision_y, s=9, alpha=0.35, color="#C03D3E")
         _set_equal_limits(ax, collision_x, collision_y)
-        ax.set_xlabel("X (A)")
-        ax.set_ylabel("Y (A)")
+        ax.set_xlabel("X / Depth (A)")
+        ax.set_ylabel("Y / Lateral (A)")
         ax.set_title("Trajectories: Collisions")
 
     def plot_range_ion_recoil(ax):
@@ -357,8 +373,8 @@ def _generate_hardcoded_data():
         start_r = np.hypot(start_x, start_y)
         return [
             ("Trajectories", f"{len(trajectories_xy)}"),
-            ("Mean X(start)", f"{_safe_mean(start_x):.1f} A"),
-            ("Mean Y(start)", f"{_safe_mean(start_y):.1f} A"),
+            ("Mean X/Depth(start)", f"{_safe_mean(start_x):.1f} A"),
+            ("Mean Y/Lateral(start)", f"{_safe_mean(start_y):.1f} A"),
             ("Max start radius", f"{_safe_max(start_r):.1f} A"),
         ]
 
@@ -366,8 +382,8 @@ def _generate_hardcoded_data():
         end_r = np.hypot(end_x, end_y)
         return [
             ("Trajectories", f"{len(trajectories_xy)}"),
-            ("Mean X(end)", f"{_safe_mean(end_x):.1f} A"),
-            ("Mean Y(end)", f"{_safe_mean(end_y):.1f} A"),
+            ("Mean X/Depth(end)", f"{_safe_mean(end_x):.1f} A"),
+            ("Mean Y/Lateral(end)", f"{_safe_mean(end_y):.1f} A"),
             ("Mean end radius", f"{_safe_mean(end_r):.1f} A"),
         ]
 
@@ -383,9 +399,15 @@ def _generate_hardcoded_data():
     def stats_range_ion_recoil() -> List[tuple[str, str]]:
         return [
             ("Ion samples", f"{len(ion_depths)}"),
+            ("Ion mean depth", f"{_safe_mean(ion_depths):.1f} A"),
+            ("Ion std (straggling)", f"{_safe_std(ion_depths):.1f} A"),
+            ("Ion skewness", f"{_skewness(ion_depths):.4f}"),
+            ("Ion kurtosis (excess)", f"{_kurtosis(ion_depths):.4f}"),
             ("Recoil samples", f"{len(recoil_depths)}"),
-            ("Mean ion depth", f"{_safe_mean(ion_depths):.1f} A"),
-            ("Mean recoil depth", f"{_safe_mean(recoil_depths):.1f} A"),
+            ("Recoil mean depth", f"{_safe_mean(recoil_depths):.1f} A"),
+            ("Recoil std (straggling)", f"{_safe_std(recoil_depths):.1f} A"),
+            ("Recoil skewness", f"{_skewness(recoil_depths):.4f}"),
+            ("Recoil kurtosis (excess)", f"{_kurtosis(recoil_depths):.4f}"),
         ]
 
     def stats_range_photons() -> List[tuple[str, str]]:
@@ -393,6 +415,9 @@ def _generate_hardcoded_data():
         return [
             ("Photon samples", f"{len(photon_depths)}"),
             ("Mean depth", f"{_safe_mean(photon_depths):.1f} A"),
+            ("Std depth", f"{_safe_std(photon_depths):.1f} A"),
+            ("Skewness", f"{_skewness(photon_depths):.4f}"),
+            ("Kurtosis (excess)", f"{_kurtosis(photon_depths):.4f}"),
             ("Peak depth", f"{peak:.1f} A"),
             ("P90 depth", f"{_safe_percentile(photon_depths, 90.0):.1f} A"),
         ]
@@ -412,9 +437,15 @@ def _generate_hardcoded_data():
     def stats_lateral_ion_recoil() -> List[tuple[str, str]]:
         return [
             ("Ion samples", f"{len(lateral_ion)}"),
+            ("Ion mean lateral", f"{_safe_mean(lateral_ion):.1f} A"),
+            ("Ion std lateral", f"{_safe_std(lateral_ion):.1f} A"),
+            ("Ion skewness", f"{_skewness(lateral_ion):.4f}"),
+            ("Ion kurtosis (excess)", f"{_kurtosis(lateral_ion):.4f}"),
             ("Recoil samples", f"{len(lateral_recoil)}"),
-            ("Std ion lateral", f"{_safe_std(lateral_ion):.1f} A"),
-            ("Std recoil lateral", f"{_safe_std(lateral_recoil):.1f} A"),
+            ("Recoil mean lateral", f"{_safe_mean(lateral_recoil):.1f} A"),
+            ("Recoil std lateral", f"{_safe_std(lateral_recoil):.1f} A"),
+            ("Recoil skewness", f"{_skewness(lateral_recoil):.4f}"),
+            ("Recoil kurtosis (excess)", f"{_kurtosis(lateral_recoil):.4f}"),
         ]
 
     def stats_lateral_photons() -> List[tuple[str, str]]:
@@ -423,6 +454,8 @@ def _generate_hardcoded_data():
             ("Photon samples", f"{len(lateral_photons)}"),
             ("Mean lateral", f"{_safe_mean(lateral_photons):.1f} A"),
             ("Std lateral", f"{_safe_std(lateral_photons):.1f} A"),
+            ("Skewness", f"{_skewness(lateral_photons):.4f}"),
+            ("Kurtosis (excess)", f"{_kurtosis(lateral_photons):.4f}"),
             ("P95 |lateral|", f"{_safe_percentile(abs_lat, 95.0):.1f} A"),
         ]
 
@@ -443,6 +476,9 @@ def _generate_hardcoded_data():
         return [
             ("Backscattered ions", f"{len(backscatter_energy)}"),
             ("Mean energy", f"{_safe_mean(backscatter_energy):.1f} eV"),
+            ("Std energy", f"{_safe_std(backscatter_energy):.1f} eV"),
+            ("Skewness", f"{_skewness(backscatter_energy):.4f}"),
+            ("Kurtosis (excess)", f"{_kurtosis(backscatter_energy):.4f}"),
             ("Peak energy", f"{peak:.1f} eV"),
             ("P90 energy", f"{_safe_percentile(backscatter_energy, 90.0):.1f} eV"),
         ]
@@ -453,6 +489,8 @@ def _generate_hardcoded_data():
             ("Backscattered ions", f"{len(backscatter_angle)}"),
             ("Mean angle", f"{_safe_mean(backscatter_angle):.1f} deg"),
             ("Std angle", f"{_safe_std(backscatter_angle):.1f} deg"),
+            ("Skewness", f"{_skewness(backscatter_angle):.4f}"),
+            ("Kurtosis (excess)", f"{_kurtosis(backscatter_angle):.4f}"),
             ("Peak angle", f"{peak:.1f} deg"),
         ]
 
@@ -461,6 +499,9 @@ def _generate_hardcoded_data():
         return [
             ("Transmitted ions", f"{len(transmitted_energy)}"),
             ("Mean energy", f"{_safe_mean(transmitted_energy):.1f} eV"),
+            ("Std energy", f"{_safe_std(transmitted_energy):.1f} eV"),
+            ("Skewness", f"{_skewness(transmitted_energy):.4f}"),
+            ("Kurtosis (excess)", f"{_kurtosis(transmitted_energy):.4f}"),
             ("Peak energy", f"{peak:.1f} eV"),
             ("P90 energy", f"{_safe_percentile(transmitted_energy, 90.0):.1f} eV"),
         ]
@@ -471,6 +512,9 @@ def _generate_hardcoded_data():
             ("Transmitted ions", f"{len(transmitted_angle)}"),
             ("Mean angle", f"{_safe_mean(transmitted_angle):.1f} deg"),
             ("Std angle", f"{_safe_std(transmitted_angle):.1f} deg"),
+            ("Skewness", f"{_skewness(transmitted_angle):.4f}"),
+            ("Kurtosis (excess)", f"{_kurtosis(transmitted_angle):.4f}"),
+            ("Peak angle", f"{peak:.1f} deg"),
             ("P90 angle", f"{_safe_percentile(transmitted_angle, 90.0):.1f} deg"),
         ]
 
@@ -672,9 +716,6 @@ class ZoomedPlotDialog(QDialog):
                 for entry in AVAILABLE_NUMERICAL_VALUES[:4]
             ]
 
-        rows = rows[:4]
-        while len(rows) < 4:
-            rows.append((f"Value {len(rows) + 1}", "-"))
         return rows
 
     def _populate_stats_table(self, rows: List[tuple[str, str]]) -> None:

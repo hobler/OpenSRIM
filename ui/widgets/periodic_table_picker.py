@@ -41,11 +41,42 @@ class PeriodicTableDialog(QDialog):
         self._setup_ui()
         
     def _load_elements(self):
-        """Load elements from JSON file"""
+        """Load elements from JSON file and enrich with material_densities.csv data."""
         json_path = os.path.join(os.path.dirname(__file__), 'PeriodicTableJSON.json')
         with open(json_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        return {elem['number']: elem for elem in data['elements']}
+        elements = {elem['number']: elem for elem in data['elements']}
+
+        # Enrich with mass1 (most abundant isotope), mass2 (weighted average), esurf from CSV.
+        csv_path = os.path.join(os.path.dirname(__file__), '..', '..', 'data',
+                                'material_densities', 'material_densities.csv')
+        csv_path = os.path.normpath(csv_path)
+        try:
+            with open(csv_path, encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                    parts = [p.strip() for p in line.split(',')]
+                    if len(parts) < 8:
+                        continue
+                    symbol = parts[0].upper()
+                    try:
+                        mass1 = float(parts[1])
+                        mass2 = float(parts[2])
+                        esurf = float(parts[7])
+                    except ValueError:
+                        continue
+                    for elem in elements.values():
+                        if elem.get('symbol', '').upper() == symbol:
+                            elem['mass1'] = mass1
+                            elem['mass2'] = mass2
+                            elem['esurf'] = esurf
+                            break
+        except OSError:
+            pass
+
+        return elements
     
     def _get_element_group(self, element):
         """Determine element group for color coding"""
@@ -201,12 +232,9 @@ class PeriodicTableDialog(QDialog):
         detail_columns = 2 if self.compact else 3
         self.info_labels = {}
         info_items = [
-            ("atomic_mass", "Mass:", "amu"),
-            ("density", "Density:", "g/cm³"),
-            ("melt", "M.P.:", "K"),
-            ("boil", "B.P.:", "K"),
-            ("electron_affinity", "E.Aff.:", "kJ/mol"),
-            ("electronegativity_pauling", "E.neg.:", ""),
+            ("mass1", "Mass (isotope):", "amu"),
+            ("mass2", "Mass (avg):", "amu"),
+            ("esurf", "Surf. binding:", "eV"),
         ]
         
         row, col = 0, 0

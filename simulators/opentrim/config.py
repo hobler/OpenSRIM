@@ -14,3 +14,5 @@ if getattr(sys, "frozen", False):
 ENABLE_CACHING = getattr(sys, "frozen", False)  
 # Parallel processing in Numba
 PARALLEL = True
+# Enable profiling of jitted functions if called with a profiler
+#os.environ["NUMBA_ENABLE_PROFILING"] = "1"

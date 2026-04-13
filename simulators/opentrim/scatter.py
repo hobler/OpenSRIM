@@ -8,13 +8,35 @@ numerically, or Biersack"s "magic formula" is usedfor the scattering angle.
 Available functions:
     scatter: treat a scattering event.
 """
-import os
 import math
-from collections import namedtuple
 import numpy as np
-from numba import jit
-from .zbl import magic
-#from .cm_scatter import scatter_integrals
+from numba import jit, from_dtype
+from numba.core.extending import register_jitable
+from . import nlhlin
+from . import zbl
+from .cm_scatter import scatter_integrals
+
+
+@register_jitable
+def screen_fun_wrapper(r, pot_model, pot_coefs):
+    """Wrapper to call the appropriate screening function based on the 
+    potential model.
+
+    Parameters:
+        r (float): Distance between the ion and the target atom (RNORM)
+        pot_model (str): The potential model to use ("ZBL" or "NLHlin")
+        pot_coefs: Parameters for the potential model, including the model type.
+    
+    Returns:
+        (float): Screening function value
+        (float): Derivative of the screening function
+    """
+    if pot_model == "ZBL":
+        return zbl.screen_fun(r, pot_coefs)
+    elif pot_model == "NLHlin":
+        return nlhlin.screen_fun(r, pot_coefs)
+    else:
+        raise ValueError(f"Potential model {pot_model} not recognized")
 
 
 @jit(inline = "always")
@@ -51,6 +73,9 @@ def scatter(proj, p, dirp, recoil, scatter_params):
     The direction vectors proj["dir"] and dirp[:] are assumed to be normalized 
     to unit length.
 
+    Note: Attempts to assign zbl.screen_fun or nlhlin.screen_fun to a variable 
+    and to pass it to scatter_integrals failed.
+
     Parameters:
         proj (Projectile): state of the projectile (modified in-place)
         p (float): impact parameter (A)
@@ -70,18 +95,24 @@ def scatter(proj, p, dirp, recoil, scatter_params):
     rnorm = scatter_params.rnorm[ielem1, ielem2]
     dirfac = scatter_params.dirfac[ielem1, ielem2]
     denfac = scatter_params.denfac[ielem1, ielem2]
+    integrate_algorithm = scatter_params.integrate_algorithm
     pot_model = scatter_params.pot_model
+    pot_coefs = scatter_params.pot_coefs[ielem1, ielem2]
     
-    if pot_model == "ZBL_magic":
-        cos_half_theta = magic(proj_e/enorm, p/rnorm)
-        sin_half_theta = math.sqrt(1 - cos_half_theta**2)
-    elif pot_model.endswith("magic"):
-        raise ValueError(f"Unknown potential model {pot_model}")
+    if integrate_algorithm == "magic":
+        if pot_model == "ZBL":
+            cos_half_theta = zbl.magic(proj_e/enorm, p/rnorm, pot_coefs)
+            sin_half_theta = math.sqrt(1 - cos_half_theta**2)
+        else:
+            raise ValueError(f"Potential model {pot_model} deactivated for now")
+    elif integrate_algorithm == "Legendre":
+        theta, _ = scatter_integrals(proj_e/enorm, p/rnorm, 
+                                     pot_model, pot_coefs)
+        sin_half_theta = math.sin(0.5 * theta)
+        cos_half_theta = math.cos(0.5 * theta)
     else:
-        raise ValueError(f"Potential model {pot_model} deactivated for now")
-#        theta, _ = scatter_integrals(proj_e/enorm, p/rnorm, pot_model)
-#        sin_half_theta = math.sin(0.5 * theta)
-#        cos_half_theta = math.cos(0.5 * theta)
+        raise ValueError(f"Unknown scattering integrals algorithm "
+                         f"{integrate_algorithm}")
 
     # directions of the recoil and the projectile after the collision
     recoil_dir = dirfac * sin_half_theta * (

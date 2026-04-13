@@ -1,0 +1,144 @@
+# =============================================================================
+# OpenSRIM / OpenTRIM Input Parameters
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+[simulation]
+# -----------------------------------------------------------------------------
+
+follow_recoils = true       # whether to follow recoils in the simulation
+nions          = 10000      # number of ions to simulate
+nions_update   = 100        # update progress every n ions
+rng_seed       = 12345      # random seed for reproducibility
+workdir        = "../../data/opentrim/results/default"       # working directory for output files
+
+
+# -----------------------------------------------------------------------------
+[beam]
+# -----------------------------------------------------------------------------
+
+symbol = "B"        # chemical symbol of the incoming ion
+name   = "Boron"    # full name of chemical element
+Z      = 5          # atomic number
+M      = 11.009     # mass (amu)
+energy = 50.0       # energy (keV)
+tilt   = 0.0        # tilt angle of the beam (degrees)
+
+
+# -----------------------------------------------------------------------------
+# Layers are defined as an array of tables.
+# Add more [[layer]] blocks to define additional layers (in order).
+# Each layer may contain multiple [[layer.element]] entries.
+# -----------------------------------------------------------------------------
+
+[[layer]]
+name                = "Layer 1"
+width               = 4000.0    # layer thickness (Angstrom)
+density             = 0.04994   # atomic density (atoms/Angstrom^3)
+compound_correction = 1.0       # Bragg compound correction factor
+gas                 = false     # treat layer as gas
+
+    [[layer.element]]
+    symbol             = "Si"
+    name               = "Silicon"
+    Z                  = 14
+    M                  = 28.086
+    stoichiometry      = 1
+    displacement_energy = 15.0  # displacement threshold energy (eV)
+
+# [[layer]]
+# name                = "Layer 2"
+# width               = ...
+# density             = ...
+# compound_correction = 1.0
+# gas                 = false
+#
+#     [[layer.element]]
+#     symbol             = "..."
+#     ...
+
+
+# -----------------------------------------------------------------------------
+[models]
+# -----------------------------------------------------------------------------
+
+potential          = "ZBL"       # interatomic potential for nuclear scattering
+electronic_stopping = "SRIM" # model for electronic stopping power; "Lindhard" or "SRIM"
+
+[models.scattering_integrals]
+algorithm = "magic"  # "magic" or "Gauss-Legendre"
+n_absc    = 4        # number of abscissas (Gauss-Legendre only)
+
+[models.lindhard_correction]
+# Correction factors to the Lindhard electronic stopping power.
+# Keys have the form "projectile->target".
+"B->Si"  = 1.5
+"Si->Si" = 1.0
+
+
+# -----------------------------------------------------------------------------
+[output]
+# -----------------------------------------------------------------------------
+
+# --- Trajectory recording ---
+[output.trajectories]
+start         = false   # record starting points
+collisions    = false   # record collision points
+stopped       = false   # record stopping points
+backscattered = false   # record backscattered projectiles
+transmitted   = false   # record transmitted projectiles
+
+# --- Depth distributions ---
+[output.depth_distribution.ion_recoils]
+score  = true
+nbins  = 120
+limits = [0.0, 4000.0]   # (Angstrom)
+
+[output.depth_distribution.nuclear_energy_deposition]
+score  = false
+nbins  = 120
+limits = [0.0, 4000.0]   # (Angstrom)
+
+[output.depth_distribution.electronic_energy_deposition]
+score  = false
+nbins  = 120
+limits = [0.0, 4000.0]   # (Angstrom)
+
+# --- Lateral distributions ---
+[output.lateral_distribution.ion_recoils]
+score  = true
+nbins  = 120
+limits = [-2000.0, 2000.0]   # (Angstrom)
+
+[output.lateral_distribution.nuclear_energy_deposition]
+score  = true
+nbins  = 120
+limits = [-2000.0, 2000.0]   # (Angstrom)
+
+[output.lateral_distribution.electronic_energy_deposition]
+score  = true
+nbins  = 120
+limits = [-2000.0, 2000.0]   # (Angstrom)
+
+# --- Backscattered atoms ---
+[output.backscattered_atoms.energy]
+score  = true
+nbins  = 120
+limits = [0.0, 50.0]   # (keV)
+
+[output.backscattered_atoms.angle]
+score  = true
+nbins  = 120
+limits = [-90.0, 90.0]   # (degrees)
+
+# --- Transmitted atoms ---
+[output.transmitted_atoms.energy]
+score  = true
+nbins  = 120
+limits = [0.0, 50.0]   # (keV)
+
+[output.transmitted_atoms.angle]
+score  = true
+nbins  = 120
+limits = [-90.0, 90.0]   # (degrees)

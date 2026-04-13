@@ -56,7 +56,7 @@ if __name__ == "__main__":
         print("----- NUMBA ENABLED -----")
     
     print("Startup time:", time.time() - start)
-    iter_cnt = 1
+    iter_cnt = 2
     counts = [input_params["simulation"]["nions"]]
     chunk_size = input_params["simulation"]["nions_update"]
     # avg_chunk_time = 0.1    # seconds

@@ -226,7 +226,6 @@ class MCSetupPage(QWidget):
             "nuclear_stopping": self.nuclear_stopping_combo.currentText() if hasattr(self, "nuclear_stopping_combo") else "",
             "electronic_stopping": self.electronic_stopping_combo.currentText() if hasattr(self, "electronic_stopping_combo") else "",
             "simulator": self.simulator_combo.currentText() if hasattr(self, "simulator_combo") else "",
-            "nbins": int(self.nbins_spin.value()) if hasattr(self, "nbins_spin") else 120,
         }
         output_meta = {
             "traj_start": bool(self.chk_traj_start.isChecked()) if hasattr(self, "chk_traj_start") else False,
@@ -343,12 +342,6 @@ class MCSetupPage(QWidget):
                 idx = self.simulator_combo.findText(simulator)
                 if idx >= 0:
                     self.simulator_combo.setCurrentIndex(idx)
-
-        if hasattr(self, "nbins_spin") and "nbins" in selection:
-            try:
-                self.nbins_spin.setValue(int(selection["nbins"]))
-            except (TypeError, ValueError):
-                pass
 
         output = payload.get("output") or {}
         for attr, key in (
@@ -978,22 +971,6 @@ class MCSetupPage(QWidget):
         adv_electronic.clicked.connect(lambda: self.advanced_requested.emit("electronic_stopping"))
         col3.addWidget(adv_electronic)
         row.addLayout(col3)
-
-        sep2 = QFrame()
-        sep2.setFrameShape(QFrame.Shape.VLine)
-        sep2.setFrameShadow(QFrame.Shadow.Sunken)
-        row.addWidget(sep2)
-
-        col4 = QVBoxLayout()
-        col4.setSpacing(2)
-        col4.addWidget(QLabel("Number of bins:"))
-        self.nbins_spin = QSpinBox()
-        self.nbins_spin.setRange(10, 10000)
-        self.nbins_spin.setSingleStep(10)
-        self.nbins_spin.setValue(120)
-        self.nbins_spin.setToolTip("Number of bins for depth and lateral distributions")
-        col4.addWidget(self.nbins_spin)
-        row.addLayout(col4)
 
         row.addStretch(1)
         v.addLayout(row)

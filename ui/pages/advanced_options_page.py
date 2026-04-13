@@ -185,7 +185,7 @@ class AdvancedOptionsPage(QWidget):
         atoms_l.setContentsMargins(0, 0, 0, 0)
         atoms_l.setSpacing(8)
         atoms_l.addWidget(QLabel("Atoms per layer: Table columns"))
-        self.chk_disp = QCheckBox("Show Disp (eV)")
+        self.chk_disp = QCheckBox("Show Disp. E. (eV)")
         self.chk_latt = QCheckBox("Show Latt (eV)")
         self.chk_surf = QCheckBox("Show Surf (eV)")
         self.chk_disp.setChecked(True)
@@ -212,6 +212,30 @@ class AdvancedOptionsPage(QWidget):
         nbins_row.addStretch(1)
         model_l.addLayout(nbins_row)
         model_l.addStretch(1)
+
+        # --- Cascade Options content (placeholder) ---
+        cascade_opts = QWidget(content)
+        cascade_opts_l = QVBoxLayout(cascade_opts)
+        cascade_opts_l.setContentsMargins(0, 0, 0, 0)
+        cascade_opts_l.setSpacing(8)
+        cascade_opts_l.addWidget(QLabel("Cascade options (placeholder)"))
+        cascade_opts_l.addStretch(1)
+
+        # --- Nuclear Stopping content (placeholder) ---
+        nuclear_opts = QWidget(content)
+        nuclear_opts_l = QVBoxLayout(nuclear_opts)
+        nuclear_opts_l.setContentsMargins(0, 0, 0, 0)
+        nuclear_opts_l.setSpacing(8)
+        nuclear_opts_l.addWidget(QLabel("Nuclear stopping options (placeholder)"))
+        nuclear_opts_l.addStretch(1)
+
+        # --- Electronic Stopping content (placeholder) ---
+        electronic_opts = QWidget(content)
+        electronic_opts_l = QVBoxLayout(electronic_opts)
+        electronic_opts_l.setContentsMargins(0, 0, 0, 0)
+        electronic_opts_l.setSpacing(8)
+        electronic_opts_l.addWidget(QLabel("Electronic stopping options (placeholder)"))
+        electronic_opts_l.addStretch(1)
 
         # --- Display Settings content (MC Results plots) ---
         display = QWidget(content)
@@ -253,22 +277,35 @@ class AdvancedOptionsPage(QWidget):
         self._acc_ion = AccordionItem("Ion selection", ion, expanded=False, parent=content)
         self._acc_atoms = AccordionItem("Atoms per layer", atoms, expanded=True, parent=content)
         self._acc_model = AccordionItem("Model selection", model, expanded=False, parent=content)
+        self._acc_cascade = AccordionItem("Cascade Options", cascade_opts, expanded=False, parent=content)
+        self._acc_nuclear = AccordionItem("Nuclear Stopping", nuclear_opts, expanded=False, parent=content)
+        self._acc_electronic = AccordionItem("Electronic Stopping", electronic_opts, expanded=False, parent=content)
         self._acc_display = AccordionItem("Display Settings", display, expanded=False, parent=content)
 
         self._accordion_by_id = {
             "ion_selection_mc": self._acc_ion,
             "atoms_per_layer": self._acc_atoms,
             "model_selection": self._acc_model,
+            "cascade_options": self._acc_cascade,
+            "nuclear_stopping": self._acc_nuclear,
+            "electronic_stopping": self._acc_electronic,
             "display_settings": self._acc_display,
         }
 
-        self._all_accordions = (self._acc_ion, self._acc_atoms, self._acc_model, self._acc_display)
+        self._all_accordions = (
+            self._acc_ion, self._acc_atoms, self._acc_model,
+            self._acc_cascade, self._acc_nuclear, self._acc_electronic,
+            self._acc_display,
+        )
         for item in self._all_accordions:
             item.toggled.connect(lambda on, src=item: self._handle_item_toggled(src, on))
 
         content_l.addWidget(self._acc_ion)
         content_l.addWidget(self._acc_atoms)
         content_l.addWidget(self._acc_model)
+        content_l.addWidget(self._acc_cascade)
+        content_l.addWidget(self._acc_nuclear)
+        content_l.addWidget(self._acc_electronic)
         content_l.addWidget(self._acc_display)
         content_l.addStretch(1)
         content.setLayout(content_l)

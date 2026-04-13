@@ -7,6 +7,7 @@ import numba as nb
 from . import cascade
 from .mytypes import Projectile, PROJ_DTYPE, PROJ_NUMBA_DTYPE
 from .stats import STATS_DTYPE, merge_stats, zero_stats
+from .process_data import write_stats, save_progress
 
 
 empty_stats = None
@@ -80,13 +81,15 @@ def _simulate(nion, params, stats_per_ion, sim_idx):
     return
 
 
-def simulate_adaptive(avg_chunk_time, nion, *args, **kwargs):
+def simulate_adaptive(avg_chunk_time, nion, params, stats, input_params=None, upd_callback=None):
     """Adaptive, chunked simulation with each chunk taking around avg_sim_time seconds
     
     Parameters:
         avg_sim_time: (int) Desired simulation time per in seconds
         nion: (int) Total number of projectiles to simulate
-        *args, **kwargs: As in `simulate()`
+        params, stats: As in `simulate()`
+        input_params (dict): Simulation configuration (for data saving)
+        upd_callback (callable): A function to call on simulation data update
     """
     # TODO Doesn't work with fixed seed (due to varying chunk sizes)
     min_chunk_size = 100
@@ -99,15 +102,19 @@ def simulate_adaptive(avg_chunk_time, nion, *args, **kwargs):
         start_time = time.time()
         simulate(
             current_batch,
-            *args,
-            sim_idx=processed_count,
-            **kwargs
+            params,
+            stats,
+            processed_count
         )
-        # NOTE: Saving or adding data to queue can be performed here
-        
         duration = time.time() - start_time
         
         processed_count += current_batch
+        if input_params:
+            write_stats(input_params, stats)
+            save_progress(input_params, processed_count, nion)
+        if upd_callback:
+            upd_callback(processed_count, nion, stats)
+            # TODO: make use of callback to return user stop request; break
         # Calculate optimal chunk size
         new_chunk = int((current_batch / duration) * avg_chunk_time)
         chunk_size = max(min_chunk_size, new_chunk)
@@ -115,13 +122,15 @@ def simulate_adaptive(avg_chunk_time, nion, *args, **kwargs):
     return
 
 
-def simulate_chunked(chunk_size, nion, *args, **kwargs):
+def simulate_chunked(chunk_size, nion, params, stats, input_params=None, upd_callback=None):
     """Chunked simulation for nion projectiles
     
     Parameters:
         chunk_size: (int) Size to split total count into
         nion: (int) Total number of projectiles to simulate
-        *args, **kwargs: As in `simulate()`
+        params, stats: As in `simulate()`
+        input_params (dict): Simulation configuration (for data saving)
+        upd_callback (callable): A function to call on simulation data update
     """    
     
     def _process_chunks(chunk_size, sim_idx):
@@ -130,15 +139,22 @@ def simulate_chunked(chunk_size, nion, *args, **kwargs):
         
         simulate(
             chunk_size,
-            *args,
-            sim_idx=sim_idx,
-            **kwargs
+            params,
+            stats,
+            sim_idx
         )
-        # NOTE: Saving can be performed here
+        if input_params:
+            done = sim_idx + chunk_size
+            write_stats(input_params, stats)
+            save_progress(input_params, done, nion)
+        if upd_callback:
+            upd_callback(sim_idx+chunk_size, nion, stats)
+            # TODO: make use of callback to return user stop request; break
         
-    for processed_count in range(0, nion, chunk_size):
-        _process_chunks(chunk_size, processed_count)
-    remainder = nion % chunk_size
-    _process_chunks(remainder, nion - remainder) # Process remainder
+    processed_count = 0
+    while processed_count < nion:
+        current_batch = min(chunk_size, nion - processed_count)
+        _process_chunks(current_batch, processed_count)
+        processed_count += current_batch
 
     return

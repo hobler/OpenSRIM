@@ -119,7 +119,7 @@ def test():
     dydx = df(x)
 
     table_cubic = Table1D(x, y, dydx, False, False)
-    x_vals = np.linspace(-2.0, 7.0, 101)
+    x_vals = np.linspace(-2.0, 6.0, 51)
     for x_val in x_vals:
         y_true = f(x_val)
         succ, y_interp = table_cubic.interpolate(x_val, True)

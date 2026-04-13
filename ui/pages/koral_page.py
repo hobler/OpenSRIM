@@ -2650,6 +2650,13 @@ class KoralPage(QWidget):
         v.addLayout(row_nucl)
         self._output_option_widgets["nucl_stop"] = [self.chk_nucl_strag, self.cmb_nucl_stop_unit]
 
+        row_nucl_strag = QHBoxLayout()
+        self.chk_nucl_strag_qn = QCheckBox("Nuclear Straggling (Qn)")
+        row_nucl_strag.addWidget(self.chk_nucl_strag_qn)
+        row_nucl_strag.addStretch(1)
+        v.addLayout(row_nucl_strag)
+        self._output_option_widgets["nucl_strag"] = [self.chk_nucl_strag_qn]
+
         row_elect = QHBoxLayout()
         self.chk_elec_hop = QCheckBox("Electron Stopping")
         row_elect.addWidget(self.chk_elec_hop)

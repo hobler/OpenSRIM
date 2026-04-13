@@ -136,3 +136,6 @@ dmypy.json
 
 # Personal notes
 todo
+
+# Simulation results
+data/opentrim/results

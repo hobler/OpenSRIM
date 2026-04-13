@@ -13,7 +13,13 @@ def read_params(toml_path: str | Path = None) -> dict:
         dict: A dictionary containing the input parameters.
     """
     if toml_path is None:
-        toml_path = Path(__file__).parent / "input.toml"
+        toml_path = "defaults.toml"
+    toml_path = Path(toml_path)
+    toml_path_fallback = Path(__file__).parent / Path(toml_path)
+    if not toml_path.is_file():
+        toml_path = toml_path_fallback
+    if not toml_path.is_file():
+        raise FileNotFoundError("The provided config is not a file or doesn't exist")
 
     with open(toml_path, "rb") as f:
         params = tomllib.load(f)

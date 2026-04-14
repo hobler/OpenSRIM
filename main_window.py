@@ -113,6 +113,8 @@ class MainWindow(QMainWindow):
         self.mc_results_tab.advanced_requested.connect(self._open_advanced_options)
         self.mc_setup_tab.save_requested.connect(self._handle_save_configuration)
         self.mc_setup_tab.load_requested.connect(self._handle_load_configuration)
+        self.mc_setup_tab.simulation_finished.connect(self._on_simulation_finished)
+        self.mc_setup_tab.results_update.connect(self._on_results_update)
         self.advanced_options_tab.atoms_columns_visibility_changed.connect(
             lambda disp, latt, surf: self.mc_setup_tab._set_atoms_energy_columns_visible(
                 show_disp=disp, show_latt=latt, show_surf=surf
@@ -241,6 +243,16 @@ class MainWindow(QMainWindow):
             self.koral_tab.update_latest_log(entry)
         except Exception:
             pass
+
+    def _on_simulation_finished(self, results_dir: str) -> None:
+        """Load results and switch to the MC Results tab."""
+        self.mc_results_tab.load_results_from_directory(results_dir)
+        self.tab_widget.setCurrentWidget(self.mc_results_tab)
+        emit_log(f"Results loaded from {results_dir}")
+
+    def _on_results_update(self, results_dir: str) -> None:
+        """Live-refresh the MC Results page during simulation."""
+        self.mc_results_tab.load_results_from_directory(results_dir, silent=True)
 
     # --- config save/load ---
     def _handle_save_configuration(self):

@@ -1150,28 +1150,7 @@ class MCSetupPage(QWidget):
         self.chk_range_all = _make_all_checkbox([self.chk_range_ion_recoil, self.chk_range_phonons, self.chk_range_ionization])
         self.chk_lateral_all = _make_all_checkbox([self.chk_lateral_ion_recoil, self.chk_lateral_phonons, self.chk_lateral_ionization])
 
-        left_grid = QGridLayout()
-        left_grid.setContentsMargins(0, 0, 0, 0)
-        left_grid.setHorizontalSpacing(8)
-        left_grid.setVerticalSpacing(8)
-        left_grid.addWidget(QLabel("Trajectories:"),     0, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        left_grid.addWidget(self.chk_traj_start,         0, 1)
-        left_grid.addWidget(self.chk_traj_end,           0, 2)
-        left_grid.addWidget(self.chk_traj_coll,          0, 3)
-        left_grid.addWidget(self.chk_traj_preview,       0, 4)
-        left_grid.addWidget(QLabel("Range:"),            1, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        left_grid.addWidget(self.chk_range_ion_recoil,   1, 1)
-        left_grid.addWidget(self.chk_range_phonons,      1, 2)
-        left_grid.addWidget(self.chk_range_ionization,   1, 3)
-        left_grid.addWidget(self.chk_range_all,          1, 4)
-        left_grid.addWidget(QLabel("Lateral Range:"),    2, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        left_grid.addWidget(self.chk_lateral_ion_recoil, 2, 1)
-        left_grid.addWidget(self.chk_lateral_phonons,    2, 2)
-        left_grid.addWidget(self.chk_lateral_ionization, 2, 3)
-        left_grid.addWidget(self.chk_lateral_all,        2, 4)
-        left_grid.setRowStretch(3, 1)
-
-        # Right block (separate QGridLayout so label col is independent)
+        # Right block widgets
         self.chk_backscattered_energy = QCheckBox("Energy")
         self.chk_backscattered_angle = QCheckBox("Angle")
         self.chk_transmitted_energy = QCheckBox("Energy")
@@ -1180,27 +1159,45 @@ class MCSetupPage(QWidget):
         self.chk_backscattered_all = _make_all_checkbox([self.chk_backscattered_energy, self.chk_backscattered_angle])
         self.chk_transmitted_all = _make_all_checkbox([self.chk_transmitted_energy, self.chk_transmitted_angle])
 
-        right_grid = QGridLayout()
-        right_grid.setContentsMargins(0, 0, 0, 0)
-        right_grid.setHorizontalSpacing(8)
-        right_grid.setVerticalSpacing(8)
-        right_grid.addWidget(QLabel("Backscattered:"),        0, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        right_grid.addWidget(self.chk_backscattered_energy,   0, 1)
-        right_grid.addWidget(self.chk_backscattered_angle,    0, 2)
-        right_grid.addWidget(self.chk_backscattered_all,      0, 3)
-        right_grid.addWidget(QLabel("Transmitted:"),          1, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        right_grid.addWidget(self.chk_transmitted_energy,     1, 1)
-        right_grid.addWidget(self.chk_transmitted_angle,      1, 2)
-        right_grid.addWidget(self.chk_transmitted_all,        1, 3)
-        right_grid.setRowStretch(2, 1)
-
-
-        # Combine into a single row (no separator between left and right checkbox blocks)
-        grid = QHBoxLayout()
+        # Single grid: cols 0-4 = left block, col 5 = gap, cols 6-9 = right block.
+        # Row indices are shared so Backscattered aligns with Range (row 1),
+        # Transmitted aligns with Lateral Range (row 2).
+        grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
-        grid.setSpacing(24)
-        grid.addLayout(left_grid)
-        grid.addLayout(right_grid)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(8)
+        grid.setColumnMinimumWidth(5, 24)   # gap between left and right block
+
+        # Row 0: Trajectories (left only)
+        grid.addWidget(QLabel("Trajectories:"),       0, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        grid.addWidget(self.chk_traj_start,           0, 1)
+        grid.addWidget(self.chk_traj_end,             0, 2)
+        grid.addWidget(self.chk_traj_coll,            0, 3)
+        grid.addWidget(self.chk_traj_preview,         0, 4)
+
+        # Row 1: Range (left) + Backscattered (right)
+        grid.addWidget(QLabel("Range:"),              1, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        grid.addWidget(self.chk_range_ion_recoil,     1, 1)
+        grid.addWidget(self.chk_range_phonons,        1, 2)
+        grid.addWidget(self.chk_range_ionization,     1, 3)
+        grid.addWidget(self.chk_range_all,            1, 4)
+        grid.addWidget(QLabel("Backscattered:"),      1, 6, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        grid.addWidget(self.chk_backscattered_energy, 1, 7)
+        grid.addWidget(self.chk_backscattered_angle,  1, 8)
+        grid.addWidget(self.chk_backscattered_all,    1, 9)
+
+        # Row 2: Lateral Range (left) + Transmitted (right)
+        grid.addWidget(QLabel("Lateral Range:"),      2, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        grid.addWidget(self.chk_lateral_ion_recoil,   2, 1)
+        grid.addWidget(self.chk_lateral_phonons,      2, 2)
+        grid.addWidget(self.chk_lateral_ionization,   2, 3)
+        grid.addWidget(self.chk_lateral_all,          2, 4)
+        grid.addWidget(QLabel("Transmitted:"),        2, 6, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        grid.addWidget(self.chk_transmitted_energy,   2, 7)
+        grid.addWidget(self.chk_transmitted_angle,    2, 8)
+        grid.addWidget(self.chk_transmitted_all,      2, 9)
+
+        grid.setRowStretch(3, 1)
 
         # --- Right side: Simulation controls ---
         _default_nions = 10000
@@ -1220,10 +1217,11 @@ class MCSetupPage(QWidget):
         sim_grid.setHorizontalSpacing(8)
         sim_grid.setVerticalSpacing(8)
 
-        self._wd_btn = QPushButton("Set working directory", box)
+        sim_grid.addWidget(QLabel("Working Directory:"), 0, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self._wd_btn = QPushButton("Select", box)
         self._wd_btn.setToolTip("Select the working directory used for outputs")
         self._wd_btn.clicked.connect(self._choose_working_directory)
-        sim_grid.addWidget(self._wd_btn, 0, 0, 1, 2, Qt.AlignmentFlag.AlignLeft)
+        sim_grid.addWidget(self._wd_btn, 0, 1, Qt.AlignmentFlag.AlignLeft)
 
         sim_grid.addWidget(QLabel("No. of Ions:"), 1, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.no_of_ions_spin = QSpinBox()

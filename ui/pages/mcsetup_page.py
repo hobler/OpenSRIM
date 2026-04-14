@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import subprocess
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
@@ -35,6 +38,79 @@ except Exception:
     _read_opentrim_params = None  # type: ignore
 from ui.dialogs.compound_dictionary_dialog import CompoundDictionaryDialog
 
+
+def _load_density_table_ang() -> tuple[dict[str, float], dict[str, float]]:
+    """Load atomic densities and isotope masses from material_densities.csv.
+
+    Returns
+    -------
+    densities : dict
+        Upper-case symbol → atomic number density in atoms/Å³.
+    masses : dict
+        Upper-case symbol → dominant isotope mass (mass1 column, amu).
+    """
+    csv_path = Path(__file__).parents[2] / "data" / "material_densities" / "material_densities.csv"
+    densities: dict[str, float] = {}
+    masses: dict[str, float] = {}
+    try:
+        with open(csv_path, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = [p.strip() for p in line.split(",")]
+                if len(parts) < 4:
+                    continue
+                symbol = parts[0].upper()
+                try:
+                    masses[symbol] = float(parts[1])
+                except ValueError:
+                    pass
+                try:
+                    dens_csv = float(parts[3])
+                except ValueError:
+                    continue
+                densities[symbol] = dens_csv * 0.01  # atoms/Å³
+    except OSError:
+        pass
+    return densities, masses
+
+
+_DENSITY_TABLE_ANG, _MASS_TABLE = _load_density_table_ang()
+
+
+def _load_element_energy_defaults() -> dict[int, dict[str, float]]:
+    """Load SRIM-compatible default energy parameters per element.
+
+    Returns a dict mapping atomic number Z to
+    {"disp": Ed, "latt": Eb, "surf": Es}  (all in eV).
+    """
+    csv_path = Path(__file__).parents[2] / "data" / "element_energy_defaults" / "element_energy_defaults.csv"
+    table: dict[int, dict[str, float]] = {}
+    try:
+        with open(csv_path, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = [p.strip() for p in line.split(",")]
+                if len(parts) < 5:
+                    continue
+                try:
+                    z = int(parts[0])
+                    disp = float(parts[2])
+                    latt = float(parts[3])
+                    surf = float(parts[4])
+                except ValueError:
+                    continue
+                table[z] = {"disp": disp, "latt": latt, "surf": surf}
+    except OSError:
+        pass
+    return table
+
+
+_ELEMENT_ENERGY_DEFAULTS: dict[int, dict[str, float]] = _load_element_energy_defaults()
+
 try:
     from ui.logging import log as emit_log
 except ModuleNotFoundError:  # pragma: no cover
@@ -52,6 +128,8 @@ class MCSetupPage(QWidget):
     advanced_requested = pyqtSignal(str)
     save_requested = pyqtSignal()
     load_requested = pyqtSignal()
+    simulation_finished = pyqtSignal(str)  # emits results directory path
+    results_update = pyqtSignal(str)      # emits results dir for live refresh
 
     def __init__(self, state: AppState, on_log: Optional[Callable[[str], None]] = None, parent=None):
         super().__init__(parent)
@@ -66,6 +144,7 @@ class MCSetupPage(QWidget):
         self.mc_progress = None
         self.run_button = None
         self._progress_timer = None
+        self._last_update_ions = 0  # tracks last ion count that triggered a live update
         self.no_of_ions_spin = None
         self.update_after_ions_spin = None
         # Column indices for atoms-per-layer energy columns (accounts for delete column at index 0).
@@ -74,6 +153,8 @@ class MCSetupPage(QWidget):
         self._atoms_latt_col = 8
         self._atoms_surf_col = 9
         self._working_directory: Optional[str] = None
+        self._density_user_override: set[int] = set()
+        self._updating_layers_table = False
 
         # Hints
         self._hint_system: Optional[HintSystem] = None
@@ -96,8 +177,8 @@ class MCSetupPage(QWidget):
         top_split.addWidget(self.build_target_layers())
         top_split.addWidget(self.build_input_elements())
         # Make layer container narrower so atoms-per-layer table gets more space.
-        top_split.setStretchFactor(0, 2)
-        top_split.setStretchFactor(1, 3)
+        top_split.setStretchFactor(0, 5)
+        top_split.setStretchFactor(1, 5)
 
         # Resizable model/simulator (horizontal)
         model_sim_split = QSplitter(Qt.Orientation.Horizontal)
@@ -153,10 +234,13 @@ class MCSetupPage(QWidget):
             btn.setToolTip(f"Hint '{hint_id}' not available")
             return btn
 
+    _LOG_PREVIEW_MAX = 120  # max characters shown in footer button
+
     # -------- external bridge ----------
     def update_latest_log(self, entry: str):
         if self.latest_log_button:
-            self.latest_log_button.setText(entry)
+            preview = entry if len(entry) <= self._LOG_PREVIEW_MAX else entry[:self._LOG_PREVIEW_MAX] + "…"
+            self.latest_log_button.setText(preview)
             self.latest_log_button.setToolTip(entry)
         if self._logs_list_widget:
             if self._logs_list_widget.count() == 1 and self._logs_list_widget.item(0).text() == "No logs available.":
@@ -180,7 +264,7 @@ class MCSetupPage(QWidget):
             "symbol": self._ion_symbol_value,
             "name": self.ion_name.text(),
             "number": _z,
-            "mass": self.ion_mass.value(),
+            "mass": float(self.ion_mass.text() or 0),
             "energy": self.ion_energy.value(),
             "angle": self.ion_angle.value(),
         }
@@ -211,6 +295,7 @@ class MCSetupPage(QWidget):
                         "Z": entry["element"]["number"],
                         "symbol": entry["element"]["symbol"],
                         "name": entry["element"]["name"],
+                        "mass": entry["element"].get("atomic_mass", 0.0),
                         "ratio": entry["ratio"],
                         "damage": entry["damage"],
                         "disp": entry["disp"],
@@ -261,7 +346,12 @@ class MCSetupPage(QWidget):
                 self.ion_z.setText(str(int(ion.get("number", self.ion_z.text() or 0))))
             except (TypeError, ValueError):
                 pass
-            for spin, key in ((self.ion_mass, "mass"), (self.ion_energy, "energy"), (self.ion_angle, "angle")):
+            try:
+                mass_val = float(ion.get("mass", self.ion_mass.text() or 0))
+                self.ion_mass.setText(f"{mass_val:.10f}".rstrip("0").rstrip("."))
+            except (TypeError, ValueError):
+                pass
+            for spin, key in ((self.ion_energy, "energy"), (self.ion_angle, "angle")):
                 try:
                     spin.setValue(float(ion.get(key, spin.value())))
                 except (TypeError, ValueError):
@@ -282,6 +372,7 @@ class MCSetupPage(QWidget):
         layers = payload.get("layers") or []
         self.layers_table.setRowCount(0)
         self.layer_elements = []
+        self._density_user_override.clear()
 
         # Set global unit combos from the first layer's data (if available).
         if layers:
@@ -460,11 +551,8 @@ class MCSetupPage(QWidget):
         self.ion_z.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         grid.addWidget(self.ion_z, 1, 2, Qt.AlignmentFlag.AlignLeft)
 
-        self.ion_mass = _AdaptiveDecimalSpinBox()
-        self.ion_mass.setRange(0.01, 1000.0)
-        self.ion_mass.setDecimals(10)
-        self.ion_mass.setReadOnly(True)
-        self.ion_mass.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
+        self.ion_mass = QLineEdit()
+        self.ion_mass.setPlaceholderText("Mass")
         self.ion_mass.setMaximumWidth(120)
         self.ion_mass.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         grid.addWidget(self.ion_mass, 1, 3, Qt.AlignmentFlag.AlignLeft)
@@ -525,10 +613,17 @@ class MCSetupPage(QWidget):
             self.ion_z.setText(str(int(element.get("number", self.ion_z.text() or 0))))
         except (TypeError, ValueError):
             pass
-        try:
-            self.ion_mass.setValue(float(element.get("atomic_mass", self.ion_mass.value())))
-        except (TypeError, ValueError):
-            pass
+        # Prefer isotope mass (mass1) from SRIM density table; fall back to
+        # periodic-table atomic_mass.
+        sym_upper = self._ion_symbol_value.upper()
+        mass_val = _MASS_TABLE.get(sym_upper)
+        if mass_val is None:
+            try:
+                mass_val = float(element.get("atomic_mass", 0))
+            except (TypeError, ValueError):
+                mass_val = None
+        if mass_val is not None and mass_val > 0:
+            self.ion_mass.setText(f"{mass_val:.10f}".rstrip("0").rstrip("."))
 
     def build_target_layers(self) -> QGroupBox:
         box = QGroupBox("")
@@ -557,9 +652,13 @@ class MCSetupPage(QWidget):
         hdr.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         try:
             hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+            hdr.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)  # Density wider
+            hdr.setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)  # Gas narrow
         except Exception:
             pass
         self.layers_table.setColumnWidth(0, 28)
+        self.layers_table.setColumnWidth(4, 110)
+        self.layers_table.setColumnWidth(6, 38)
         # Hide the old per-row "Units" column (col 3) — unit is now in the Width header.
         self.layers_table.setColumnHidden(3, True)
         self.layers_table.verticalHeader().setVisible(False)
@@ -583,6 +682,7 @@ class MCSetupPage(QWidget):
 
         self.seed_layer_row(0)
         self._ensure_layers_action_row()
+        self.layers_table.itemChanged.connect(self._handle_layer_item_changed)
         v.addWidget(self.layers_table, 1)
 
         self.layer_elements.append([])
@@ -623,7 +723,7 @@ class MCSetupPage(QWidget):
 
         cell = QWidget(self.layers_table)
         cell_l = QHBoxLayout(cell)
-        cell_l.setContentsMargins(0, 0, 0, 0)
+        cell_l.setContentsMargins(4, 0, 0, 0)
         cell_l.setSpacing(6)
         add_layer = QPushButton("+", cell)
         add_layer.setToolTip("Add layer")
@@ -656,12 +756,14 @@ class MCSetupPage(QWidget):
         self.layers_table.setItem(r, 1, QTableWidgetItem(f"Layer {r + 1}"))
         self.layers_table.setItem(r, 2, QTableWidgetItem("10000" if r == 0 else ""))
         # Column 3 (units) is hidden; global unit combo is used instead.
-        self.layers_table.setItem(r, 4, QTableWidgetItem("1.0" if r == 0 else ""))
+        self._updating_layers_table = True
+        self.layers_table.setItem(r, 4, QTableWidgetItem(""))  # auto-filled from elements
+        self._updating_layers_table = False
         self.layers_table.setItem(r, 5, QTableWidgetItem("1"))
         gas_chk = QCheckBox()
         gas_chk.toggled.connect(self._handle_layer_gas_toggled)
         gas_widget = QWidget(); lay = QHBoxLayout(gas_widget); lay.setContentsMargins(0, 0, 0, 0)
-        lay.addWidget(gas_chk); lay.addStretch(1)
+        lay.addStretch(1); lay.addWidget(gas_chk); lay.addStretch(1)
         self.layers_table.setCellWidget(r, 6, gas_widget)
 
     def _delete_layer_row_for_button(self, button: QPushButton) -> None:
@@ -683,6 +785,9 @@ class MCSetupPage(QWidget):
         self.layers_table.removeRow(row)
         if 0 <= row < len(self.layer_elements):
             self.layer_elements.pop(row)
+        # Update density override indices after deletion.
+        self._density_user_override.discard(row)
+        self._density_user_override = {i - 1 if i > row else i for i in self._density_user_override}
         if max(self.layers_table.rowCount() - 1, 0) == 0:
             # Keep one empty layer row + action row.
             if self.layers_table.rowCount() == 0:
@@ -693,6 +798,7 @@ class MCSetupPage(QWidget):
                     self.layers_table.insertRow(self.layers_table.rowCount())
             self.seed_layer_row(0)
             self.layer_elements = [[]]
+            self._density_user_override.clear()
 
         self._ensure_layers_action_row()
         # Reselect a valid row and refresh the atoms table.
@@ -716,6 +822,7 @@ class MCSetupPage(QWidget):
             self.layers_table.removeRow(r)
             if 0 <= r < len(self.layer_elements):
                 self.layer_elements.pop(r)
+        self._density_user_override.clear()
         if max(self.layers_table.rowCount() - 1, 0) == 0:
             # Keep one empty layer row + action row.
             if self.layers_table.rowCount() == 0:
@@ -842,18 +949,26 @@ class MCSetupPage(QWidget):
         self.elem_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.elem_table.setHorizontalHeaderLabels([
             "", "Symbol", "Name", "Atomic No.", "Weight\n(amu)",
-            "Atom Stoich", "Atom Stoich\n(%)", "Disp. E.\n(eV)", "Latt\n(eV)", "Surf\n(eV)"
+            "Atom Stoich", "Atom Stoich\n(%)", "Disp", "Latt", "Surf"
         ])
         elem_hdr = _WrapHeaderView(self.elem_table)
-        elem_hdr.set_group_header("Damage", 7, 9)
+        elem_hdr.set_group_header("Damage Energy (eV)", 7, 9)
         self.elem_table.setHorizontalHeader(elem_hdr)
         hdr = self.elem_table.horizontalHeader()
         hdr.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         try:
-            hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+            hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)   # delete btn
+            hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)   # Symbol
+            hdr.setSectionResizeMode(7, QHeaderView.ResizeMode.Fixed)   # Disp
+            hdr.setSectionResizeMode(8, QHeaderView.ResizeMode.Fixed)   # Latt
+            hdr.setSectionResizeMode(9, QHeaderView.ResizeMode.Fixed)   # Surf
         except Exception:
             pass
         self.elem_table.setColumnWidth(0, 28)
+        self.elem_table.setColumnWidth(1, 62)
+        self.elem_table.setColumnWidth(7, 52)
+        self.elem_table.setColumnWidth(8, 52)
+        self.elem_table.setColumnWidth(9, 52)
         self.elem_table.verticalHeader().setVisible(False)
         self.elem_table.setAlternatingRowColors(True)
 
@@ -913,67 +1028,57 @@ class MCSetupPage(QWidget):
         v = QVBoxLayout(box)
         v.addWidget(self._groupbox_header("Model selection", hint_id="model", parent=box))
 
-        row = QHBoxLayout()
-        row.setSpacing(16)
+        def _combo_with_gear(items: list[str], signal_id: str) -> tuple[QComboBox, QWidget]:
+            """Return (combo, container) where container holds combo + gear button flush together."""
+            combo = QComboBox()
+            combo.addItems(items)
+            combo.setMinimumWidth(120)
+            btn = QToolButton(box)
+            btn.setText("\u2699")
+            btn.setToolTip(f"Open {signal_id.replace('_', ' ')} advanced options")
+            btn.clicked.connect(lambda: self.advanced_requested.emit(signal_id))
+            container = QWidget(box)
+            h = QHBoxLayout(container)
+            h.setContentsMargins(0, 0, 0, 0)
+            h.setSpacing(2)
+            h.addWidget(combo)
+            h.addWidget(btn)
+            h.addStretch(1)
+            return combo, container
 
-        col0 = QVBoxLayout()
-        col0.setSpacing(2)
-        col0.addWidget(QLabel("Simulator:"))
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(16)
+        grid.setVerticalSpacing(4)
+
+        # Row 0: labels
+        grid.addWidget(QLabel("Simulator:"), 0, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom)
+        grid.addWidget(QLabel("Cascade option:"), 0, 2, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom)
+        grid.addWidget(QLabel("Nuclear stopping:"), 0, 4, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom)
+        grid.addWidget(QLabel("Electronic stopping:"), 0, 6, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom)
+
+        # Row 1: combo + gear in a container so button is always flush to combo
         self.simulator_combo = QComboBox()
         self.simulator_combo.addItems(["OpenTRIM", "PyTRIM"])
-        col0.addWidget(self.simulator_combo)
-        row.addLayout(col0)
+        self.simulator_combo.setMinimumWidth(120)
+        grid.addWidget(self.simulator_combo, 1, 0, Qt.AlignmentFlag.AlignLeft)
 
-        # Vertical separator
+        # Vertical separator between simulator and the rest
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.VLine)
         sep.setFrameShadow(QFrame.Shadow.Sunken)
-        row.addWidget(sep)
+        grid.addWidget(sep, 0, 1, 2, 1)
 
-        col1 = QVBoxLayout()
-        col1.setSpacing(2)
-        col1.addWidget(QLabel("Cascade option:"))
-        self.cascade_combo = QComboBox()
-        self.cascade_combo.addItems(["Ions only", "Full cascade"])
-        col1.addWidget(self.cascade_combo)
-        adv_cascade = QPushButton("Advanced…")
-        adv_cascade.setFlat(True)
-        adv_cascade.setStyleSheet("text-decoration: underline; border: none; padding: 0;")
-        adv_cascade.setCursor(Qt.CursorShape.PointingHandCursor)
-        adv_cascade.clicked.connect(lambda: self.advanced_requested.emit("cascade_options"))
-        col1.addWidget(adv_cascade)
-        row.addLayout(col1)
+        self.cascade_combo, _cascade_w = _combo_with_gear(["Ions only", "Full cascade"], "cascade_options")
+        grid.addWidget(_cascade_w, 1, 2, Qt.AlignmentFlag.AlignLeft)
 
-        col2 = QVBoxLayout()
-        col2.setSpacing(2)
-        col2.addWidget(QLabel("Nuclear stopping:"))
-        self.nuclear_stopping_combo = QComboBox()
-        self.nuclear_stopping_combo.addItems(["ZBL", "NLHlin"])
-        col2.addWidget(self.nuclear_stopping_combo)
-        adv_nuclear = QPushButton("Advanced…")
-        adv_nuclear.setFlat(True)
-        adv_nuclear.setStyleSheet("text-decoration: underline; border: none; padding: 0;")
-        adv_nuclear.setCursor(Qt.CursorShape.PointingHandCursor)
-        adv_nuclear.clicked.connect(lambda: self.advanced_requested.emit("nuclear_stopping"))
-        col2.addWidget(adv_nuclear)
-        row.addLayout(col2)
+        self.nuclear_stopping_combo, _nuclear_w = _combo_with_gear(["ZBL", "NLHlin"], "nuclear_stopping")
+        grid.addWidget(_nuclear_w, 1, 4, Qt.AlignmentFlag.AlignLeft)
 
-        col3 = QVBoxLayout()
-        col3.setSpacing(2)
-        col3.addWidget(QLabel("Electronic stopping:"))
-        self.electronic_stopping_combo = QComboBox()
-        self.electronic_stopping_combo.addItems(["SRIM"])
-        col3.addWidget(self.electronic_stopping_combo)
-        adv_electronic = QPushButton("Advanced…")
-        adv_electronic.setFlat(True)
-        adv_electronic.setStyleSheet("text-decoration: underline; border: none; padding: 0;")
-        adv_electronic.setCursor(Qt.CursorShape.PointingHandCursor)
-        adv_electronic.clicked.connect(lambda: self.advanced_requested.emit("electronic_stopping"))
-        col3.addWidget(adv_electronic)
-        row.addLayout(col3)
+        self.electronic_stopping_combo, _electronic_w = _combo_with_gear(["SRIM"], "electronic_stopping")
+        grid.addWidget(_electronic_w, 1, 6, Qt.AlignmentFlag.AlignLeft)
 
-        row.addStretch(1)
-        v.addLayout(row)
+        grid.setColumnStretch(7, 1)
+        v.addLayout(grid)
         v.addStretch(1)
         return box
 
@@ -996,17 +1101,7 @@ class MCSetupPage(QWidget):
 
         v.addWidget(header)
 
-        # Unified grid: left checkboxes, middle checkboxes, right controls — all aligned.
-        grid = QGridLayout()
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(12)
-        grid.setVerticalSpacing(8)
-
-        # Column stretches: spacers between groups.
-        grid.setColumnStretch(5, 1)   # spacer between left and middle groups
-        grid.setColumnStretch(9, 1)   # spacer between middle and right groups
-
-        # --- Row 0: Trajectories (left) + Preview | Working directory (right) ---
+        # Left block (QGridLayout keeps checkboxes vertically aligned within the block)
         self.chk_traj_start = QCheckBox("Start")
         self.chk_traj_end = QCheckBox("End")
         self.chk_traj_coll = QCheckBox("Collisions")
@@ -1015,34 +1110,101 @@ class MCSetupPage(QWidget):
             self.chk_traj_end.setChecked(True),
         ) if checked else None)
         self.chk_traj_preview = QCheckBox("Preview")
-        grid.addWidget(QLabel("Trajectories:"), 0, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        grid.addWidget(self.chk_traj_start, 0, 1, Qt.AlignmentFlag.AlignLeft)
-        grid.addWidget(self.chk_traj_end, 0, 2, Qt.AlignmentFlag.AlignLeft)
-        grid.addWidget(self.chk_traj_coll, 0, 3, Qt.AlignmentFlag.AlignLeft)
-        grid.addWidget(self.chk_traj_preview, 0, 4, Qt.AlignmentFlag.AlignLeft)
 
-        self._wd_btn = QPushButton("Set working directory", box)
-        self._wd_btn.setToolTip("Select the working directory used for outputs")
-        self._wd_btn.clicked.connect(self._choose_working_directory)
-        grid.addWidget(self._wd_btn, 0, 10, 1, 2, Qt.AlignmentFlag.AlignLeft)
-
-        # --- Row 1: Range Distributions (left) | Backscattered (middle) | No. of Ions (right) ---
         self.chk_range_ion_recoil = QCheckBox("Ion/Recoil")
         self.chk_range_phonons = QCheckBox("Phonons")
         self.chk_range_ionization = QCheckBox("Ionization")
-        grid.addWidget(QLabel("Range Distributions:"), 1, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        grid.addWidget(self.chk_range_ion_recoil, 1, 1, Qt.AlignmentFlag.AlignLeft)
-        grid.addWidget(self.chk_range_phonons, 1, 2, Qt.AlignmentFlag.AlignLeft)
-        grid.addWidget(self.chk_range_ionization, 1, 3, Qt.AlignmentFlag.AlignLeft)
 
+        self.chk_lateral_ion_recoil = QCheckBox("Ion/Recoil")
+        self.chk_lateral_phonons = QCheckBox("Phonons")
+        self.chk_lateral_ionization = QCheckBox("Ionization")
+
+        def _make_all_checkbox(children: list[QCheckBox]) -> QCheckBox:
+            """Returns an 'All' checkbox that toggles all children, and updates itself when children change."""
+            chk_all = QCheckBox("All")
+            def _on_all_clicked():
+                # Skip PartiallyChecked when user clicks — jump straight to Checked.
+                if chk_all.checkState() == Qt.CheckState.PartiallyChecked:
+                    chk_all.setCheckState(Qt.CheckState.Checked)
+                checked = chk_all.checkState() == Qt.CheckState.Checked
+                for c in children:
+                    c.blockSignals(True)
+                    c.setChecked(checked)
+                    c.blockSignals(False)
+            def _on_child_changed():
+                all_checked = all(c.isChecked() for c in children)
+                any_checked = any(c.isChecked() for c in children)
+                chk_all.blockSignals(True)
+                chk_all.setCheckState(
+                    Qt.CheckState.Checked if all_checked else
+                    Qt.CheckState.PartiallyChecked if any_checked else
+                    Qt.CheckState.Unchecked
+                )
+                chk_all.blockSignals(False)
+            chk_all.setTristate(True)
+            chk_all.clicked.connect(_on_all_clicked)
+            for c in children:
+                c.toggled.connect(lambda _: _on_child_changed())
+            return chk_all
+
+        self.chk_range_all = _make_all_checkbox([self.chk_range_ion_recoil, self.chk_range_phonons, self.chk_range_ionization])
+        self.chk_lateral_all = _make_all_checkbox([self.chk_lateral_ion_recoil, self.chk_lateral_phonons, self.chk_lateral_ionization])
+
+        left_grid = QGridLayout()
+        left_grid.setContentsMargins(0, 0, 0, 0)
+        left_grid.setHorizontalSpacing(8)
+        left_grid.setVerticalSpacing(8)
+        left_grid.addWidget(QLabel("Trajectories:"),     0, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        left_grid.addWidget(self.chk_traj_start,         0, 1)
+        left_grid.addWidget(self.chk_traj_end,           0, 2)
+        left_grid.addWidget(self.chk_traj_coll,          0, 3)
+        left_grid.addWidget(self.chk_traj_preview,       0, 4)
+        left_grid.addWidget(QLabel("Range:"),            1, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        left_grid.addWidget(self.chk_range_ion_recoil,   1, 1)
+        left_grid.addWidget(self.chk_range_phonons,      1, 2)
+        left_grid.addWidget(self.chk_range_ionization,   1, 3)
+        left_grid.addWidget(self.chk_range_all,          1, 4)
+        left_grid.addWidget(QLabel("Lateral Range:"),    2, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        left_grid.addWidget(self.chk_lateral_ion_recoil, 2, 1)
+        left_grid.addWidget(self.chk_lateral_phonons,    2, 2)
+        left_grid.addWidget(self.chk_lateral_ionization, 2, 3)
+        left_grid.addWidget(self.chk_lateral_all,        2, 4)
+        left_grid.setRowStretch(3, 1)
+
+        # Right block (separate QGridLayout so label col is independent)
         self.chk_backscattered_energy = QCheckBox("Energy")
         self.chk_backscattered_angle = QCheckBox("Angle")
-        grid.addWidget(QLabel("Backscattered:"), 1, 6, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        grid.addWidget(self.chk_backscattered_energy, 1, 7, Qt.AlignmentFlag.AlignLeft)
-        grid.addWidget(self.chk_backscattered_angle, 1, 8, Qt.AlignmentFlag.AlignLeft)
+        self.chk_transmitted_energy = QCheckBox("Energy")
+        self.chk_transmitted_angle = QCheckBox("Angle")
 
+        self.chk_backscattered_all = _make_all_checkbox([self.chk_backscattered_energy, self.chk_backscattered_angle])
+        self.chk_transmitted_all = _make_all_checkbox([self.chk_transmitted_energy, self.chk_transmitted_angle])
+
+        right_grid = QGridLayout()
+        right_grid.setContentsMargins(0, 0, 0, 0)
+        right_grid.setHorizontalSpacing(8)
+        right_grid.setVerticalSpacing(8)
+        right_grid.addWidget(QLabel("Backscattered:"),        0, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        right_grid.addWidget(self.chk_backscattered_energy,   0, 1)
+        right_grid.addWidget(self.chk_backscattered_angle,    0, 2)
+        right_grid.addWidget(self.chk_backscattered_all,      0, 3)
+        right_grid.addWidget(QLabel("Transmitted:"),          1, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        right_grid.addWidget(self.chk_transmitted_energy,     1, 1)
+        right_grid.addWidget(self.chk_transmitted_angle,      1, 2)
+        right_grid.addWidget(self.chk_transmitted_all,        1, 3)
+        right_grid.setRowStretch(2, 1)
+
+
+        # Combine into a single row (no separator between left and right checkbox blocks)
+        grid = QHBoxLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setSpacing(24)
+        grid.addLayout(left_grid)
+        grid.addLayout(right_grid)
+
+        # --- Right side: Simulation controls ---
         _default_nions = 10000
-        _default_update = 100
+        _default_update = 5000
         if _read_opentrim_params is not None:
             try:
                 _p = _read_opentrim_params()
@@ -1052,35 +1214,46 @@ class MCSetupPage(QWidget):
             except Exception:
                 pass
 
-        grid.addWidget(QLabel("No. of Ions:"), 1, 10, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        sim_right = QHBoxLayout()
+
+        sim_grid = QGridLayout()
+        sim_grid.setHorizontalSpacing(8)
+        sim_grid.setVerticalSpacing(8)
+
+        self._wd_btn = QPushButton("Set working directory", box)
+        self._wd_btn.setToolTip("Select the working directory used for outputs")
+        self._wd_btn.clicked.connect(self._choose_working_directory)
+        sim_grid.addWidget(self._wd_btn, 0, 0, 1, 2, Qt.AlignmentFlag.AlignLeft)
+
+        sim_grid.addWidget(QLabel("No. of Ions:"), 1, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.no_of_ions_spin = QSpinBox()
         self.no_of_ions_spin.setRange(1, 1_000_000_000)
+        self.no_of_ions_spin.setSingleStep(1000)
         self.no_of_ions_spin.setValue(_default_nions)
-        grid.addWidget(self.no_of_ions_spin, 1, 11, Qt.AlignmentFlag.AlignLeft)
+        sim_grid.addWidget(self.no_of_ions_spin, 1, 1, Qt.AlignmentFlag.AlignLeft)
 
-        # --- Row 2: Lateral Range (left) | Transmitted (middle) | Update after Ions (right) ---
-        self.chk_lateral_ion_recoil = QCheckBox("Ion/Recoil")
-        self.chk_lateral_phonons = QCheckBox("Phonons")
-        self.chk_lateral_ionization = QCheckBox("Ionization")
-        grid.addWidget(QLabel("Lateral Range Distributions:"), 2, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        grid.addWidget(self.chk_lateral_ion_recoil, 2, 1, Qt.AlignmentFlag.AlignLeft)
-        grid.addWidget(self.chk_lateral_phonons, 2, 2, Qt.AlignmentFlag.AlignLeft)
-        grid.addWidget(self.chk_lateral_ionization, 2, 3, Qt.AlignmentFlag.AlignLeft)
-
-        self.chk_transmitted_energy = QCheckBox("Energy")
-        self.chk_transmitted_angle = QCheckBox("Angle")
-        grid.addWidget(QLabel("Transmitted:"), 2, 6, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        grid.addWidget(self.chk_transmitted_energy, 2, 7, Qt.AlignmentFlag.AlignLeft)
-        grid.addWidget(self.chk_transmitted_angle, 2, 8, Qt.AlignmentFlag.AlignLeft)
-
-        grid.addWidget(QLabel("Update after Ions:"), 2, 10, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        sim_grid.addWidget(QLabel("Update after Ions:"), 2, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.update_after_ions_spin = QSpinBox()
         self.update_after_ions_spin.setRange(1, 1_000_000_000)
+        self.update_after_ions_spin.setSingleStep(100)
         self.update_after_ions_spin.setValue(_default_update)
-        grid.addWidget(self.update_after_ions_spin, 2, 11, Qt.AlignmentFlag.AlignLeft)
+        sim_grid.addWidget(self.update_after_ions_spin, 2, 1, Qt.AlignmentFlag.AlignLeft)
+        sim_grid.setRowStretch(3, 1)
 
-        grid.setRowStretch(3, 1)
-        v.addLayout(grid, 1)
+        sim_right.addLayout(sim_grid)
+
+        # Assemble: output options left, simulation controls right.
+        content = QHBoxLayout()
+        content.setSpacing(50)
+        content.addLayout(grid)
+        _right_sep = QFrame()
+        _right_sep.setFrameShape(QFrame.Shape.VLine)
+        _right_sep.setFrameShadow(QFrame.Shadow.Sunken)
+        content.addWidget(_right_sep)
+        content.addLayout(sim_right)
+        content.addStretch(1)
+
+        v.addLayout(content, 1)
 
         return box
 
@@ -1149,6 +1322,7 @@ class MCSetupPage(QWidget):
         dialog.resize(800, 400)
         layout = QVBoxLayout(dialog)
         list_widget = QListWidget()
+        list_widget.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
 
         if self.state.log_entries:
             list_widget.addItems(list(self.state.log_entries))
@@ -1158,9 +1332,19 @@ class MCSetupPage(QWidget):
 
         layout.addWidget(list_widget)
 
+        btn_row = QHBoxLayout()
+
+        copy_btn = QPushButton("Copy Selected")
+        copy_btn.setToolTip("Copy selected log entries to clipboard")
+        copy_btn.clicked.connect(lambda: self._copy_selected_logs(list_widget))
+        btn_row.addWidget(copy_btn)
+
         clear_btn = QPushButton("Clear Logs")
         clear_btn.clicked.connect(lambda: self._clear_logs(list_widget))
-        layout.addWidget(clear_btn)
+        btn_row.addWidget(clear_btn)
+
+        btn_row.addStretch(1)
+        layout.addLayout(btn_row)
 
         button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         button_box.rejected.connect(dialog.reject)
@@ -1176,6 +1360,19 @@ class MCSetupPage(QWidget):
         dialog.finished.connect(_cleanup)
         dialog.exec()
 
+    @staticmethod
+    def _copy_selected_logs(list_widget: QListWidget) -> None:
+        items = list_widget.selectedItems()
+        if not items:
+            # Nothing selected → copy all
+            texts = [list_widget.item(i).text() for i in range(list_widget.count())]
+        else:
+            texts = [item.text() for item in items]
+        from PyQt6.QtWidgets import QApplication
+        clipboard = QApplication.clipboard()
+        if clipboard is not None:
+            clipboard.setText("\n".join(texts))
+
     def _clear_logs(self, list_widget: QListWidget):
         self.state.clear_logs()
         list_widget.clear()
@@ -1184,30 +1381,427 @@ class MCSetupPage(QWidget):
             self.latest_log_button.setText("No updates yet")
             self.latest_log_button.setToolTip("")
 
+    # -------- unit conversion helpers ----------
+    _WIDTH_TO_ANGSTROM = {
+        "Ång": 1.0,
+        "nm": 10.0,
+        "µm": 1e4,
+        "mm": 1e7,
+        "cm": 1e8,
+        "m": 1e10,
+        "km": 1e13,
+    }
+
+    _DENSITY_TO_ATOMS_PER_ANG3 = {
+        "atoms/cm³": 1e-24,   # 1 atoms/cm³ = 1e-24 atoms/Å³
+    }
+
+    # Avogadro constant
+    _N_A = 6.02214076e23
+
+    def _width_in_angstrom(self, value: float, unit: str) -> float:
+        return value * self._WIDTH_TO_ANGSTROM.get(unit, 1.0)
+
+    @staticmethod
+    def _avg_atomic_mass(elements: list[dict]) -> float:
+        """Stoichiometry-weighted average atomic mass for a layer's elements."""
+        total_stoich = 0.0
+        weighted_mass = 0.0
+        for elem in elements:
+            try:
+                stoich = float(elem.get("ratio", 1.0))
+            except (TypeError, ValueError):
+                stoich = 1.0
+            try:
+                mass = float(elem.get("mass", 0.0))
+            except (TypeError, ValueError):
+                mass = 0.0
+            weighted_mass += stoich * mass
+            total_stoich += stoich
+        return weighted_mass / total_stoich if total_stoich > 0 else 1.0
+
+    @staticmethod
+    def _density_from_table(elements: list[dict]) -> float | None:
+        """Compute stoichiometry-weighted atomic density (atoms/Å³) from the
+        material_densities.csv table.  Returns None if any element is missing."""
+        if not elements:
+            return None
+        total_stoich = 0.0
+        weighted = 0.0
+        for elem in elements:
+            sym = str(elem.get("symbol", "")).upper()
+            dens = _DENSITY_TABLE_ANG.get(sym)
+            if dens is None:
+                return None  # element not in table
+            try:
+                stoich = float(elem.get("ratio", 1.0))
+            except (TypeError, ValueError):
+                stoich = 1.0
+            weighted += stoich * dens
+            total_stoich += stoich
+        return weighted / total_stoich if total_stoich > 0 else None
+
+    def _density_in_atoms_per_ang3(self, value: float, unit: str,
+                                    elements: list[dict] | None = None) -> float:
+        """Convert density to atoms/Å³ which OpenTRIM expects.
+
+        First tries using the material_densities table (most reliable).
+        Falls back to converting the user-entered value."""
+        # Prefer table density
+        if elements:
+            table_d = self._density_from_table(elements)
+            if table_d is not None:
+                return table_d
+
+        # Fallback: convert manually entered value
+        if unit == "atoms/cm³":
+            return value * 1e-24
+        if unit == "kg/m³":
+            value = value * 1e-3
+            unit = "g/cm³"
+        if unit == "g/cm³":
+            m_avg = self._avg_atomic_mass(elements) if elements else 1.0
+            if m_avg <= 0:
+                m_avg = 1.0
+            return value * self._N_A / m_avg * 1e-24
+        return value
+
+    # -------- TOML generation ----------
+    def _build_input_toml(self, results_dir: str) -> str:
+        """Build the contents of an OpenTRIM input.toml from the current UI state."""
+        cfg = self.collect_simulation_config()
+        ion = cfg["ion"]
+        ions = cfg["ions"]
+        layers = cfg["layers"]
+        sel = cfg["selection"]
+        out = cfg["output"]
+
+        width_unit = (self.width_unit_combo.currentText()
+                      if hasattr(self, "width_unit_combo") else "Ång")
+        density_unit = (self.density_unit_combo.currentText()
+                        if hasattr(self, "density_unit_combo") else "g/cm³")
+
+        follow_recoils = sel.get("cascade", "") == "Full cascade"
+
+        lines = [
+            "# Auto-generated by OpenSRIM MC Setup",
+            "",
+            "[simulation]",
+            f"follow_recoils = {'true' if follow_recoils else 'false'}",
+            f"nions = {ions['no_of_ions']}",
+            f"nions_update = {ions['update_after_ions']}",
+            f"rng_seed = 12345",
+            f'workdir = "{results_dir}"',
+            "",
+            "[beam]",
+            f'symbol = "{ion["symbol"]}"',
+            f'name = "{ion["name"]}"',
+            f"Z = {ion['number']}",
+            f"M = {ion['mass']}",
+            f"energy = {ion['energy']}",
+            f"tilt = {ion['angle']}",
+            "",
+        ]
+
+        total_width = 0.0
+        for layer in layers:
+            try:
+                w_raw = float(layer["width"])
+            except (TypeError, ValueError):
+                w_raw = 0.0
+            w_ang = self._width_in_angstrom(w_raw, width_unit)
+            total_width += w_ang
+
+            try:
+                d_raw = float(layer["density"])
+            except (TypeError, ValueError):
+                d_raw = 0.0
+            d_val = self._density_in_atoms_per_ang3(d_raw, density_unit,
+                                                       elements=layer.get("elements", []))
+
+            try:
+                cc = float(layer.get("compound_corr") or layer.get("compound_correction", 1.0))
+            except (TypeError, ValueError):
+                cc = 1.0
+
+            lines += [
+                "[[layer]]",
+                f'name = "{layer["name"]}"',
+                f"width = {w_ang}",
+                f"density = {d_val}",
+                f"compound_correction = {cc}",
+                f"gas = {'true' if layer.get('gas') else 'false'}",
+                "",
+            ]
+            for elem in layer.get("elements", []):
+                try:
+                    disp_e = float(elem.get("disp", 25.0))
+                except (TypeError, ValueError):
+                    disp_e = 25.0
+                lines += [
+                    "    [[layer.element]]",
+                    f'    symbol = "{elem["symbol"]}"',
+                    f'    name = "{elem["name"]}"',
+                    f"    Z = {elem['Z']}",
+                    f"    M = {elem.get('mass', 0.0)}",
+                    f"    stoichiometry = {elem.get('ratio', 1.0)}",
+                    f"    displacement_energy = {disp_e}",
+                    "",
+                ]
+
+        # Models
+        potential = sel.get("nuclear_stopping", "ZBL")
+        estop = sel.get("electronic_stopping", "SRIM")
+        lines += [
+            "[models]",
+            f'potential = "{potential}"',
+            f'electronic_stopping = "{estop}"',
+            "",
+            "[models.scattering_integrals]",
+            'algorithm = "magic"',
+            "n_absc = 4",
+            "",
+        ]
+
+        # Output section
+        energy_kev = ion["energy"]
+        half_width = total_width / 2.0 if total_width > 0 else 2000.0
+
+        lines += [
+            "[output]",
+            "",
+            "[output.trajectories]",
+            f"start = {'true' if out.get('traj_start') else 'false'}",
+            f"collisions = {'true' if out.get('traj_collisions') else 'false'}",
+            f"stopped = {'true' if out.get('traj_end') else 'false'}",
+            "backscattered = false",
+            "transmitted = false",
+            "",
+            "[output.depth_distribution.ion_recoils]",
+            f"score = {'true' if out.get('range_ion_recoil') else 'true'}",
+            "nbins = 120",
+            f"limits = [0.0, {total_width}]",
+            "",
+            "[output.depth_distribution.nuclear_energy_deposition]",
+            f"score = {'true' if out.get('range_phonons') else 'false'}",
+            "nbins = 120",
+            f"limits = [0.0, {total_width}]",
+            "",
+            "[output.depth_distribution.electronic_energy_deposition]",
+            f"score = {'true' if out.get('range_ionization') else 'false'}",
+            "nbins = 120",
+            f"limits = [0.0, {total_width}]",
+            "",
+            "[output.lateral_distribution.ion_recoils]",
+            f"score = {'true' if out.get('lateral_ion_recoil') else 'false'}",
+            "nbins = 120",
+            f"limits = [-{half_width}, {half_width}]",
+            "",
+            "[output.lateral_distribution.nuclear_energy_deposition]",
+            f"score = {'true' if out.get('lateral_phonons') else 'false'}",
+            "nbins = 120",
+            f"limits = [-{half_width}, {half_width}]",
+            "",
+            "[output.lateral_distribution.electronic_energy_deposition]",
+            f"score = {'true' if out.get('lateral_ionization') else 'false'}",
+            "nbins = 120",
+            f"limits = [-{half_width}, {half_width}]",
+            "",
+            "[output.backscattered_atoms.energy]",
+            f"score = {'true' if out.get('backscattered_energy') else 'false'}",
+            "nbins = 120",
+            f"limits = [0.0, {energy_kev}]",
+            "",
+            "[output.backscattered_atoms.angle]",
+            f"score = {'true' if out.get('backscattered_angle') else 'false'}",
+            "nbins = 120",
+            "limits = [-90.0, 90.0]",
+            "",
+            "[output.transmitted_atoms.energy]",
+            f"score = {'true' if out.get('transmitted_energy') else 'false'}",
+            "nbins = 120",
+            f"limits = [0.0, {energy_kev}]",
+            "",
+            "[output.transmitted_atoms.angle]",
+            f"score = {'true' if out.get('transmitted_angle') else 'false'}",
+            "nbins = 120",
+            "limits = [-90.0, 90.0]",
+            "",
+        ]
+
+        return "\n".join(lines)
+
+    # -------- simulation execution ----------
+    def _validate_before_run(self) -> str | None:
+        """Return an error message if the config is incomplete, else None."""
+        errors: list[str] = []
+
+        # Ion
+        if not getattr(self, "_ion_symbol_value", ""):
+            errors.append("No ion selected.")
+        if hasattr(self, "ion_mass") and float(self.ion_mass.text() or 0) <= 0:
+            errors.append("Ion mass must be > 0.")
+        if hasattr(self, "ion_energy") and self.ion_energy.value() <= 0:
+            errors.append("Ion energy must be > 0.")
+
+        # Layers
+        layer_count = max(self.layers_table.rowCount() - 1, 0) if hasattr(self, "layers_table") else 0
+        if layer_count == 0:
+            errors.append("No target layers defined.")
+        else:
+            for i in range(layer_count):
+                entries = self.layer_elements[i] if i < len(self.layer_elements) else []
+                if not entries:
+                    errors.append(f"Layer {i + 1} has no elements.")
+                # Width
+                w_item = self.layers_table.item(i, 2) if hasattr(self, "layers_table") else None
+                try:
+                    w = float(w_item.text()) if w_item else 0.0
+                except (TypeError, ValueError):
+                    w = 0.0
+                if w <= 0:
+                    errors.append(f"Layer {i + 1} has no valid width.")
+                # Density
+                d_item = self.layers_table.item(i, 4) if hasattr(self, "layers_table") else None
+                try:
+                    d = float(d_item.text()) if d_item else 0.0
+                except (TypeError, ValueError):
+                    d = 0.0
+                if d <= 0:
+                    errors.append(f"Layer {i + 1} has no valid density.")
+
+        # Output – at least one scoring option
+        cfg = self.collect_simulation_config()
+        out = cfg.get("output", {})
+        has_output = any(v for k, v in out.items() if isinstance(v, bool))
+        if not has_output:
+            errors.append("No output options selected (check at least one distribution).")
+
+        # Working directory
+        if not self._working_directory:
+            errors.append("No working directory set. Click 'Set working directory' first.")
+
+        return "\n".join(errors) if errors else None
+
     def _handle_run_clicked(self):
         if not self.mc_progress or not self.run_button:
             return
+
+        # Validate
+        err = self._validate_before_run()
+        if err:
+            QMessageBox.warning(self, "Cannot Start Simulation", err)
+            return
+
+        base_dir = Path(self._working_directory)  # type: ignore[arg-type]  # validated above
+
+        results_dir = base_dir / datetime.now().strftime("run_%Y%m%d_%H%M%S")
+        results_dir.mkdir(parents=True, exist_ok=True)
+
+        toml_path = results_dir / "input.toml"
+        toml_content = self._build_input_toml(str(results_dir))
+        toml_path.write_text(toml_content, encoding="utf-8")
+
+        self._current_results_dir = str(results_dir)
+        self._current_nions = int(self.no_of_ions_spin.value()) if self.no_of_ions_spin else 10000
+
         self.run_button.setEnabled(False)
         self.mc_progress.setValue(0)
-        self.mc_progress.setFormat("%p% Complete")
+        self.mc_progress.setFormat("0% – Starting…")
+        self.add_log_entry(f"Simulation started. Config: {toml_path}")
+
+        self._sim_process = None
+        self._sim_error = None
+
+        def _run_in_thread():
+            try:
+                import sys
+                import os as _os
+                env = _os.environ.copy()
+                env["MPLBACKEND"] = "Agg"  # prevent matplotlib GUI windows
+                proc = subprocess.Popen(
+                    [sys.executable, "-m", "simulators.run_opentrim", str(toml_path)],
+                    cwd=str(Path(__file__).resolve().parents[2]),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    env=env,
+                )
+                self._sim_process = proc
+                proc.wait()
+                if proc.returncode != 0:
+                    stderr = proc.stderr.read().decode(errors="replace") if proc.stderr else ""
+                    self._sim_error = stderr or f"Process exited with code {proc.returncode}"
+            except Exception as exc:
+                self._sim_error = str(exc)
+
+        self._sim_thread = threading.Thread(target=_run_in_thread, daemon=True)
+        self._sim_thread.start()
+        self._last_update_ions = 0
+
         if not self._progress_timer:
             self._progress_timer = QTimer(self)
-            self._progress_timer.timeout.connect(self._advance_progress)
-        self._progress_timer.start(120)
-        self.add_log_entry("Simulation run started.")
+            self._progress_timer.timeout.connect(self._poll_progress)
+        self._progress_timer.start(500)
 
-    def _advance_progress(self):
+    def _poll_progress(self):
         if not self.mc_progress:
             return
-        value = self.mc_progress.value() + 5
-        self.mc_progress.setValue(min(value, 100))
-        if self.mc_progress.value() >= 100:
+
+        # Check if thread is still alive
+        thread_alive = hasattr(self, "_sim_thread") and self._sim_thread.is_alive()
+
+        # Read progress file
+        progress_file = Path(self._current_results_dir) / "progress"
+        done = 0
+        if progress_file.exists():
+            try:
+                text = progress_file.read_text(encoding="utf-8").strip()
+                parts = text.split("/")
+                if len(parts) == 2:
+                    done = int(parts[0].strip())
+                    total = int(parts[1].strip())
+                    if total > 0:
+                        pct = min(int(done * 100 / total), 100)
+                        self.mc_progress.setValue(pct)
+                        self.mc_progress.setFormat(f"{pct}% – {done}/{total} ions")
+            except (ValueError, OSError):
+                pass
+
+        # Emit live update when enough new ions have been processed
+        update_interval = self.update_after_ions_spin.value() if self.update_after_ions_spin else 5000
+        if done > 0 and done - self._last_update_ions >= update_interval:
+            self._last_update_ions = done
+            self.results_update.emit(self._current_results_dir)
+
+        if not thread_alive:
             if self._progress_timer:
                 self._progress_timer.stop()
-            self.mc_progress.setFormat("Complete")
+
+            # Re-enable button BEFORE any modal dialog
             if self.run_button:
                 self.run_button.setEnabled(True)
-            self.add_log_entry("Simulation run completed.")
+
+            if self._sim_error:
+                self.mc_progress.setFormat("Error")
+                self.mc_progress.setValue(0)
+                self.add_log_entry(f"Simulation error: {self._sim_error}")
+                # Defer dialog so timer callback returns first
+                err_msg = self._sim_error or ""
+                QTimer.singleShot(0, lambda: QMessageBox.warning(
+                    self, "Simulation Error",
+                    f"OpenTRIM failed:\n{err_msg[:500]}"))
+            else:
+                self.mc_progress.setValue(100)
+                self.mc_progress.setFormat("Complete")
+                # List output files for transparency
+                res_path = Path(self._current_results_dir)
+                his_files = sorted(res_path.glob("*.his"))
+                mom_files = sorted(res_path.glob("*.mom"))
+                self.add_log_entry(
+                    f"Simulation completed. {len(his_files)} histogram(s), "
+                    f"{len(mom_files)} moment file(s) in: {self._current_results_dir}"
+                )
+                self.simulation_finished.emit(self._current_results_dir)
 
     # -------- element/layer logic ----------
     def _open_compound_dictionary(self):
@@ -1286,9 +1880,18 @@ class MCSetupPage(QWidget):
 
     def _get_default_energy_params(self, element: dict) -> dict:
         params = {}
+        # Try element-specific defaults from the SRIM-compatible CSV table
+        try:
+            z = int(element.get("number", 0))
+        except (TypeError, ValueError):
+            z = 0
+        table_entry = _ELEMENT_ENERGY_DEFAULTS.get(z, {})
         for key, fallback in self.state.energy_defaults.items():
-            candidate = element.get(f"{key}_eV", element.get(key, fallback))
-            params[key] = str(candidate)
+            if key in table_entry:
+                params[key] = str(table_entry[key])
+            else:
+                candidate = element.get(f"{key}_eV", element.get(key, fallback))
+                params[key] = str(candidate)
         return params
 
     def _refresh_element_table(self):
@@ -1353,7 +1956,9 @@ class MCSetupPage(QWidget):
             self.elem_table.setItem(row, 6, ro_item(f"{percent:.2f}"))
 
             for offset, key in enumerate(("disp", "latt", "surf"), start=7):
-                self.elem_table.setItem(row, offset, ro_item(str(entry[key])))
+                energy_item = QTableWidgetItem(str(entry[key]))
+                energy_item.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEditable | Qt.ItemFlag.ItemIsEnabled)
+                self.elem_table.setItem(row, offset, energy_item)
 
         # Action row: span across all columns and place the add-element button.
         action_row = self.elem_table.rowCount() - 1
@@ -1373,7 +1978,7 @@ class MCSetupPage(QWidget):
 
         action_cell = QWidget(self.elem_table)
         action_l = QHBoxLayout(action_cell)
-        action_l.setContentsMargins(0, 0, 0, 0)
+        action_l.setContentsMargins(4, 0, 0, 0)
         action_l.setSpacing(6)
         if hasattr(self, "elem_pick_btn") and self.elem_pick_btn is not None:
             action_l.addWidget(self.elem_pick_btn)
@@ -1381,6 +1986,64 @@ class MCSetupPage(QWidget):
         self.elem_table.setCellWidget(action_row, 0, action_cell)
 
         self._updating_elements_table = False
+        self._update_layer_density_from_elements()
+
+    def _update_layer_density_from_elements(self) -> None:
+        """Auto-fill the layer density cell from the SRIM density table.
+
+        Computes a stoichiometry-weighted density and converts it to the
+        currently selected UI unit (g/cm³, kg/m³, or atoms/cm³).
+        Skips if the user has manually edited the density for this layer.
+        """
+        layer_idx = self._current_layer_index()
+        if layer_idx < 0:
+            return
+        # Skip if user manually overrode the density for this layer.
+        if layer_idx in self._density_user_override:
+            return
+        entries = self._get_layer_entries(layer_idx)
+        if not entries:
+            return
+        # Build elements list for _density_from_table
+        elements = []
+        for e in entries:
+            elem = e.get("element", {})
+            elements.append({
+                "symbol": elem.get("symbol", ""),
+                "ratio": e.get("ratio", 1.0),
+                "mass": elem.get("atomic_mass", 0.0),
+            })
+        dens_ang = self._density_from_table(elements)
+        if dens_ang is None or dens_ang <= 0:
+            return
+        # Convert atoms/Å³ to the current UI unit
+        unit = self.density_unit_combo.currentText() if hasattr(self, "density_unit_combo") else "g/cm³"
+        if unit == "atoms/cm³":
+            display_val = dens_ang * 1e24
+        else:
+            m_avg = self._avg_atomic_mass(elements)
+            if m_avg <= 0:
+                return
+            rho_g_cm3 = dens_ang * m_avg / 0.6022
+            if unit == "kg/m³":
+                display_val = rho_g_cm3 * 1e3
+            else:  # g/cm³
+                display_val = rho_g_cm3
+        # Update the density cell in the layers table
+        item = self.layers_table.item(layer_idx, 4)
+        if item is None:
+            item = QTableWidgetItem()
+            self.layers_table.setItem(layer_idx, 4, item)
+        self._updating_layers_table = True
+        item.setText(f"{display_val:.4f}")
+        self._updating_layers_table = False
+
+    def _handle_layer_item_changed(self, item):
+        """Track manual edits to the density column (col 4)."""
+        if self._updating_layers_table:
+            return
+        if item.column() == 4:
+            self._density_user_override.add(item.row())
 
     def _handle_element_item_changed(self, item):
         if self._updating_elements_table:
@@ -1396,12 +2059,19 @@ class MCSetupPage(QWidget):
         if row < 0 or row >= len(entries):
             return
         entry = entries[row]
-        if item.column() == 5:
+        col = item.column()
+        if col == 5:
             try:
                 entry["ratio"] = max(float(item.text()), 0.0)
             except ValueError:
                 entry["ratio"] = 0.0
             self._refresh_element_table()
+        elif col in (7, 8, 9):
+            key = ("disp", "latt", "surf")[col - 7]
+            try:
+                entry[key] = str(max(float(item.text()), 0.0))
+            except ValueError:
+                pass
 
     def _handle_element_cell_double_clicked(self, row, column):
         # Ignore the action row.
@@ -1578,6 +2248,7 @@ class _WrapHeaderView(QHeaderView):
         if model is None:
             return base
 
+        group_h = self._group_header_height()
         height = 0
         for i in range(model.columnCount()):
             if self.isSectionHidden(i):
@@ -1586,13 +2257,15 @@ class _WrapHeaderView(QHeaderView):
             extra = 0
             if i in self._header_widgets:
                 extra = self._header_widgets[i].sizeHint().height() + 4
-            height = max(height, th + extra)
+            # Grouped columns need group_h + their own text height;
+            # non-grouped columns need just their text height.
+            if self._group_for_section(i) is not None:
+                height = max(height, th + extra + group_h)
+            else:
+                height = max(height, th + extra)
 
-        group_h = self._group_header_height()
         if height:
-            base.setHeight(max(base.height(), height + group_h + 8))
-        elif group_h:
-            base.setHeight(base.height() + group_h)
+            base.setHeight(max(base.height(), height + 8))
         return base
 
     def paintSection(self, painter, rect, logicalIndex):

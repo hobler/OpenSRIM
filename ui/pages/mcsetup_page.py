@@ -1242,7 +1242,7 @@ class MCSetupPage(QWidget):
 
         # Assemble: output options left, simulation controls right.
         content = QHBoxLayout()
-        content.setSpacing(50)
+        content.setSpacing(80)
         content.addLayout(grid)
         _right_sep = QFrame()
         _right_sep.setFrameShape(QFrame.Shape.VLine)

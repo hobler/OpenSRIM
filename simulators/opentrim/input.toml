@@ -34,7 +34,7 @@ name = "Layer 1"
 width = 10000.0
 density = 1.0
 compound_correction = 1.0
-gas = False
+gas = false
 
     [[layer.element]]
     symbol = "Si"

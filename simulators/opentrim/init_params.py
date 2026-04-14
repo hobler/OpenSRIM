@@ -290,7 +290,7 @@ def _get_recoil_params(input_params):
 
     RECOIL_PARAMS_DTYPE = np.dtype([
         ("pmax", np.float64, (NMAT,)),
-        ("mean_free_path", np.float64, (NMAT)),
+        ("mean_free_path", np.float64, (NMAT,)),
     ], align=True)
 
     recoil_params = np.recarray(1, dtype=RECOIL_PARAMS_DTYPE)

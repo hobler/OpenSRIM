@@ -104,6 +104,42 @@ def get_coefs(Z1, Z2):
     return rnorm, a, b, c, d, r34, rmax, k
 
 
+# TODO: rewrite as a standalone function
+def impulse_integral(self, p):
+    """Evaluate the integral that appears in the impulse approximation.
+    
+    This integral is defined as one half of the integral of 
+    
+        Phi(r) - r*Phi'(r)
+        ------------------ * p
+                r^3
+
+    along a straight line which passes by the center of the potential at 
+    a distance p.
+
+    The calculation uses quad from SciPy for numerical integration.
+    
+    Parameters:
+        p (float): impact parameter (RNORM)
+
+    Returns:
+        (float): value of the integral
+    """
+    if p >= self.rmax:
+        return 0.0
+    
+    def integrand(x, p):
+        r = np.sqrt(x**2 + p**2)
+        screen, dscreen = self(r)
+        return (screen - r*dscreen) * p / r**3
+    
+    xmax = np.sqrt(self.rmax**2 - p**2) if p < self.rmax else 0
+    integral, abserr = quad(integrand, 0, xmax, args=(p,))
+    print(p, xmax, self.rmax, integral, abserr)
+    
+    return integral
+
+
 @register_jitable
 def screen_fun(r, pot_coefs):
     """Calculate the NLHlin screening function and its derivative.

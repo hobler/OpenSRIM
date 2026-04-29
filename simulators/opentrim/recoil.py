@@ -44,9 +44,9 @@ def select_recoil(proj, recoil, params):
     ilayer = proj["ilayer"]
     
     # free flight path and impact parameter
-    free_path = params.recoil.mean_free_path[ilayer]
+    free_path = params.cascade.mean_free_path[ilayer]
     collision_pos = pos[:] + free_path * dir[:]
-    p = params.recoil.pmax[ilayer] * sqrt(np.random.rand())
+    p = params.cascade.pmax[ilayer] * sqrt(np.random.rand())
 
     # Azimuthal angle fi
     fi = 2 * np.pi * np.random.rand()

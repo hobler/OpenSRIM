@@ -277,29 +277,6 @@ def _get_estop_params(input_params, nelem, elements_params):
     return estop_params
 
 
-def _get_recoil_params(input_params):
-    """Get the recoil parameters from the input parameters.
-
-    Parameters:
-        input_params: (dict) The input parameters dictionary.
-
-    Returns:
-        recoil_params: (np.recarray) The recoil parameters.
-    """
-    densities = np.array([layer["density"] for layer in input_params["layer"]])
-
-    RECOIL_PARAMS_DTYPE = np.dtype([
-        ("pmax", np.float64, (NMAT,)),
-        ("mean_free_path", np.float64, (NMAT)),
-    ], align=True)
-
-    recoil_params = np.recarray(1, dtype=RECOIL_PARAMS_DTYPE)
-    recoil_params[0].pmax = densities**(-1/3) / sqrt(np.pi)
-    recoil_params[0].mean_free_path = densities**(-1/3)
-
-    return recoil_params
-
-
 def _get_scatter_params(input_params, nelem, elements_params):
     """Get the scattering parameters from the input parameters.
 
@@ -395,6 +372,8 @@ def _get_cascade_params(input_params):
         ("follow_recoils", np.int64),  # stored as int for better compatibility with Numba
         ("emin", np.float64),
         ("ed", np.float64),
+        ("pmax", np.float64, (NMAT,)),
+        ("mean_free_path", np.float64, (NMAT,)),
     ], align=True)
 
     cascade_params = np.recarray(1, dtype=CASCADE_PARAMS_DTYPE)
@@ -402,6 +381,10 @@ def _get_cascade_params(input_params):
         input_params["simulation"]["follow_recoils"])
     cascade_params[0].emin = 5.0
     cascade_params[0].ed = 15.0
+
+    densities = np.array([layer["density"] for layer in input_params["layer"]])
+    cascade_params[0].pmax = densities**(-1/3) / sqrt(np.pi)
+    cascade_params[0].mean_free_path = densities**(-1/3)
 
     return cascade_params
 
@@ -427,7 +410,6 @@ def get_params(input_params):
     nelem_target, nelem, elements_params, materials_params = (
         _get_elements_and_materials_params(input_params))
     estop_params = _get_estop_params(input_params, nelem, elements_params)
-    recoil_params = _get_recoil_params(input_params)
     scatter_params = _get_scatter_params(input_params, nelem, elements_params)
     cascade_params = _get_cascade_params(input_params)
 
@@ -441,7 +423,6 @@ def get_params(input_params):
         ("nelem", np.int32),         # align=True
         ("beam", beam_params.dtype),
         ("cascade", cascade_params.dtype),
-        ("recoil", recoil_params.dtype),
         ("geometry", geometry_params.dtype),
         ("elements", elements_params.dtype, (elements_params.size,)),
         ("materials", materials_params.dtype, (materials_params.size,)),
@@ -457,7 +438,6 @@ def get_params(input_params):
     params[0].nelem = nelem
     params[0].beam = beam_params
     params[0].cascade = cascade_params
-    params[0].recoil = recoil_params
     params[0].geometry = geometry_params
     params[0].elements = elements_params
     params[0].materials = materials_params

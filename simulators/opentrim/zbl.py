@@ -15,6 +15,7 @@ Available functions:
 """
 from math import sqrt
 import numpy as np
+from scipy import special
 from scipy.optimize import brentq
 from numba import jit
 from numba.core.extending import register_jitable
@@ -82,6 +83,40 @@ def get_coefs(Z1, Z2):
     r34 = r_touch3
 
     return rnorm, a, b, r34, k
+
+
+def impulse_integral(p, pot_coefs):
+    """Evaluate the integral that appears in the impulse approximation.
+    
+    This integral is defined as one half of the integral of 
+
+         d  Phi(r)
+        --  ------
+        dp    r
+    
+    along a straight line which passes by the center of the potential at 
+    a distance p.
+
+    The calculation uses the modified Bessel function of the second kind 
+    and order 1 (scipy.special.kn).
+    
+    Parameters:
+        p (float): impact parameter (RNORM)
+
+    Returns:
+        (float): value of the integral
+    """
+    k0 = special.kn(1, pot_coefs.b[0] * p)
+    k1 = special.kn(1, pot_coefs.b[1] * p)
+    k2 = special.kn(1, pot_coefs.b[2] * p)
+    k3 = special.kn(1, pot_coefs.b[3] * p)
+
+    integral = (pot_coefs.a[0]*pot_coefs.b[0]*k0 
+                + pot_coefs.a[1]*pot_coefs.b[1]*k1 
+                + pot_coefs.a[2]*pot_coefs.b[2]*k2 
+                + pot_coefs.a[3]*pot_coefs.b[3]*k3)
+
+    return integral
 
 
 @register_jitable

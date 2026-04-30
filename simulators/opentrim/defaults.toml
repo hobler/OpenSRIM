@@ -63,11 +63,11 @@ gas                 = false     # treat layer as gas
 [models]
 # -----------------------------------------------------------------------------
 
-potential          = "ZBL"       # interatomic potential for nuclear scattering
-electronic_stopping = "SRIM" # model for electronic stopping power; "Lindhard" or "SRIM"
+potential          = "ZBL"       # "ZBL" or "NLHlin"; interatomic potential
+electronic_stopping = "SRIM"  # "Lindhard" or "SRIM"; electronic stopping power
 
 [models.scattering_integrals]
-algorithm = "magic"  # "magic" or "Gauss-Legendre"
+algorithm = "Legendre"  # "magic" or "Legendre"
 n_absc    = 4        # number of abscissas (Gauss-Legendre only)
 
 [models.lindhard_correction]

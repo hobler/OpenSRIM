@@ -9,14 +9,16 @@ PROJ_DTYPE = np.dtype([
     ("dir", np.float64, (3,)),
     ("ielem", np.int32),
     ("ilayer", np.int32),
-    ("is_inside", np.bool_)
+    ("is_inside", np.bool_),
+    ("first_ffp", np.bool_)
 ], align=True)
 PROJ_NUMBA_DTYPE = from_dtype(PROJ_DTYPE)
 
 
 # Preserve compatibility with vanilla NumPy (with nuparams.scattermba disabled)
 if os.environ.get("NUMBA_DISABLE_JIT", "") == "1":
-    def Projectile(e, pos, dir, ielem=0, ilayer=0, is_inside=True):
+    def Projectile(e, pos, dir, ielem=0, ilayer=0, is_inside=True, 
+                   first_ffp=True):
         """Create a single numpy record with initial properties of a Projectile
         
         This implementation is used when Numba is disabled to preserve 
@@ -31,6 +33,8 @@ if os.environ.get("NUMBA_DISABLE_JIT", "") == "1":
             ilayer (int): Layer index. Defaults to 0
             is_inside (bool): If the projectile is within the simulation area.
                 Defaults to True
+            first_ffp (bool): If the first flight path is to be chosen randomly 
+                between 0 and the mean value. Defaults to True
         Returns:
             (PROJ_TYPE): A single record containing properties of a Projectile
         """
@@ -41,10 +45,12 @@ if os.environ.get("NUMBA_DISABLE_JIT", "") == "1":
         rec["ielem"] = ielem
         rec["ilayer"] = ilayer
         rec["is_inside"] = is_inside
+        rec["first_ffp"] = first_ffp
         return rec
 else:
     @jit(inline = "always")
-    def Projectile(e, pos, dir, ielem=0, ilayer=0, is_inside=True):
+    def Projectile(e, pos, dir, ielem=0, ilayer=0, is_inside=True, 
+                   first_ffp=True):
         """Create a single numpy record with initial properties of a Projectile
         
         This implementation is supported by Numba and creates a
@@ -58,7 +64,8 @@ else:
             ilayer (int): Layer index. Defaults to 0
             is_inside (bool): If the projectile is within the simulation area.
                 Defaults to True
-        
+            first_ffp (bool): If the first flight path is to be chosen randomly 
+                between 0 and the mean value. Defaults to True
         Returns:
             (PROJ_TYPE): A single record containing properties of a Projectile
         """
@@ -69,5 +76,6 @@ else:
         rec["ielem"] = ielem
         rec["ilayer"] = ilayer
         rec["is_inside"] = is_inside
+        rec["first_ffp"] = first_ffp
         return rec
 

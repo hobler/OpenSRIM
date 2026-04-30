@@ -10,6 +10,7 @@ Moreover, there are plotting functions for testing and visualization:
 import os
 import sys
 import numpy as np
+from scipy.integrate import quad
 from scipy.optimize import brentq
 from numba import jit
 from numba.core.extending import register_jitable
@@ -104,8 +105,7 @@ def get_coefs(Z1, Z2):
     return rnorm, a, b, c, d, r34, rmax, k
 
 
-# TODO: rewrite as a standalone function
-def impulse_integral(self, p):
+def impulse_integral(p, pot_coefs):
     """Evaluate the integral that appears in the impulse approximation.
     
     This integral is defined as one half of the integral of 
@@ -125,17 +125,17 @@ def impulse_integral(self, p):
     Returns:
         (float): value of the integral
     """
-    if p >= self.rmax:
+    if p >= pot_coefs.rmax:
         return 0.0
     
     def integrand(x, p):
         r = np.sqrt(x**2 + p**2)
-        screen, dscreen = self(r)
+        screen, dscreen = screen_fun(r, pot_coefs)
         return (screen - r*dscreen) * p / r**3
     
-    xmax = np.sqrt(self.rmax**2 - p**2) if p < self.rmax else 0
+    xmax = np.sqrt(pot_coefs.rmax**2 - p**2) if p < pot_coefs.rmax else 0
     integral, abserr = quad(integrand, 0, xmax, args=(p,))
-    print(p, xmax, self.rmax, integral, abserr)
+    #print(p, xmax, pot_coefs.rmax, integral, abserr)
     
     return integral
 

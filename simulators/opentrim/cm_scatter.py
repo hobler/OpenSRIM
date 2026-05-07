@@ -53,7 +53,7 @@ def scatter_integrals(e, p, pot_model, pot_coefs):
 
     def integrands(u):
         phi, chi = calc_phi_chi(u)
-        rho = r0 / (e*p**2)
+        rho = r0 / (e*p**2)  # integrands must not be called for p=0
         g = np.sqrt(rho*chi + (2-u**2))
         integrand_theta = 1 / g
         integrand_tau = (1 + rho * phi/(1-u**2)) / (g * (1 + u*p/r0*g))
@@ -74,8 +74,8 @@ def scatter_integrals(e, p, pot_model, pot_coefs):
                 - 4/two_arccos_num * np.sum(weights * integrand_theta_vals))
         tau = (r0 - 2 * p * np.sum(weights * integrand_tau_vals))
     else:    
-        theta = 2*np.arccos(p/rmax) * (1 
-                - 4/two_arccos_num * np.sum(weights * integrand_theta_vals))
+        theta = 2*np.arccos(p/rmax) - (2*np.arccos(r0/rmax) *
+                4/two_arccos_num * np.sum(weights * integrand_theta_vals))
         tau = (r0 - (rmax - np.sqrt(rmax**2 - p**2)) 
             - 2 * p * np.sum(weights * integrand_tau_vals))
 

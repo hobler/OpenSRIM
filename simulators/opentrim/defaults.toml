@@ -63,7 +63,7 @@ gas                 = false     # treat layer as gas
 [models]
 # -----------------------------------------------------------------------------
 
-potential          = "ZBL"       # "ZBL" or "NLHlin"; interatomic potential
+potential          = "NLHlin"       # "ZBL" or "NLHlin"; interatomic potential
 electronic_stopping = "SRIM"  # "Lindhard" or "SRIM"; electronic stopping power
 
 [models.scattering_integrals]

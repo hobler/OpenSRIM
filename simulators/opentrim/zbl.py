@@ -19,6 +19,7 @@ from scipy import special
 from scipy.optimize import brentq
 from numba import jit
 from numba.core.extending import register_jitable
+from . import config
 
 
 # Constants for ZBL screening function
@@ -119,7 +120,7 @@ def impulse_integral(p, pot_coefs):
     return integral
 
 
-@register_jitable
+@register_jitable(debug=config.DEBUG)
 def screen_fun(r, pot_coefs):
     """Calculate the ZBL screening function and its derivative.
 
@@ -154,7 +155,7 @@ R12sq = (2*K2)**2
 R23sq = K3 / K2
 NITER = 1           # number of Newton-Raphson iterations
 
-@jit
+@jit(debug=config.DEBUG)
 def estimate_apsis(e, p, pot_coefs):
     """Estimate the distance of closest approach (apsis) in a colllision.
 
@@ -200,7 +201,7 @@ C3 = 0.007122
 C4 = 14.813
 C5 = 9.3066
 
-@jit
+@jit(debug=config.DEBUG)
 def magic(e, p, pot_coefs):
     """Calculate CM scattering angle using Biersack's magic formula.
 

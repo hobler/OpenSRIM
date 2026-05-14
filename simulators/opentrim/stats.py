@@ -193,7 +193,7 @@ def merge_stats(total_stats, stats):
             total_counts += counts
 
 
-@jit
+@jit(debug=config.DEBUG)
 def _score(stats_distribution, value, ivar, weight=1.0):
     """Score a projectile's contribution to a statistics distribution.
     
@@ -217,7 +217,7 @@ def _score(stats_distribution, value, ivar, weight=1.0):
         stats_distribution["counts"][ivar, ibin] += weight
 
 
-@jit
+@jit(debug=config.DEBUG)
 def _score_stop(stats, proj):
     """Score a projectile that has stopped inside the target."""
     ivar = proj["ielem"]
@@ -228,7 +228,7 @@ def _score_stop(stats, proj):
     _score(stats["y"], y, ivar)
 
 
-@jit
+@jit(debug=config.DEBUG)
 def _score_backscattered(stats, proj):
     """Score a backscattered projectile."""
     ivar = proj["ielem"]
@@ -239,7 +239,7 @@ def _score_backscattered(stats, proj):
     _score(stats["ba"], angle, ivar)
 
 
-@jit
+@jit(debug=config.DEBUG)
 def _score_transmitted(stats, proj):
     """Score a transmitted projectile."""
     ivar = proj["ielem"]
@@ -250,7 +250,7 @@ def _score_transmitted(stats, proj):
     _score(stats["ta"], angle, ivar)
 
 
-@jit
+@jit(debug=config.DEBUG)
 def score_eed(stats, proj, dee):
     """Score the electronic energy deposition for a projectile."""
     ivar = proj["ielem"]
@@ -261,7 +261,7 @@ def score_eed(stats, proj, dee):
     _score(stats["ye"], y, ivar, weight=dee)
 
 
-@jit
+@jit(debug=config.DEBUG)
 def score_ned(stats, proj):
     """Score the nuclear energy deposition for a projectile."""
     ivar = proj["ielem"]
@@ -273,7 +273,7 @@ def score_ned(stats, proj):
     _score(stats["yn"], y, ivar, weight=ned)
 
 
-@jit
+@jit(debug=config.DEBUG)
 def score_start(stats, proj, nelem_target):
     """Score a projectile at its starting position."""
     ivar = proj["ielem"] + nelem_target
@@ -284,7 +284,7 @@ def score_start(stats, proj, nelem_target):
     _score(stats["y"], y, ivar)
 
 
-@jit
+@jit(debug=config.DEBUG)
 def score_end(stats, proj):
     """Score a projectile that has stopped or left the target."""
     if proj["is_inside"]:

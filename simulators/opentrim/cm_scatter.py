@@ -8,6 +8,7 @@ energy, and impact parameter, using Gauss-Legendre quadrature.
 from numba import jit
 import numpy as np
 from scipy.special import roots_legendre
+from . import config
 from . import nlhlin
 from . import zbl
 
@@ -16,7 +17,7 @@ from . import zbl
 ROOTS_LEGENDRE = roots_legendre(4)
 
 
-@jit
+@jit(debug=config.DEBUG)
 def scatter_integrals(e, p, pot_model, pot_coefs):
     """Calculate scattering angle and time integral.
 
@@ -31,12 +32,10 @@ def scatter_integrals(e, p, pot_model, pot_coefs):
         pot_coefs: Parameters for the potential model.
     
     Returns:
-        (float): Scattering angle (rad)
+        (float): Pi minus scattering angle (rad)
         (float): Time integral (RNORM).
     """
     if p >= pot_coefs.rmax:
-        return 0.0, 0.0
-    elif p == 0.0:
         return np.pi, 0.0
     
     r0, _ = get_apsis(e, p, pot_model, pot_coefs)
@@ -53,14 +52,13 @@ def scatter_integrals(e, p, pot_model, pot_coefs):
 
     def integrands(u):
         phi, chi = calc_phi_chi(u)
-        rho = r0 / (e*p**2)  # integrands must not be called for p=0
-        g = np.sqrt(rho*chi + (2-u**2))
-        integrand_theta = 1 / g
-        integrand_tau = (1 + rho * phi/(1-u**2)) / (g * (1 + u*p/r0*g))
+        h = np.sqrt(r0/e*chi + p**2*(2-u**2))
+        integrand_theta = p / h
+        integrand_tau = (p**2 + r0/e * phi/(1-u**2)) / (h * (1 + u/r0*h))
         return integrand_theta, integrand_tau
     
-    def integrand_two_arccos(u):
-        return 4 / np.sqrt(2 - u**2)
+    def integrand_arccos_half(u):
+        return 1 / np.sqrt(2 - u**2)
 
     rmax = pot_coefs.rmax
     umax = np.sqrt(1 - r0 / rmax)
@@ -68,21 +66,22 @@ def scatter_integrals(e, p, pot_model, pot_coefs):
     u_vals = 0.5 * umax * (u_vals + 1)
     weights = 0.5 * umax * weights
     integrand_theta_vals, integrand_tau_vals = integrands(u_vals)
-    two_arccos_num = np.sum(weights * integrand_two_arccos(u_vals))
+    arccos_num_half = np.sum(weights * integrand_arccos_half(u_vals))
     if rmax == np.inf:
-        theta = np.pi * (1 
-                - 4/two_arccos_num * np.sum(weights * integrand_theta_vals))
-        tau = (r0 - 2 * p * np.sum(weights * integrand_tau_vals))
+        pi_minus_theta = (np.pi / arccos_num_half 
+                          * np.sum(weights * integrand_theta_vals))
+        tau = (r0 - 2 * np.sum(weights * integrand_tau_vals))
     else:    
-        theta = 2*np.arccos(p/rmax) - (2*np.arccos(r0/rmax) *
-                4/two_arccos_num * np.sum(weights * integrand_theta_vals))
+        pi_minus_theta = (2 * np.arccos(r0/rmax) / arccos_num_half 
+                          * np.sum(weights * integrand_theta_vals)
+                          + 2 * np.arcsin(p/rmax))
         tau = (r0 - (rmax - np.sqrt(rmax**2 - p**2)) 
-            - 2 * p * np.sum(weights * integrand_tau_vals))
+            - 2 * np.sum(weights * integrand_tau_vals))
 
-    return theta, tau
+    return pi_minus_theta, tau
 
 
-@jit
+@jit(debug=config.DEBUG)
 def get_apsis(e, p, pot_model, pot_coefs):
     """Calculate the distance of closest approach (apsis) in a colllision.
 

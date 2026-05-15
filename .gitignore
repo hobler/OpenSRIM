@@ -139,3 +139,11 @@ todo
 
 # Simulation results
 data/opentrim/results
+sn_qn_table*.txt
+rp_table*.txt
+
+# LaTeX auxiliary files
+*.aux
+*.bbl
+*.blg
+*.toc

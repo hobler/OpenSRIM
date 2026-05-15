@@ -1,0 +1,36 @@
+% Gauss-Legendre Quadrature
+
+Gauss-Legendre quadrature approximates the integral
+%
+\begin{equation}
+    \label{eq:sn_legendre_formula}
+    \int_{-1}^1 h(u) \, \mathrm{d}u \approx \sum_{i=1}^n w_i h(u_i)
+\end{equation}
+%
+where the abscissas \(u_i\) are the roots of the Legendre polynomial \(P_n(u)\) and the weights \(w_i\) are given by \cite[25.4.29]{Abr72}
+%
+\begin{equation}
+    \label{eq:sn_legendre_weights}
+    w_i = \frac{ 2 }{ (1-u_i^2) [P_n'(u_i)]^2 }
+\end{equation}
+%
+The roots and abscissas are usually not calculated but taken from tabulated values, e.g. \cite{Hol10a}.
+
+Adjustment of the integration boundaries may be achieved by a linear transformation of the integration variable:
+%
+\begin{equation*}
+    \int_a^b h(u) \, \mathrm{d}u =
+        \frac{ b-a }{ 2 } \int_{-1}^1 h \left( \frac{ (b-a) u + (b+a) }{ 2 } \right)
+        \, \mathrm{d}u \approx
+        \sum_{i=1}^n \tilde{w}_i \, h \left( \tilde{u} \right)
+\end{equation*}
+%
+with
+%
+\begin{equation}
+    \label{eq:sn_legendre_transform}
+    \tilde{u}_i = \frac{ (b-a) u_i + (b+a) }{ 2 } , \qquad
+        \tilde{w}_i = \frac{ b-a }{ 2 } w_i ~.
+\end{equation}
+%
+Gauss-Legendre quadrature integrates polynomials of order \(< 2n\) exactly, so it is most accurate if all derivatives up to order \(2n-1\) exist and higher derivatives are small.

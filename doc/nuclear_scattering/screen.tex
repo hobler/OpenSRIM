@@ -1,0 +1,198 @@
+% Scattering Quantities for Screened Coulomb Potentials
+
+\subsection{Screened Coulomb Potentials}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+For small internuclear distances $r$, the interaction between two atoms is described by the Coulomb potential.
+It is therefore common to write the interatomic potential as a screened Coulomb potential
+%
+\begin{equation}
+    \label{eq:sn_screened_coulomb}
+    V(r) = \frac{Z_1 Z_2 e^2}{r} \, \Phi\left( \frac{r}{a_\mathrm{I}} \right)
+\end{equation}
+%
+where the screening function $\Phi$ describes the deviation from the Coulomb potential and $\Phi(r \rightarrow 0) = 1$.
+The Coulomb potential is given by
+%
+\begin{equation}
+    \label{eq:sn_coulomb}
+    V_\mathrm{Coul} = \frac{1}{4 \pi \varepsilon_0} \frac{Z_1 Z_2 e^2}{r} \approx
+        14.3996439 \, \mathrm{eV} \, \frac{Z_1 Z_2}{r[\mathrm{\mathAA}]} \approx
+        14.4 \, \frac{Z_1 Z_2}{r[\mathrm{\mathAA}]} \, \mathrm{eV} ~.
+\end{equation}
+%
+The argument of $\Phi$ is usually scaled by a screening length $a_I$, which is chosen as to make $\Phi(r/a_\mathrm{I})$ approximately independent of the atom species.
+The most common choices of $a_\mathrm{I}$ are according to Firsov \cite{Fir58}
+%
+\begin{equation}
+    \label{eq:sn_aF}
+    a_\mathrm{F} = \frac{ 0.46850 \mathAA }{ \left( Z_1^{1/2} + Z_2^{1/2} \right) ^ {2/3} } ~,
+\end{equation}
+%
+Lindhard \cite{Lin68}
+%
+\begin{equation}
+    \label{eq:sn_aL}
+    a_\mathrm{L} = \frac{ 0.46850 \mathAA }{ \left( Z_1^{2/3} + Z_2^{2/3} \right) ^ {1/2} } ~,
+\end{equation}
+%
+and ZBL \cite{ZBL85}
+%
+\begin{equation}
+    \label{eq:sn_aZBL}
+    a_\mathrm{ZBL} = \frac{ 0.46850 \mathAA }{ Z_1^{0.23} + Z_2^{0.23} } ~.
+\end{equation}
+
+For the screening function $\Phi$, a sum of exponentials
+%
+\begin{equation}
+    \label{eq:sn_sum_exp}
+    \Phi(R) = \sum_{i=1}^n a_i \exp(-b_i R)
+\end{equation}
+%
+is often used, where \(a_i\) and \(b_i\) are coefficients.
+The requirement \(\Phi(0) = 1\) results in \(\sum_i a_i = 1\).
+The values of the coefficients for common potentials potential are listed in \cref{tab:sn_screen_coefs}.
+The Moliere \cite{Bie80} and KrC \cite{Wil77} screening function are meant to be used with the Firsov screening length, while the ZBL scrrening function \cite{ZBL85} is used with the ZBL screening length.
+%
+\begin{table}
+    \caption{Coefficients of the sum or exponentials, \cref{eq:sn_sum_exp}, for the Moliere \cite{Mol47}, KrC \cite{Wil77}, and ZBL potential \cite{ZBL85}.}
+    \label{tab:sn_screen_coefs}
+    \centering
+    \begin{tabular}{|cc|cc|cc|}
+        \hline
+        \multicolumn{2}{|c|}{Moliere} & \multicolumn{2}{c|}{KrC} & \multicolumn{2}{c|}{ZBL} \\
+        $a_i$ & $b_i$ & $a_i$    & $b_i$    & $a_i$   & $b_i$ \\
+        \hline
+        0.1   &  6    & 0.335381 & 1.919249 & 0.18175 & 3.1998 \\
+        0.55  & 1.2   & 0.473674 & 0.637174 & 0.50986 & 0.94229 \\
+        0.35  & 0.3   & 0.190945 & 0.278544 & 0.28022 & 0.4029 \\
+              &       &          &          & 0.02817 & 0.20162 \\
+        \hline
+    \end{tabular}
+\end{table}
+
+Atom-pair specific interatomic potentials have also been proposed:
+The coefficients for pair-specific ZBL interatomic potentials are contained in the POTCOEF03.DAT file of the Data folder of SRIM-2013 \cite{SRIM-2013}.%
+%
+\footnote{According to the version history that comes up when pushing the “SRIM-2013.00” button in the SRIM-2013 Main Window, the pair-specific potentials seem to have been introduced in SRIM-2003.00. They are most likely not used by the Monte Carlo TRIM code of SRIM.
+}
+%
+More recently, pair-specific NLH potentials \cite{Nor25} have been proposed, which are fits to all-electron density functional theory (DFT) calculations.%
+%
+\footnote{The NLH potentials are not meant to be used for binary collision approximation simulations as they have not been fitted to the low-energy parts of the interatomic potential.
+}
+%
+
+The sum-of-exponentials screening function, \cref{eq:sn_sum_exp}, has infinite range.
+In reality, the interatomic potential goes to zero at some internuclear distance $r_\mathrm{max}$, and is negative for $r > r_\mathrm{max}$, resulting in an attractive part of the potential.
+The DFT data can be well fitted by a combination of a sum-of-exponentials and a linear function up to $r = r_\mathrm{max}$ \cite{Hob24}
+%
+\begin{equation}
+    \label{eq:sn_NLHlin}
+    \Phi(R) = \sum_{i=1}^n a_i \left[ \exp(-b_i R) - \exp(-b_i R_\mathrm{max}) \right]
+        - d \left( 1 - \frac{ R }{ R_\mathrm{max} } \right) ~,
+\end{equation}
+%
+where $R_\mathrm{max} = r_\mathrm{max} / a_\mathrm{I}$.
+A simple choice for $r > r_\mathrm{max}$ is $\Phi(R) = 0$, resulting in a finite-range interatomic potential.
+An advantage of finite-range interaction from a computational point of view is that there is a clear criterion for what atoms the ion interacts with as it travels in the target.
+Because of the linear term in \cref{eq:sn_NLHlin} we call the potential with this screening function the NLHlin potential.
+
+\begin{figure}
+    \centering
+    \includegraphics[scale=0.5]{NLHlin_unscaled.pdf} ~~
+    \includegraphics[scale=0.5]{ZBLuniv_unscaled.pdf}
+    \caption{NLHlin (left) and ZBL (right) screening function for homonuclear atom pairs ($Z1=Z_2$) as a function of internuclear distance in {\AA}ngst{\o}ms.}
+    \label{fig:sn_screen}
+\end{figure}
+%
+In \cref{fig:sn_screen} the NLHlin and the ZBL potential are shown for homonuclear atom pairs ($Z1=Z_2$) as a function of the unscaled internuclear distance $r$. The ZBL screening function expectedly does not describe the drop-off towards the maximum range and overestimates the tails at least for some of the lighter elements.
+
+\begin{figure}
+    \centering
+    \includegraphics[scale=0.5]{NLHlin_aFirsov.pdf} ~~
+    \includegraphics[scale=0.5]{NLHlin_aZBL.pdf}
+    \caption{NLHlin screening function for homonuclear atom pairs ($Z_1=Z_2$) as a function of internuclear distance scaled with the Firsov screening length \cref{eq:sn_aF} (left) and the ZBL  screening length \cref{eq:sn_aZBL} (right).}
+    \label{fig:sn_screen_scaled}
+\end{figure}
+%
+It is interesting to attempt finding a screening length that compresses the screening function to a single function. Simple formulae such as \crefrange{eq:sn_aF}{eq:sn_aZBL} cannot be expected to describe the range $r_\mathrm{max}$ of the potentials because it mainly depends on the number of valence electrons of the elements. However, one can try to compress the screening functions at small separations, where the potential mainly depends on the core electrons. \Cref{fig:sn_screen_scaled} shows the NLHlin screening function $\Phi(R)$ as a function of the reduced distance $R=r/a_\mathrm{F}$ (left) and $R=r/a_\mathrm{ZBL}$ (right) using the Firsov and ZBL screening length, respectively, for homo-nuclear atom pairs. As can be seen by comparing the two plots, the ZBL screening length does a better job of compressing the functions than the Firsov screening length. Using the Firsov screening length maps the screening functions of heavy elements to larger values than those for light elements, and leaves a larger straggle in the screening functions. Also shown in \cref{fig:sn_screen_scaled} are the KrC and ZBL screening functions. To some degree, they represent an average of the individual screening functions using the respective screening lengths.
+
+A slight improvement can be obtained by changing the power from 0.23 to 0.25 (not shown). It turns out that using screening lengths of the form
+%
+\begin{equation*}
+    a_\mathrm{I} = \frac{ 0.46850 \mathAA }{ \left( Z_1^x + Z_2^x \right) ^ y }
+\end{equation*}
+%
+yields similar compressions as long as $x y$ remains constant. Comparing different combination of $x$ and $y$ with $xy=0.25$ indicates a slight advantage for
+%
+\begin{equation}
+    \label{eq:sn_aNLH}
+    a_\mathrm{NLH} = \frac{ 0.46850 \mathAA }{ \left( Z_1^{1/2} + Z_2^{1/2} \right) ^ {1/2} } ~,
+\end{equation}
+%
+inparticular for very dislike elements (such as $Z_1=1$ or $Z_1=92$ combined with all other $Z_2$).
+%
+The NLHlin screening functions as a function of reduced internuclear distance $R=r/a_\mathrm{NLH}$ are shown in \cref{fig:sn_screen_NLH} for the homo-nuclear case (left) and for Cu targets and all ions (right).
+%
+\begin{figure}
+    \centering
+    \includegraphics[scale=0.5]{NLHlin_p0.5_p0.5.pdf} ~~
+    \includegraphics[scale=0.5]{NLHlin_p0.5_p0.5_Cu.pdf}
+    \caption{NLHlin screening function as a function of internuclear distance scaled with the proposed screening lengths \cref{eq:sn_aNLH} for the homo-nuclear case (left) and for Cu target atoms ($Z_2=29$, right).}
+    \label{fig:sn_screen_NLH}
+\end{figure}
+
+\subsection{Scattering Quantities in Terms of the Screening Function}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+For a screened Coulomb potential, the equation for the distance of closest approach $R_0$ can be written in terms of reduced lengths
+%
+\begin{equation}
+    \label{eq:sn_reduced_lengths}
+    P = p/a_\mathrm{I}, \quad R = r/a_\mathrm{I}, \quad R_0 = r_0/a_\mathrm{I}, \quad T = \tau/a_\mathrm{I} ~,
+\end{equation}
+%
+reduced energy
+%
+\begin{equation}
+    \label{eq:sn_reduced_energy}
+    \varepsilon = E \left/ \left( \frac{ M_1 + M_2 }{ M_2 }
+    V_\mathrm{coul}(a_\mathrm{I}) \right) \right.
+\end{equation}
+%
+and the screening function $\Phi(R)$ as
+%
+\begin{equation}
+    \label{eq:sn_apsis}
+    1 - \frac{ 1 }{ \varepsilon R_0 } \Phi(R_0) - \frac{ P^2 }{ R_0^2 } = 0 ~.
+\end{equation}
+
+The scattering angle in the CM system $\theta$, \cref{eq:sn_physics_theta}, and the time integral $\tau$, \cref{eq:sn_tau}, can be written as
+%
+\begin{equation}
+    \label{eq:sn_reduced_theta}
+    \pi - \theta(\varepsilon,P) = 2 \, P \int_{R_0}^\infty
+        \frac{ \mathrm{d}R }{ R^2 \, g(R) }
+\end{equation}
+%
+and
+%
+\begin{equation}
+    \label{eq:sn_reduced_tau}
+    T(\varepsilon,P) = R_0 - \int_{R_0}^\infty \left[
+    \frac{ 1 }{ g(R) } - 1 \right] \mathrm{d}R.
+\end{equation}
+%
+with
+%
+\begin{equation}
+    \label{eq:sn_reduced_g}
+    g(R) = \sqrt{ 1 - \frac{ 1 }{ \varepsilon R } \Phi(R)
+        - \frac{ P^2 }{ R^2 } } .
+\end{equation}
+
+The advantage of introducing reduced parameters lies in the fact that given a universal screening function $\Phi(R)$, \crefrange{eq:sn_apsis}{eq:sn_reduced_g} depend only via \cref{eq:sn_reduced_lengths,eq:sn_reduced_energy} on the atom species.
+This may be used in the development and testing of numerical algorithms, and to draw general conclusions in terms of the reduced impact parameter $P$ and energy $\varepsilon$.
+We therefore use \crefrange{eq:sn_apsis}{eq:sn_reduced_g} in the following, although formulations in terms of actual lengths (in \AA) can simply be obtained by setting $a_\mathrm{I} = 1 \mathAA$ and adjusting the coefficients of $\Phi$.

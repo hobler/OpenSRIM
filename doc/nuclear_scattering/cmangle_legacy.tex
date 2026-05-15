@@ -1,0 +1,240 @@
+% Scattering Angle in the CM System
+%
+\subsubsection{Change of variables}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+The integral in \cref{eq:sn_reduced_theta} is of the form
+%
+\begin{equation}
+    \label{eq:sn_legacy_integration_integral_R}
+    \int_{R_0}^\infty F(R) \, \mathrm{d}R .
+\end{equation}
+%
+where \(R_0\) is a pole of $F(R)$, which is obtained by solving \cref{eq:sn_apsis}, see Section~\ref{s:apsis}.
+Having a numerically determined pole of the integrand as an integration boundary is inconvenient, so the first step of calculating the scattering integrals is to apply a change of variable.
+One possibility is \cite{Eck91}
+%
+\begin{equation}
+    \label{eq:sn_legacy_transform1}
+    R = \frac{ R_0 }{ (1-u^2) } .
+\end{equation}
+%
+yielding
+%
+\begin{equation}
+    \label{eq:sn_legacy_integration_integral_u1}
+    \int_{R_0}^\infty F(R) \, \mathrm{d}R =
+        2 R_0 \int_0^1 F \left( \frac{ R_0 }{ 1-u^2 } \right)
+        \frac{ u \, \mathrm{d}u }{ (1-u^2)^2 } .
+\end{equation}
+%
+With \cref{eq:sn_reduced_theta} we obtain
+%
+\begin{equation}
+    \label{eq:sn_legacy_cmangl_legendre_theta_u}
+    \theta = \pi - \frac{ 4 P }{ R_0 } \int_0^1
+        \frac{ u \, \mathrm{d}u }{ g \left( \frac{ R_0 }{ 1-u^2 } \right) } .
+\end{equation}
+%
+where $g(R)$ is given by \cref{eq:sn_reduced_g}.
+
+\subsubsection{The integrand at the limits of integration}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+First, we show that the integrand is well-behaved.
+For that, we write \(g(R_0/(1-u^2))\) explicitly
+%
+\begin{equation}
+    \label{eq:sn_legacy_cmangl_legendre_g_u}
+    g \left( \frac{ R_0 }{ 1-u^2 } \right) =
+    \sqrt{ 1 - \frac{ 1 }{ \varepsilon R_0 }
+        \Phi\left( \frac{ R_0 }{ 1-u^2 } \right) (1-u^2)
+        - \frac{ P^2 }{ R_0^2 } (1-u^2)^2 } .
+\end{equation}
+%
+By subtracting \cref{eq:sn_apsis} from the expression under the square root, \cref{eq:sn_legacy_cmangl_legendre_g_u} may be rewritten
+%
+\begin{equation}
+    \label{eq:sn_legacy_cmangl_legendre_g_chi}
+    g\left( \frac{ R_0 }{ 1-u^2 } \right) =
+        \frac{ u }{ \sqrt{ \varepsilon R_0 } } \sqrt{ \chi(u) + \rho (2-u^2) }
+\end{equation}
+%
+with
+%
+\begin{equation}
+    \label{eq:sn_legacy_cmangl_legendre_chi}
+    \chi(u) = \frac{ \Phi(R_0) - \Phi\left( \frac{ R_0 }{ 1-u^2 } \right) \, (1-u^2) }{ u^2 }
+\end{equation}
+%
+and
+%
+\begin{equation}
+    \label{eq:sn_legacy_cmangl_legendre_rho}
+    \rho = \frac{ \varepsilon P^2 }{ R_0 } .
+\end{equation}
+
+\(\chi(u)\) is well-behaved with
+%
+\begin{equation}
+    \label{eq:sn_legacy_cmangl_legendre_chi_lim}
+    \chi(1) = \Phi(R_0), \qquad
+        \lim_{u \rightarrow 0} \chi(u) = \Phi(R_0) - R_0 \Phi'(R_0) .
+\end{equation}
+%
+The latter is obtained using l’Hospital’s rule.
+\(\chi(u)\) is plotted in \cref{fig:sn-cmangl-legendre-chi-plot} for the universal ZBL potential and some values of \(R_0\).
+%
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[scale=0.6]{chi_ZBL.pdf}
+    \caption{Function \(\chi(u)\) according to \cref{eq:sn_legacy_cmangl_legendre_chi} for the ZBL universal potential.}
+    \label{fig:sn-cmangl-legendre-chi-plot}
+\end{figure}
+
+\Cref{eq:sn_legacy_cmangl_legendre_theta_u} may now be rewritten
+%
+\begin{equation}
+    \label{eq:sn_legacy_cmangl_legendre_theta_chi}
+    \theta = \pi - 4 \int_0^1
+    \sqrt{ \frac{ \rho }{ \rho \, (2-u^2) + \chi(u) } }
+    \, \mathrm{d}u .
+\end{equation}
+%
+Since \(\chi(u)\) is well-behaved, so is the term under the square root.
+The integrand of \cref{eq:sn_legacy_cmangl_legendre_theta_chi} therefore has no poles, and the integral is amenable to standard methods of numerical quadrature.
+
+\subsubsection{Integration using Gauss-Legendre quadrature}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+Using Gauss-Legendre quadrature, we can approximate \cref{eq:sn_legacy_cmangl_legendre_theta_chi} by
+%
+\begin{equation}
+    \label{eq:sn_legacy_cmangl_legendre_theta_chi_approx_plain}
+    \theta \approx
+        \pi - 4 \sum_{i=1}^n \tilde{w}_i
+        \sqrt{ \frac{ \rho }{ \rho \, (2-\tilde{u}_i^2) + \chi(\tilde{u}_i) } }
+\end{equation}
+%
+with \(\tilde{u}_i\) and \(\tilde{w}_i\) defined in \cref{eq:sn_legacy_legendre_transform} of Appendix~\ref{s:gauss-legendre}.
+
+\Cref{eq:sn_legacy_cmangl_legendre_theta_chi_approx_plain}, however, has the problem that it does not tend to zero exactly as \(P \rightarrow \infty\).
+Note that for \(\rho \rightarrow \infty\) the integral in \cref{eq:sn_legacy_cmangl_legendre_theta_chi} becomes
+%
+\begin{equation}
+    \label{eq:sn_legacy_cmangl_legendre_pi}
+    \int_0^1 \frac{ 1 }{ \sqrt{ 2-u^2 } } \, \mathrm{d}u = \frac{ \pi }{ 4 } ,
+\end{equation}
+%
+and \(\theta \rightarrow 0\) as it should.
+However, since the integrand is not a polynomial, the Legendre approximation of the integral will not evaluate exactly to \(\pi/4\), and \cref{eq:sn_legacy_cmangl_legendre_theta_chi_approx_plain} will not tend to zero as \(\rho \rightarrow \infty\).
+This may be fixed by scaling the integral to the correct value of \(\pi/4\):
+%
+\begin{equation}
+    \label{eq:sn_legacy_cmangl_legendre_theta_chi_approx}
+    \theta \approx
+        \pi \left( 1
+        - \frac{ 4 }{ \pi_\mathrm{num} }
+        \sum_{i=1}^n \tilde{w}_i \sqrt{
+            \frac{ \rho
+            }{ \rho \, (2-\tilde{u}_i^2) + \chi(\tilde{u}_i) } }
+        \right)
+\end{equation}
+%
+with
+%
+\begin{equation}
+    \label{eq:sn_legacy_cmangl_legendre_pinum}
+    \pi_\mathrm{num} =
+        4 \sum_{i=1}^n \tilde{w}_i \frac{ 1 }{ \sqrt{ (2-\tilde{u}_i^2) } }
+\end{equation}
+%
+Since the sum in \cref{eq:sn_legacy_cmangl_legendre_theta_chi_approx} evaluates to \(\pi_\mathrm{num}/4\) for \(\rho \rightarrow \infty\), \(\theta \rightarrow 0\).
+At the same time, for \(\rho \rightarrow 0\) (i.e., \(P \rightarrow 0\)) the sum goes to zero and \(\theta \rightarrow \pi\) as it should.
+
+One can also apply this correction to the Legendre approximation of \cref{eq:sn_legacy_cmangl_legendre_theta_u}:
+%
+\begin{equation}
+    \label{eq:sn_legacy_cmangl_legendre_theta_g_approx}
+    \theta \approx
+        \pi \left( 1 - \frac{ 4 }{ \pi_\mathrm{num} } \frac{ P }{ R_0 }
+        \sum_{i=1}^n
+        \frac{ \tilde{w}_i \tilde{u}_i
+        }{ g \left( \frac{ R_0 }{ 1-\tilde{u}_i^2 } \right) } \right).
+\end{equation}
+%
+\Cref{eq:sn_legacy_cmangl_legendre_theta_g_approx} is not numerically equivalent to \cref{eq:sn_legacy_cmangl_legendre_theta_chi_approx}.
+It does not require the evaluation of \(\Phi(R_0)\), which might represent a non-negligible saving of computation time if few abscissas are used.
+For few abscissas, the results of \cref{eq:sn_legacy_cmangl_legendre_theta_g_approx} and \cref{eq:sn_legacy_cmangl_legendre_theta_chi_approx} are very similar.
+With increasing number of abscissas, the result is increasingly dependent on the accuracy of the apsis \(R_0\).
+The term under the square root may even become negative, if the accuracy of \(R_0\) is low and the number of abscissas is large.
+
+The integrand of \cref{eq:sn_legacy_cmangl_legendre_theta_chi} is shown in \cref{fig:integrand-legendre-theta} for the limiting cases \(\rho \gg \Phi, \chi\) and \(\rho \ll \Phi, \chi\).
+It is smooth, although not completely polynomial (note the long flat parts of most curves).%
+%
+\footnote{Alternatively, one may insert \cref{eq:sn_legacy_cmangl_legendre_pinum} in \cref{eq:sn_legacy_cmangl_legendre_theta_chi_approx_plain} instead of \(\pi\), and one gets after some manipulation and correction with \(\pi / \pi_\mathrm{num}\)
+%
+\begin{equation*}
+    \theta \approx 4 \frac{ \pi }{ \pi_\mathrm{num} } \sum_{i=1}^n
+        \tilde{w}_i
+        \frac{ \chi(\tilde{u}_i)
+        }{ \sqrt{ 2-\tilde{u}_i^2 } \,
+            ( S_1(\tilde{u}_i) + S_2(\tilde{u}_i) ) \,
+            S_2(\tilde{u}_i) } .
+\end{equation*}
+%
+with
+%
+\begin{equation*}
+    S_1(u) = \sqrt{ \rho \, (2-u^2) }, \qquad
+    S_2(u) = \sqrt{ \rho \, (2-u^2) + \chi(u) } .
+\end{equation*}
+%
+This also guarantees \(\theta \rightarrow 0\) as \(\rho \rightarrow \infty\), and due to the correction also \(\theta \rightarrow \pi\) as \(\rho \rightarrow 0\).
+While this has, in principle, better roundoff behavior, the improvement is insignificant for the small numbers of abscissas investigated here.}
+%
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[scale=0.6]{integrand_legendre_theta.pdf}
+    \caption{Integrand of \cref{eq:sn_legacy_cmangl_legendre_theta_chi} for \(\rho \gg \Phi, \chi\) and \(\rho \ll \Phi, \chi\).
+    For \(\rho \gg \Phi, \chi\) the function is independent of \(R_0\).
+    For \(\rho \ll \Phi, \chi\) the integrand divided by \(\sqrt{\rho}\) is plotted for some \(R_0\) values.}
+    \label{fig:integrand-legendre-theta}
+\end{figure}
+
+\subsubsection{Convergence}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+In \cref{fig:error-legendre-theta-1e-6}, the relative errors in \(\theta\) as calculated by \cref{eq:sn_legacy_cmangl_legendre_theta_chi_approx_plain}, \cref{eq:sn_legacy_cmangl_legendre_theta_chi_approx}, and \cref{eq:sn_legacy_cmangl_legendre_theta_g_approx} are shown as a function of impact parameter for \(\varepsilon = 10^{-4}\), \(\varepsilon = 10^{-1}\), and \(\varepsilon = 100\).
+The curves obtained from \cref{eq:sn_legacy_cmangl_legendre_theta_chi_approx} (solid lines) and \cref{eq:sn_legacy_cmangl_legendre_theta_g_approx} (dotted lines) are indistinguishable.
+The lines corresponding to \cref{eq:sn_legacy_cmangl_legendre_theta_chi_approx_plain} (dashed lines) show significantly larger errors for small numbers of abscissas and large impact parameters (small scattering angles), demonstrating the significance of the scaling with the numerical value of \(\pi\).
+%
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[scale=0.6]{error_legendre_theta_1e-6.pdf}
+    \caption{Relative errors in \(\theta\) of n-point Gauss-Legendre quadrature as a function of reduced impact parameter for three energies.
+    Dashed lines: \cref{eq:sn_legacy_cmangl_legendre_theta_chi_approx_plain},
+    solid lines: \cref{eq:sn_legacy_cmangl_legendre_theta_chi_approx},
+    dotted lines: \cref{eq:sn_legacy_cmangl_legendre_theta_g_approx}.
+    The reference simulation evaluated \cref{eq:sn_legacy_cmangl_legendre_theta_chi_approx} with 100-point Gauss-Legendre quadrature.
+    The relative accuracy of the apsis is better than \(10^{-6}\).}
+    \label{fig:sn_legacy_error-legendre-theta-1e-6}
+\end{figure}
+
+In \cref{fig:error-legendre-theta-1e-6}, a relative accuracy of \(10^{-6}\) was imposed on the apsis \(R_0\).
+In \cref{fig:error-legendre-theta-1e-3}, the same results for the relative error are shown for a relative accuracy of \(10^{-3}\).
+Now the results for \cref{eq:sn_legacy_cmangl_legendre_theta_g_approx} clearly deteriorate.
+So, the saving of the evaluation of \(\Phi(R_0)\) in calculating \cref{eq:sn_legacy_cmangl_legendre_theta_g_approx} is approximately compensated for by another iteration required for obtaining \(R_0\).
+Considering the risk of producing negative arguments of the square root in \cref{eq:sn_legacy_cmangl_legendre_theta_g_approx}, \cref{eq:sn_legacy_cmangl_legendre_theta_chi_approx} seems preferable.
+%
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[scale=0.6]{error_legendre_theta_1e-3.pdf}
+    \caption{Relative errors in \(\theta\) of n-point Gauss-Legendre quadrature as a function of reduced impact parameter for three energies.
+    Dashed lines: \cref{eq:sn_legacy_cmangl_legendre_theta_chi_approx_plain},
+    solid lines: \cref{eq:sn_legacy_cmangl_legendre_theta_chi_approx},
+    dotted lines: \cref{eq:sn_legacy_cmangl_legendre_theta_g_approx}.
+    The reference simulation evaluated \cref{eq:sn_legacy_cmangl_legendre_theta_chi_approx} with 100-point Gauss-Legendre quadrature.
+    The relative accuracy of the apsis is better than  \(10^{-3}\).}
+    \label{fig:sn_legacy_error-legendre-theta-1e-3}
+\end{figure}

@@ -1,0 +1,246 @@
+For high enough energies $E$ or small enough scattering angles, it may be assumed that the incoming projectile moves on a straight line at constant velocity.
+To apply this approximation, a few notes on the center-of-mass system are necessary.
+The transformation of the two-body system into the center-of-mass system, whose origin is in the center of mass of the projectile (atom 1) and the recoil (atom 2),
+%
+\begin{equation}
+    \label{eq:sn_center-of-mass}
+    \vec{x}_\mathrm{c} = \frac{m_1}{m_1+m_2} \vec{x}_1 + \frac{m_2}{m_1+m_2} \vec{x}_2 \, ,
+\end{equation}
+%
+can be described in terms of the vector from recoil to projectile
+%
+\begin{equation}
+    \label{eq:sn_vector_21}
+    \vec{x}_\mathrm{r} = \vec{x}_1 - \vec{x}_2 \, .
+\end{equation}
+%
+The time evolution of $\vec{x}_\mathrm{r}$ is the same as that of the position of a single particle with the (so-called) reduced mass
+%
+\begin{equation}
+    \label{eq:sn_reduced_mass}
+    m_\mathrm{r} = \frac{m_1 m_2}{m_1 + m_2} \, .
+\end{equation}
+%
+in a stationary potential $V(\vec{x}_\mathrm{r})$.
+The (constant) energy of the one-particle system with the reduced mass $m_\mathrm{r}$ equals the sum of the energies of the two particles with masses $m_1$ and $m_2$ in the center-of-mass system. Its value is
+%
+\begin{equation}
+    \label{eq:sn_reduced_energy1}
+    E_\mathrm{r} = \frac{ m_\mathrm{r} v_0^2}{ 2 }
+\end{equation}
+%
+where $v_0$ is the velocity of the projectile in the laboratory system before the collision.
+Note that it equals the velocity $\dot{\vec{x}}_\mathrm{r} = \dot{\vec{x}}_1 - \dot{\vec{x}}_2$ of the particle in the one-particles system, since before the collision $\dot{\vec{x}}_2 = 0$ and the potential energy is zero.
+With the energy in the laboratory system $E = m_1 v_0^2/2$, we regain \cref{eq:sn_physics_Ec}:
+%
+\begin{equation*}
+    E_\mathrm{c} = \frac{M_2}{M_1 + M_2} \, E .
+\end{equation*}
+
+Now assume that a projectile with mass $m_\mathrm{r}$ moves at constant speed $v_\mathrm{x} = v_0$ parallel to the $x$ axis at $y = p$ in a potential $V(r)$ centered at the origin. Its momentum is zero initially. During passage, the projectile receives an impulse (change in momentum) of
+%
+\begin{equation}
+    \label{eq:sn_impulse_Fy}
+    m_\mathrm{r} (v_\mathrm{y} - 0)
+        = \int_{-\infty}^{\infty} F_\mathrm{y}(t) \, \mathrm{d}t
+        = \frac{1}{v_\mathrm{x}}\int_{-\infty}^{\infty} F_\mathrm{y}(x) \, \mathrm{d}x
+\end{equation}
+%
+where $v_\mathrm{y}$ denotes the $y$ component of the velocity after the collision and $F_\mathrm{y}$ the $y$ component of the force.
+The scattering angle in the center-of-mass system is given by
+%
+\begin{equation}
+    \label{eq:sn_theta_impulse_Fy}
+    \theta \approx \tan \theta = \frac{v_\mathrm{y}}{v_\mathrm{x}}
+    = \frac{1}{2 E_\mathrm{c}} \int_{-\infty}^{\infty} F_\mathrm{y}(x) \, \mathrm{d}x
+    = \frac{1}{2 E} \frac{M_1+M_2}{M_2} \int_{-\infty}^{\infty} F_\mathrm{y}(x) \, \mathrm{d}x
+\end{equation}
+%
+where we have used $E_\mathrm{c} = m_\mathrm{r} v_\mathrm{x}^2 / 2$ and \cref{eq:sn_physics_Ec}.
+According to Eqs.~(\ref{eq:sn_physics_psi}) and (\ref{eq:sn_physics_dE}), the scattering angle in the laboratory system and the energy transfer are given by
+%
+\begin{equation}
+    \label{eq:sn_impulse_psi_Fy}
+    \psi \approx \tan \psi \approx \frac{M_2}{M_1 + M_2} \, \theta
+    \approx \frac{1}{E} \left(
+        \frac{1}{2} \int_{-\infty}^{\infty} F_\mathrm{y}(x) \, \mathrm{d}x
+    \right)
+\end{equation}
+%
+and
+%
+\begin{equation}
+    \label{eq:sn_impulse_dE_Fy}
+    \Delta E \approx \frac{M_1 M_2}{(M_1 + M_2)^2} \, E \, \theta^2
+    \approx \frac{1}{E} \, \frac{M_1}{M_2} \left(
+        \frac{1}{2} \int_{-\infty}^{\infty} F_\mathrm{y}(x) \, \mathrm{d}x
+    \right)^2  ,
+\end{equation}
+%
+respectively.
+Like $\theta$, $\psi$ and $\Delta E$ are proportional to $1/E$.
+Interestingly, $\psi$ does not depend on the atom masses $M_1$ and $M_2$.
+
+For a spherically symmetric potential $V(r)$, the force in $y$ direction is given by
+%
+\begin{equation}
+    \label{eq:sn_Fy}
+    F_\mathrm{y}(x) = - \frac{\mathrm{d} V(r)}{\mathrm{d} r} \frac{p}{r}
+        = - \frac{\mathrm{d} V(r)}{\mathrm{d} p}
+\end{equation}
+%
+with
+%
+\begin{equation}
+    \label{eq_sn_r_from_x}
+    r = \sqrt{x^2 + p^2} .
+\end{equation}
+%
+The first expression after the equal sign in \cref{eq:sn_Fy} takes the $y$ component of the force, which points in the direction of the vector from the origin to the projectile.
+The second expression can be shown to be equivalent to the first one by applying the chain rule of differentiation.
+Using either expression and making use of $\int_{-\infty}^0 = \int_0^\infty$, we obtain
+%
+\begin{equation}
+    \label{eq:sn_impulse_V}
+    \frac{1}{2} \int_{-\infty}^{\infty} F_\mathrm{y}(x) \, \mathrm{d}x
+    = - \int_{0}^{\infty} \frac{\mathrm{d} V(r)}{\mathrm{d} r}
+        \frac{p}{r} \, \mathrm{d}x
+    = - \frac{\mathrm{d}}{\mathrm{d} p} \int_{0}^{\infty} V(r)
+        \, \mathrm{d}x
+\end{equation}
+%
+where in the second expression we have also changed the order of integration and differentiation.
+
+If we further assume a screened Coulomb potential, \cref{eq:sn_screened_coulomb}, we obtain
+%
+\begin{equation}
+    \label{eq:sn_impulse_Phi_r}
+    \frac{1}{2} \int_{-\infty}^{\infty} F_\mathrm{y}(x) \, \mathrm{d}x
+    = Z_1 Z_2 e^2
+        \int_{0}^{\infty} \frac{\Phi(r) - r \, \Phi'(r)}{r^3} p
+        \, \mathrm{d}x
+    = - Z_1 Z_2 e^2 \, \frac{\mathrm{d}}{\mathrm{d} p} \int_{0}^{\infty} \frac{\Phi(r)}{r}
+    \, \mathrm{d}x
+\end{equation}
+%
+Using reduced lengths, \cref{eq:sn_reduced_lengths} and $X = x/a_\mathrm{I}$, \cref{eq:sn_impulse_Phi_r} can be rewritten as
+%
+\begin{equation}
+    \label{eq:sn_impulse_P}
+    \frac{1}{2} \int_{-\infty}^{\infty} F_\mathrm{y}(x) \, \mathrm{d}x
+    = \frac{Z_1 Z_2 e^2}{a_\mathrm{I}} \, I(P)
+\end{equation}
+%
+with the dimensionless integral
+%
+\begin{equation}
+    \label{eq:sn_impulse_Phi_R}
+    I(P)
+    = \int_{0}^{\infty} \frac{\Phi(R) - R \, \Phi'(R)}{R^3} P \, \mathrm{d}X
+    = - \frac{\mathrm{d}}{\mathrm{d} P} \int_{0}^{\infty} \frac{\Phi(R)}{R}
+        \, \mathrm{d}X .
+\end{equation}
+%
+Inserting \cref{eq:sn_impulse_P} in Eqs.~(\ref{eq:sn_impulse_psi_Fy}) and (\ref{eq:sn_impulse_dE_Fy}), we obtain
+%
+\begin{equation}
+    \label{eq:sn_impulse_psi_I}
+    \psi \approx \frac{Z_1 Z_2 e^2}{a_\mathrm{I}} \, \frac{I(P)}{E}
+\end{equation}
+%
+and
+%
+\begin{equation}
+    \label{eq:sn_impulse_dE_I}
+    \Delta E \approx  \frac{M_1}{M_2} \left(
+        \frac{Z_1 Z_2 e^2}{a_\mathrm{I}}
+    \right) ^2
+    \frac{I(P)^2}{E} .
+\end{equation}
+
+The second expression on the right-hand side of \cref{eq:sn_impulse_Phi_R} is favorable for infinite range sum-of-exponentials screening functions, \cref{eq:sn_sum_exp}. Using the transformation $t = R/P = \sqrt{1 + X^2/P^2}$, the integrals evaluate to \cite[8.432.3]{Gra80}
+%
+\begin{equation*}
+    \int_0^\infty \frac{\exp(-b_i R)}{R} \, \mathrm{d}X
+    = \int_{1}^{\infty} \frac{\exp (-b_i P t)}{\sqrt{t^2 - 1}} \, \mathrm{d}t
+    = K_0(b_i P)
+\end{equation*}
+%
+where $K_0(x)$ is the modified Bessel function of second kind and order 0. $I(P)$ therefore evaluates to
+%
+\begin{equation}
+    I(P) = - \sum_i a_i \frac{\mathrm{d} K_0(b_i P)}{\mathrm{d} P}
+    = \sum_i a_i b_i K_1(b_i P)
+\end{equation}
+%
+where $K_1(x)$ is the modified Bessel function of second kind and order 1.
+For other screening functions, the first integral on the right-hand side of \cref{eq:sn_impulse_Phi_R} is preferable, since it does not require numerical differentiation.
+
+\subsubsection{Selection of the maximum impact parameter}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+The impulse approximation can be used to estimated the maximum impact parameter that is necessary to to consider all collisions with scattering angles and energy transfers about some chosen limit.
+This is because the desired limit of the scattering angle usually is quite low, say $\sim 1\degree$.
+
+With a purely repulsive interatomic potential, increasing impact parameters $P$ result in decreasing scattering angles $\psi$, so according to \cref{eq:sn_impulse_psi_I}, $I(P)$ should be a monotonically decreasing function.%
+%
+\footnote{This could be violated when the impulse approximation fails.}
+%
+Then, according to \cref{eq:sn_impulse_dE_I}, also $\Delta E(P)$ is monotonically decreasing.
+Thus, if we want to guarantee that by choosing the impact parameter between $0$ and $P_\mathrm{max}$ we do not miss any collisions with either $\psi > \psi_\mathrm{min}$ or $\Delta E > \Delta E_\mathrm{min}$, both $\psi(P_\mathrm{max}) \le \psi_\mathrm{min}$ and $\Delta E(P_\mathrm{max}) \le \Delta E_\mathrm{min}$ must hold.
+The minimum $P_\mathrm{max}$ for which both conditions are met is the one where the ``$\le$'' sign is replaced by the ``$=$'' sign in one of the conditions, whatever occurs first when $P_\mathrm{max}$ is decreased.
+
+As can be seen from Eqs.~(\ref{eq:sn_impulse_psi_I}) and (\ref{eq:sn_impulse_dE_I}), the resulting conditions for $P_\mathrm{max}$ depend on the projectile energy $E$.
+On the other hand, for a given $P_\mathrm{max}$, conditions for $E$ result from $\psi(P_\mathrm{max}) \le \psi_\mathrm{min}$ and $\Delta E(P_\mathrm{max}) \le \Delta E_\mathrm{min}$:
+%
+\begin{equation}
+    \label{eq:sn_cond_e_psimin}
+    E \ge \frac{Z_1 Z_2 e^2}{a_\mathrm{I}}
+        \frac{I(P_\mathrm{max})}{\psi_\mathrm{min}}
+\end{equation}
+%
+\begin{equation}
+    \label{eq:sn_cond_e_dEmin}
+    E \ge \frac{M_1}{M_2} \left( \frac{Z_1 Z_2 e^2}{a_\mathrm{I}} \right) ^2
+        \frac{I(P_\mathrm{max})^2}{\Delta E_\mathrm{min}} \, .
+\end{equation}
+%
+from $\Delta E(P_\mathrm{max}) \le \Delta E_\mathrm{min}$.
+Since both conditions must be met, $E$ must be larger than or equal to the larger one of the two right-hand sides of Eqs.~(\ref{eq:sn_cond_e_psimin}) and (\ref{eq:sn_cond_e_dEmin}).
+If we now denote as $P_\mathrm{max}$ the \textbf{smallest value of the maximum impact parameter that fulfills the conditions}, we have to replace the ``$\ge$'' sign by the ``$=$'' sign:
+%
+\begin{equation}
+    \label{eq:sn_varepsilon_pmaxmin}
+    E = \max \left(
+        \frac{Z_1 Z_2 e^2}{a_\mathrm{I}}
+        \frac{I(P_\mathrm{max})}{\psi_\mathrm{min}},
+        \frac{M_1}{M_2} \left( \frac{Z_1 Z_2 e^2}{a_\mathrm{I}} \right) ^2
+        \frac{I(P_\mathrm{max})^2}{\Delta E_\mathrm{min}} .
+    \right) .
+\end{equation}
+%
+\cref{eq:sn_varepsilon_pmaxmin} can be used to generate a table of $P_\mathrm{max}$-$E$ pairs, which can then be used to interpolate $P_\mathrm{max}$ values for given energies $E$.
+
+\begin{figure}
+    \centering
+    \includegraphics[scale=0.5]{impulse_He_W.pdf} ~~
+    \includegraphics[scale=0.5]{impulse_As_Si.pdf}
+    \caption{Determination of the maximum impact parameter from minimum scattering angle and energy transfer.
+    Left: 3 keV He in W, using the surface binding energy of W (8.68 eV) as the minimum energy transfer and 3\textdegree\ as the minimum scattering angle.
+    Right: 100 keV As in Si, using the threshold displacement energy of Si (15 eV) as the minimum energy transfer and 1\textdegree\ as the minimum scattering angle.}
+    \label{fig:sn_impulse}
+\end{figure}
+%
+The selection of the maximum impact parameter is illustrated in \cref{fig:sn_impulse} with two examples.
+In the first example, W is bombarded with He at 3~keV. One is interested in sputtering, therefore the surface binding energy is used in the energy criterion.
+Moderately accurate trajectories are desired, so the minimum scattering angle is chosen as 3\textdegree.
+The two choices correspond to two maximum impact parameters.
+The larger one, resulting from the desired minimum scattering angle, has to be selected, since both conditions must be fulfilled.
+In the other example shown in \cref{fig:sn_impulse}, Si is bombarded with 100~keV As.
+Here one wishes to include all damage generation events in the simulation, so a minimum energy transfer equal to the threshold displacement energy is chosen.
+Accurate trajectories are warranted by a small minimum scattering angle of 1\textdegree.
+Again, the larger one of the two resulting maximum impact parameters must be chosen.
+
+Note that the impulse approximation always yields upper limits to the energy transfer and scattering angle.
+Their graphs as a function of impact parameter therefore are always to the right of the exact values (dashed vs.\ solid lines in \cref{fig:sn_impulse}).
+The estimate of the maximum impact parameter therefore is an upper limit to what the exact calculation would yield.
+This means, using the maximum impact parameter so determined, one might occasionally include events with energy transfers or scattering angles below the chosen limits, but one would not omit events above these limits.

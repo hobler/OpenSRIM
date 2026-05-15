@@ -1,0 +1,150 @@
+% Time Integral
+
+\subsubsection{Infinite-range screened Coulomb potentials}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+The integral in \cref{eq:sn_reduced_tau} for the calculation of the time integral is also of the form \cref{eq:sn_integration_integral_R}. Applying the same substitution of variables \cref{eq:sn_transform1} to \cref{eq:sn_reduced_tau}, one obtains
+%
+\begin{equation}
+    \label{eq:sn_tau_u}
+    T = R_0 - 2 R_0 \int_0^1
+        \left[ \frac{ 1 }{ g \left( \frac{ R_0 }{ 1-u^2 } \right) } - 1 \right]
+        \frac{ u }{ (1-u^2)^2 }
+        \, \mathrm{d}u
+\end{equation}
+%
+with $g(\frac{R_0}{1-u^2})$ as given by \cref{eq:sn_cmangl_legendre_g_u}.
+Combining the two terms in brackets in \cref{eq:sn_tau_u} and multiplying numerator and denominator with $1 + g(\frac{R_0}{1-u^2})$ gives
+%
+\begin{equation}
+    \label{eq:sn_tau_u1}
+    T = R_0 - 2 R_0 \int_0^1
+        \frac{ 1 - g^2 \left( \frac{ R_0 }{ 1-u^2 } \right) }{
+               g \left( \frac{ R_0 }{ 1-u^2 } \right)
+               \left[ 1 + g \left( \frac{ R_0 }{ 1-u^2 } \right) \right] }
+        \frac{ u }{ (1-u^2)^2 }
+        \, \mathrm{d}u .
+\end{equation}
+%
+Inserting \cref{eq:sn_cmangl_legendre_g_u} in the numerator and \cref{eq:sn_cmangl_legendre_g_G} in the demoninator, and using \crefrange{eq:sn_cmangl_legendre_G_chi}{eq:sn_cmangl_legendre_rho} yields
+%
+\begin{equation}
+    \label{eq:sn_tau_G}
+    T = R_0 - 2 P \int_0^1
+        \frac{ 1 + \rho \, \frac{ 1 }{ 1-u^2 } \, \Phi \left( \frac{R_0}{1-u^2} \right) }{
+               G(u) \left[ 1 + u \frac{P}{R_0} G(u) \right] }
+        \, \mathrm{d}u ~.
+\end{equation}
+%
+Note that the term $\frac{ 1 }{ 1-u^2 } \, \Phi \left( \frac{R_0}{1-u^2} \right)$ does not diverge if $R\, \Phi(R) \rightarrow 0$ as $R \rightarrow \infty$, in other words, if $\Phi(R)$ decays faster that $1/R$.
+
+Using Gauss-Legendre quadrature, the time integral may be approximated by
+%
+\begin{equation}
+    \label{eq:sn_tau_G_legendre}
+    T = R_0 - 2 P \sum_{i-1}^n \tilde{w}_i
+        \frac{ 1 + \rho \, \frac{ 1 }{ 1-\tilde{u}_i^2 } \, \Phi \left( \frac{R_0}{1-\tilde{u}_i^2} \right) }{
+        G(\tilde{u}_i) \left[ 1 + \tilde{u}_i \frac{P}{R_0} G(\tilde{u}_i) \right] } ~.
+\end{equation}
+%
+with $\tilde{u}_i$ and $\tilde{w}_i$ defined in \cref{eq:sn_gauss_legendre_transform_infinite}.
+In terms of the function $H(u)$, \cref{eq:sn_H_def}, \cref{eq:sn_tau_G_legendre} reads
+%
+\begin{equation}
+    \label{eq:sn_tau_H_legendre}
+        T = R_0 - 2 \sum_{i-1}^n \tilde{w}_i
+        \frac{ P^2 + \frac{R_0}{\varepsilon} \, \frac{ 1 }{ 1-\tilde{u}_i^2 } \, \Phi \left( \frac{R_0}{1-\tilde{u}_i^2} \right) }{
+        H(\tilde{u}_i) \left[ 1 + \frac{\tilde{u}_i}{R_0} H(\tilde{u}_i) \right] } ~.
+\end{equation}
+%
+which explicitly shows that the second term does not vanish for $P \rightarrow 0$.
+
+\subsubsection{Finite-range screened Coulomb potentials}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+For finite-range screened Coulomb potentials we are interested only in $P < R_\mathrm{max}$ since for $\theta = 0$ the outgoing asymptote is identical with the incoming asymptote independent of the time integral.
+Like for the scattering angle, we split the integral in \cref{eq:sn_reduced_tau} in two parts:
+%
+\begin{equation}
+    \label{eq:sn_reduced_tau_finite}
+    T = R_0 -
+        \int_{R_0}^{R_\mathrm{max}} \left[ \frac{ 1 }{ g(R) } - 1 \right] \mathrm{d}R -
+        \int_{R_\mathrm{max}}^\infty \left[ \frac{ 1 }{ g(R) } - 1 \right] \mathrm{d}R ~.
+\end{equation}
+%
+The second integral may be evaluated analytically using \cref{eq:sn_g_phi=0}
+%
+\begin{equation}
+    T = R_0 -
+        (R_\mathrm{max} - \sqrt{ R_\mathrm{max}^2 - P^2 }) -
+        \int_{R_\mathrm{max}}^\infty \left[ \frac{ 1 }{ g(R) } - 1 \right] \mathrm{d}R ~.
+\end{equation}
+
+Applying the substitution \cref{eq:sn_transform1} to the remaining integral, using the identity
+%
+\begin{equation*}
+    \frac{1}{g} - 1 = \frac{1-g}{g} = \frac{1-g^2}{g(1+g)}
+\end{equation*}
+%
+and Eqs.~(\ref{eq:sn_cmangl_legendre_g_u}), (\ref{eq:sn_cmangl_legendre_g_G}), (\ref{eq:sn_cmangl_legendre_G_chi}), and (\ref{eq:sn_cmangl_legendre_rho})
+we obtain
+%
+\begin{equation}
+    \label{eq:sn_reduced_tau_finite_G_legendre}
+    T = R_0 -
+        (R_\mathrm{max} - \sqrt{ R_\mathrm{max}^2 - P^2 }) - 2 P \int_0^{u_\mathrm{max}}
+        \frac{ 1 + \rho \, \frac{ 1 }{ 1-u^2 } \, \Phi \left( \frac{R_0}{1-u^2} \right) }{
+            G(u) \left[ 1 + u \frac{P}{R_0} G(u) \right] }
+        \, \mathrm{d}u \\
+\end{equation}
+%
+with $u_\mathrm{max}$ as defined in \cref{eq:sn_umax}.
+
+Using Gauss-Legendre quadrature, the time integral may finally be approximated by
+%
+\begin{equation}
+    \label{eq:sn_cmangl_legendre_tau_chi_finite}
+    T = R_0 - R_\mathrm{max} + \sqrt{ R_\mathrm{max}^2 - P^2 } -
+    2 P \sum_{i=1}^n \tilde{w}_i
+    \frac{ 1 + \rho \, \frac{ 1 }{ 1-\tilde{u}_i^2 } \, \Phi \left( \frac{R_0}{1-\tilde{u}_i^2} \right) }{
+        G(\tilde{u}_i) \left[ 1 + \tilde{u}_i \frac{P}{R_0} G(\tilde{u}_i) \right] } ~.
+\end{equation}
+%
+with $\tilde{u}_i$ and $\tilde{w}_i$ defined in \cref{eq:sn_gauss_legendre_transform_finite}.
+In terms of the function $H(u)$, \cref{eq:sn_H_def}, \cref{eq:sn_cmangl_legendre_tau_chi_finite} reads
+%
+\begin{equation}
+    \label{eq:sn_cmangl_legendre_tau_H_finite}
+    T = R_0 - R_\mathrm{max} + \sqrt{ R_\mathrm{max}^2 - P^2 } -
+        2 \sum_{i=1}^n \tilde{w}_i
+        \frac{ P^2 + \frac{R_0}{\varepsilon} \, \frac{ 1 }{ 1-\tilde{u}_i^2 } \, \Phi \left( \frac{R_0}{1-\tilde{u}_i^2} \right) }{
+        H(\tilde{u}_i) \left[ 1 + \frac{\tilde{u}_i}{R_0} H(\tilde{u}_i) \right] } ~.
+\end{equation}
+
+
+\subsubsection{Convergence}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[scale=0.5]{error_legendre_tau_eps1e-4_zbl.pdf} ~~
+    \includegraphics[scale=0.5]{error_legendre_tau_eps1e-4_nlhlin.pdf} \\ \smallskip
+    \includegraphics[scale=0.5]{error_legendre_tau_eps0.1_zbl.pdf} ~~
+    \includegraphics[scale=0.5]{error_legendre_tau_eps0.1_nlhlin.pdf} \\ \smallskip
+    \includegraphics[scale=0.5]{error_legendre_tau_eps100_zbl.pdf} ~~
+    \includegraphics[scale=0.5]{error_legendre_tau_eps100_nlhlin.pdf}
+    \caption{Relative errors in the time integral \(T = \tau/a_\mathrm{I}\) of n-point Gauss-Legendre quadrature as a function of reduced impact parameter for three energies using \cref{eq:sn_cmangl_legendre_tau_chi_finite} with the number of abscissae $n=1$,2, 3, 4, 5, and 10.
+        As interatomic potentials the universal ZBL potential (left) and the NLHlin potential for $Z_1=33$ and $Z_2=14$ were used together with a screening length $a_\mathrm{I}$ given by \cref{eq:sn_aNLH}.
+        The reference simulations were evaluated using \cref{eq:sn_cmangl_legendre_tau_chi_finite} with 32-point Gauss-Legendre quadrature.
+        The relative accuracy of the apsis is better than \(10^{-3}\).}
+    \label{fig:error-legendre-tau}
+\end{figure}
+%
+In \cref{fig:error-legendre-tau}, the relative errors in \(T = \tau/a_\mathrm{I}\) as calculated by \cref{eq:sn_cmangl_legendre_tau_chi_finite} are shown as a function of reduced impact parameter $P$ for reduced energies \(\varepsilon = 10^{-4}\), \(\varepsilon = 10^{-1}\), and \(\varepsilon = 100\), and different numbers of abscissae $n$ in the Gauss-Legendre quadrature.
+The results for the ZBL potential are shown in the left column, while those for the NLHlin potential are found in the right column.
+An accuracy of at least 1\% is reached with $n = 4$.
+For the NLHlin potential, convergence is even faster in general.
+
+In summary, 4-point Gauss-Legendre quadrature allows the calculation of the scattering angle with an accuracy of  better than 10$^{-3}$ and the calculation of the time integral with an accuracy of better than 1\%.
+Using the same number of abscissae for the calculation of both quantities has the advantage that the $\Phi \left( \frac{R_0}{1-u^2} \right)$ values evaluated for the scattering angle can be reused for the time integral.
+

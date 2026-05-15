@@ -1,0 +1,101 @@
+% Binary Collision Physics
+
+In the binary collision approximation (BCA), the interaction of an energetic atom (``ion'' or ``projectile'', index 1) with a target atom (``recoil'', index 2) is treated as a sequence of isolated events, the binary collisions.
+In each collision, the trajectories are approximated by their asymptotes.
+Incoming and outgoing asymptote are the straight lines that are fitted to the trajectories long enough before and after the collision, respectively, assuming that there is no interaction with any other target atom.
+They are indicated in \cref{fig:sn_trajectories} by dashed lines.
+%
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[scale=0.6]{trajectories.pdf}
+    \caption{Ion and recoil trajectory and their asymptotes.
+        The initial ion energy is $E$; $T_\mathrm{n}$ is transfered from the ion to the recoil during the collision.
+        The energy transfer $T_\mathrm{n}$ and the scattering angles $\psi$ and  $\psi_\mathrm{R}$ depend on the initial ion energy $E$ and the impact parameter $p$.
+        The origin of the coordinate system is chosen in the intial recoil position, and the $x$ axis is parallel to the direction of the incoming ion.
+        \label{fig:sn_trajectories}
+    }
+\end{figure}
+%
+The outgoing trajectories are characterized by the scattering angle of the ion, $\psi$, the recoil angle $\psi_\mathrm{R}$, and the intersection points of the asymptotes, which are given by $(x_1,p)$ and $(x_2,0)$ in the coordinate system of \cref{fig:sn_trajectories}.
+These characteristics depend on the ion energy $E$ before the collision, the impact parameter $p$ (the distance of the target atom before the collision from the incoming ion asymptote), and the interatomic potential $V(r)$ which is assumed to depend on the internuclear distance only.
+The interatomic potential depends on the properties of the projectile and the recoil, i.e., the masses $M_1$ and $M_2$ and atomic numbers $Z_1$ and $Z_2$.
+During the collision, the ion transfers energy $T_\mathrm{n}$ to the recoil, so the ion energy after the collision is $E - T_\mathrm{n}$, and the recoil energy is $T_\mathrm{n}$, if we assume the collision to be elastic and the recoil is at rest before the collision.
+
+In this section we present the results of the classical theory of scattering for the scattering angles $\psi$ and $\psi_\mathrm{R}$, for the energy transfer $T_\mathrm{n}$, and for the coordinates $x_1$ and $x_2$ of the intersection points of the trajectory asymptotes, compare \cref{fig:sn_trajectories}.
+Derivations can be found in Ref.~\cite{Eck91}.
+
+In the classical theory of scattering \cite{Bohr1948,ZBL85} the scattering angles $\psi$ and $\psi_\mathrm{R}$ and the energy transfer $T_\mathrm{n}$ are expressed in terms of the scattering angle $\theta$ in the center-of-mass (CM) system
+%
+\begin{equation}
+    \label{eq:sn_physics_psi}
+    \tan \psi = \frac{ \sin\theta }{ \cos\theta + \frac{M_1}{M_2} }, \quad
+    \psi_\mathrm{R} = \frac{\pi - \theta}{2} ~,
+\end{equation}
+%
+\begin{equation}\label{eq:sn_physics_dE}
+    T_\mathrm{n} = \frac{ 4 M_1 M_2 }{ (M_1 + M_2)^2 } \, E \,
+        \sin^2 \frac{\theta}{2} ~.
+\end{equation}
+%
+$\theta$ is given by \cite{Lan90}%
+%
+\footnote{We do not write $\theta$ explicitly because for very small $\theta$ this would result in a loss of accuracy in cases where actually $\pi - \theta$ is needed, if $\theta$ were first calculated by the difference of $\pi$ and the integral, and then $\pi - \theta$ were calculated as the difference between $\pi$ and $\theta$. Note that $\sin \frac{\theta}{2} = \cos \frac{\pi - \theta}{2}$, $\cos \frac{\theta}{2} = \sin \frac{\pi - \theta}{2}$.}
+%
+\begin{equation}
+    \label{eq:sn_physics_theta}
+    \pi - \theta = 2 \, p \int_{r_0}^\infty
+        \frac{ \mathrm{d}r }{
+            r^2 \sqrt{ 1 - \frac{ V(r) }{ E_\mathrm{c} } - \frac{ p^2 }{ r^2 } } } ~.
+\end{equation}
+%
+$r_0$ denotes the distance of closest approach between the ion and the recoil, which is given by the root of the expression under the square root, i.e.,
+%
+\begin{equation}
+    \label{eq:sn_physics_r0}
+    1 - \frac{ V(r_0) }{ E_\mathrm{c} } - \frac{ p^2 }{ r_0^2 } = 0
+\end{equation}
+%
+The numerical solution of \cref{eq:sn_physics_r0} is discussed in Section~\ref{s:apsis}.
+$E_\mathrm{c}$ denotes the energy in the center-of-mass system
+%
+\begin{equation}
+    \label{eq:sn_physics_Ec}
+    E_\mathrm{c} = \frac{ M_2 }{ M_1 + M_2 } \, E .
+\end{equation}
+%
+The coordinates of the intersection points of the trajectory asymptotes may be expressed in terms of $\theta$ and the so-called time integral $\tau$. In the coordinate system of \cref{fig:sn_trajectories} these points are at $(\hat{x}_1,p)$ and $(\hat{x}_2,0)$ with%
+%
+\footnote{
+    More sophisticated formulae that take electronic energy loss in the middle of the collision into account are presented in Ref.~\cite{Eck91}.
+    They may be used in IMSIL if desired, but the added accuracy is deemed marginal.
+}
+%
+\begin{equation}
+    \label{eq:sn_recoil_turning}
+    \hat{x}_2 = \frac{ 2 M_1 }{ M_1 + M_2 } \, (p \, \tan \frac{\theta}{2} - \tau)
+\end{equation}
+%
+and
+%
+\begin{equation}
+    \label{eq:sn_proj_turning}
+    \hat{x}_1 = \hat{x}_2 - p \, \tan \frac{\theta}{2}.
+\end{equation}
+%
+The time integral $\tau$ is given by \cite{Rob97}%
+%
+\footnote{
+    A different formula is used in Ref.~\cite{Eck91}. We prefer \cref{eq:sn_tau}, since it is somewhat simpler to evaluate, and it can also be used for attractive interatomic potentials.
+}
+%
+\begin{equation}
+    \label{eq:sn_tau}
+    \tau = r_0 - \int_{r_0}^\infty \left[
+        \frac{ 1 }{ \sqrt{ 1 - \frac{ V(r) }{ E_\mathrm{c} }
+                - \frac{ p^2 }{ r^2 } } }
+        - 1 \right] \mathrm{d}r.
+\end{equation}
+%
+Note, in spite of its name, the time integral $\tau$ has units of a length.
+
+

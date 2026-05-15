@@ -35,6 +35,8 @@ def simulate(nion, params, stats, sim_idx=0):
 
     _simulate(nion, params, stats_per_ion, sim_idx)
 
+    #print("Chunk processed")
+
     # Merge stats from each ion into the total stats
     for i in range(len(stats_per_ion)):
         merge_stats(stats, stats_per_ion[i])
@@ -42,7 +44,8 @@ def simulate(nion, params, stats, sim_idx=0):
     return
 
 
-@jit(cache=config.ENABLE_CACHING, parallel=config.PARALLEL, nogil=config.PARALLEL)
+@jit(cache=config.ENABLE_CACHING, parallel=config.PARALLEL, 
+     nogil=config.PARALLEL, debug=config.DEBUG)
 def _simulate(nion, params, stats_per_ion, sim_idx):
     """Perform simulation on given number of projectiles
     
@@ -57,11 +60,8 @@ def _simulate(nion, params, stats_per_ion, sim_idx):
         params[0].beam.energy,  # energy (eV)
         np.array([0.0, 0.0, 0.0]),  # position (A)
         np.array([np.cos(np.radians(params[0].beam.tilt)), 
-                  np.sin(np.radians(params[0].beam.tilt)), 0.0]),
-                  # direction (unit vector)
-        0,
-        0,
-        True
+                      np.sin(np.radians(params[0].beam.tilt)), 0.0])
+                      # direction (unit vector)
     )
     proj_dummy_list = typed.List.empty_list(PROJ_NUMBA_DTYPE)
     proj_sim = [proj_dummy_list for _ in range(nion)]

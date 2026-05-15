@@ -12,8 +12,10 @@ import numpy as np
 from numba import jit
 from .mytypes import PROJ_DTYPE
 from .target import get_layer_index, get_element_index, is_inside_target
+from . import config
 
-@jit
+
+@jit(debug=config.DEBUG)
 def select_recoil(proj, recoil, params):
     """Get the position of the recoil hit after the next free flight path.
 
@@ -66,7 +68,7 @@ def select_recoil(proj, recoil, params):
     sin_fi = sin(fi)
 
     # Convert direction vector to polar angles
-    # make k point to the smallest dir(:) so sin_alpha > sqrt(2/3)
+    # make k point to the smallest dir[:] so sin_alpha > sqrt(2/3)
     k = np.argmin(np.abs(dir[:]))
     i = (k + 1) % 3
     j = (i + 1) % 3

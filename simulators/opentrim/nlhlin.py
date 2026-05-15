@@ -14,6 +14,7 @@ from scipy.integrate import quad
 from scipy.optimize import brentq
 from numba import jit
 from numba.core.extending import register_jitable
+from . import config
 
 
 def get_coefs(Z1, Z2):
@@ -131,7 +132,7 @@ def impulse_integral(p, pot_coefs):
     def integrand(x, p):
         r = np.sqrt(x**2 + p**2)
         screen, dscreen = screen_fun(r, pot_coefs)
-        return (screen - r*dscreen) * p / r**3
+        return (screen[0] - r*dscreen[0]) * p / r**3
     
     xmax = np.sqrt(pot_coefs.rmax**2 - p**2) if p < pot_coefs.rmax else 0
     integral, abserr = quad(integrand, 0, xmax, args=(p,))
@@ -140,7 +141,7 @@ def impulse_integral(p, pot_coefs):
     return integral
 
 
-@register_jitable
+@register_jitable(debug=config.DEBUG)
 def screen_fun(r, pot_coefs):
     """Calculate the NLHlin screening function and its derivative.
     

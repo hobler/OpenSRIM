@@ -54,6 +54,7 @@ def _build_measure_configs(input_params, include_unscored=False):
             configs[key] = {
                 "score": score,
                 "nbins": int(cfg["nbins"]),
+                "limits": tuple(cfg["limits"]),
                 "nvar": int(nvar[key]),
             }
     return configs
@@ -102,6 +103,68 @@ def _read_column_labels(path):
     return labels
 
 
+def _read_histogram_binary_2d(path, expected_nvar, expected_nx, expected_ny):
+    with open(path, "rb") as f:
+        n_species = np.fromfile(f, dtype="<u4", count=1)
+        if n_species.size != 1:
+            raise ValueError(f"Invalid binary histogram header in {path}")
+        version = np.fromfile(f, dtype="<u2", count=1)
+        shape = np.fromfile(f, dtype="<u4", count=2)
+        x_limits = np.fromfile(f, dtype="<f8", count=2)
+        y_limits = np.fromfile(f, dtype="<f8", count=2)
+        bin_widths = np.fromfile(f, dtype="<f8", count=2)
+        species_ids = np.fromfile(f, dtype="<i4", count=int(n_species[0]))
+        counts = np.fromfile(f, dtype="<f8")
+
+    if int(version[0]) != 0x00fa:
+        raise ValueError(f"Unsupported binary histogram version in {path}: {int(version[0])}")
+    if int(n_species[0]) != expected_nvar:
+        raise ValueError(
+            f"Invalid species count in {path}: expected {expected_nvar}, got {int(n_species[0])}"
+        )
+    if tuple(shape) != (expected_nx, expected_ny):
+        raise ValueError(
+            f"Invalid binary histogram shape in {path}: expected {(expected_nx, expected_ny)}, got {tuple(shape)}"
+        )
+    expected_size = expected_nvar * (expected_nx + 2) * (expected_ny + 2)
+    if counts.size != expected_size:
+        raise ValueError(
+            f"Invalid binary histogram payload size in {path}: expected {expected_size}, got {counts.size}"
+        )
+    return counts.reshape(expected_nvar, expected_nx + 2, expected_ny + 2), x_limits, y_limits, bin_widths, species_ids
+
+
+def _hist_from_binary_pair(base_path, key, configs):
+    pairs = {
+        "x": ("xy", "x", "y"),
+        "y": ("xy", "x", "y"),
+        "xn": ("xyn", "xn", "yn"),
+        "yn": ("xyn", "xn", "yn"),
+        "xe": ("xye", "xe", "ye"),
+        "ye": ("xye", "xe", "ye"),
+    }
+    if key not in pairs:
+        return None
+
+    binary_key, x_key, y_key = pairs[key]
+    path = base_path / f"{binary_key}.hisb"
+    if not path.exists() or x_key not in configs or y_key not in configs:
+        return None
+
+    x_cfg = configs[x_key]
+    y_cfg = configs[y_key]
+    counts, _, _, _, _ = _read_histogram_binary_2d(
+        path, x_cfg["nvar"], x_cfg["nbins"], y_cfg["nbins"]
+    )
+    if key == x_key:
+        values = np.linspace(x_cfg["limits"][0], x_cfg["limits"][1], x_cfg["nbins"])
+        marginal = counts[:, 1:-1, :].sum(axis=2)
+    else:
+        values = np.linspace(y_cfg["limits"][0], y_cfg["limits"][1], y_cfg["nbins"])
+        marginal = counts[:, :, 1:-1].sum(axis=1)
+    return np.vstack((values, marginal)).T
+
+
 def _build_helper_labels(configs, base_path):
     helper = []
     for key in configs:
@@ -143,18 +206,20 @@ def read_stats(input_params, include_unscored=False):
 
         hist_path = base_path / f"{key}.his"
         mom_path = base_path / f"{key}.mom"
-        if not hist_path.exists():
-            raise FileNotFoundError(
-                f"Missing histogram file for active metric '{key}': {hist_path}"
-            )
         if not mom_path.exists():
             raise FileNotFoundError(
                 f"Missing moments file for active metric '{key}': {mom_path}"
             )
 
-        hist_data = np.loadtxt(hist_path, delimiter=",")
-        if hist_data.ndim == 1:
-            hist_data = hist_data.reshape(1, -1)
+        hist_data = _hist_from_binary_pair(base_path, key, configs)
+        if hist_data is None:
+            if not hist_path.exists():
+                raise FileNotFoundError(
+                    f"Missing histogram file for active metric '{key}': {hist_path}"
+                )
+            hist_data = np.loadtxt(hist_path, delimiter=",")
+            if hist_data.ndim == 1:
+                hist_data = hist_data.reshape(1, -1)
         expected_hist_shape = (cfg["nbins"], cfg["nvar"] + 1)
         if hist_data.shape != expected_hist_shape:
             raise ValueError(

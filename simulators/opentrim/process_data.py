@@ -78,6 +78,24 @@ def _write_histogram(path, val, x_vals, header_indexes, header_elems):
     with open(path, "w") as f:
         np.savetxt(f, data, delimiter=", ", fmt="%d", header=header + "\n" + column_row)
 
+def _write_histogram_binary_2d(path, val, species_indexes):
+    counts = np.asarray(val["counts"], dtype="<f8")
+    n_species, nx_total, ny_total = counts.shape
+    header = [
+        np.array([n_species], dtype="<u4"),
+        np.array([0x00fa], dtype="<u2"),
+        np.array([int(val["x_nbins"]), int(val["y_nbins"])], dtype="<u4"),
+        np.asarray(val["x_limits"], dtype="<f8"),
+        np.asarray(val["y_limits"], dtype="<f8"),
+        np.array([val["x_bin_width"], val["y_bin_width"]], dtype="<f8"),
+        np.asarray(species_indexes, dtype="<i4"),
+    ]
+    with open(path, "wb") as f:
+        for item in header:
+            item.tofile(f)
+        counts.tofile(f)
+
+
 def _write_moments(path, val, species_labels, species_indexes):
     metric_names = ["total", "mean", "std", "skewness", "kurtosis"]
     max_order_local = (val["power_sums"].shape[1] - 1) // 2
@@ -138,6 +156,15 @@ def write_stats(input_params, stats):
     for key, val in zip(stats.dtype.names, stats):
         if not val["score"]:
             continue
+        if key in ["xy", "xyn", "xye"]:
+            source_key = {"xy": "x", "xyn": "xn", "xye": "xe"}[key]
+            header_indexes, _ = _build_distribution_headers(
+                source_key, elems, follow_recoils, nelem_target
+            )
+            if header_indexes is not None:
+                _write_histogram_binary_2d(out_path / f"{key}.hisb", val, header_indexes[1:])
+            continue
+
         x_vals = np.linspace(val["limits"][0], val["limits"][1], val["nbins"])
         header_indexes, header_elems = _build_distribution_headers(
             key, elems, follow_recoils, nelem_target

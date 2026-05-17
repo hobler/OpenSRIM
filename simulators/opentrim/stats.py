@@ -65,10 +65,13 @@ def init_stats(NELEM_ION, NELEM_TARGET, input_params):
     nvar = {
         "x": NELEM + NELEM_TARGET if follow_recoils else NELEM,
         "y": NELEM + NELEM_TARGET if follow_recoils else NELEM,
+        "xy": NELEM + NELEM_TARGET if follow_recoils else NELEM,
         "xn": NELEM,
         "yn": NELEM,
+        "xyn": NELEM,
         "xe": NELEM,
         "ye": NELEM,
+        "xye": NELEM,
         "be": NELEM if follow_recoils else NELEM_ION,
         "ba": NELEM if follow_recoils else NELEM_ION,
         "te": NELEM if follow_recoils else NELEM_ION,
@@ -106,18 +109,49 @@ def init_stats(NELEM_ION, NELEM_TARGET, input_params):
             short_name = f"{short_names[name]}{short_names[subname]}"
             stats_configs[short_name] = stats_config
 
+    paired_configs = {
+        "xy": ("x", "y"),
+        "xyn": ("xn", "yn"),
+        "xye": ("xe", "ye"),
+    }
+    for short_name, (x_key, y_key) in paired_configs.items():
+        stats_configs[short_name] = {
+            "score": stats_configs[x_key]["score"] and stats_configs[y_key]["score"],
+            "x_nbins": stats_configs[x_key]["nbins"],
+            "y_nbins": stats_configs[y_key]["nbins"],
+            "x_limits": stats_configs[x_key]["limits"],
+            "y_limits": stats_configs[y_key]["limits"],
+        }
+
     # Build a structured array data type of statistics parameters
     for i, short_name in enumerate(stats_configs):
-        stats_dtype = np.dtype([
-            ("score", np.int64),  # whether to score this statistics (use integer for JIT compatibility)
-            ("nvar", np.int32),  # number of variables (e.g. atom species) for this statistics
-            ("nbins", np.int32),  # number of bins for this statistics
-            ("limits", np.float64, (2,)),  # limits for this statistics
-            ("bin_width", np.float64),
-            ("counts", np.float64, (nvar[short_name],
-                                    stats_configs[short_name]["nbins"] + 2)),
-            ("power_sums", np.float64, (nvar[short_name], 2*max_order + 1)),
-        ], align=True)
+        stats_config = stats_configs[short_name]
+        if short_name in paired_configs:
+            stats_dtype = np.dtype([
+                ("score", np.int64),
+                ("nvar", np.int32),
+                ("x_nbins", np.int32),
+                ("y_nbins", np.int32),
+                ("_pad", np.int32),
+                ("x_limits", np.float64, (2,)),
+                ("y_limits", np.float64, (2,)),
+                ("x_bin_width", np.float64),
+                ("y_bin_width", np.float64),
+                ("counts", np.float64, (nvar[short_name],
+                                        stats_config["x_nbins"] + 2,
+                                        stats_config["y_nbins"] + 2)),
+            ], align=True)
+        else:
+            stats_dtype = np.dtype([
+                ("score", np.int64),  # whether to score this statistics (use integer for JIT compatibility)
+                ("nvar", np.int32),  # number of variables (e.g. atom species) for this statistics
+                ("nbins", np.int32),  # number of bins for this statistics
+                ("limits", np.float64, (2,)),  # limits for this statistics
+                ("bin_width", np.float64),
+                ("counts", np.float64, (nvar[short_name],
+                                        stats_config["nbins"] + 2)),
+                ("power_sums", np.float64, (nvar[short_name], 2*max_order + 1)),
+            ], align=True)
 
         if i == 0:
             STATS_DTYPE = np.dtype([
@@ -133,6 +167,22 @@ def init_stats(NELEM_ION, NELEM_TARGET, input_params):
     stats = np.recarray(1, dtype=STATS_DTYPE)
     for short_name, stats_config in stats_configs.items():
         stats[0][short_name]["nvar"] = nvar[short_name]
+        if short_name in paired_configs:
+            stats[0][short_name]["score"] = stats_config["score"]
+            stats[0][short_name]["x_nbins"] = stats_config["x_nbins"]
+            stats[0][short_name]["y_nbins"] = stats_config["y_nbins"]
+            stats[0][short_name]["_pad"] = 0
+            stats[0][short_name]["x_limits"] = stats_config["x_limits"]
+            stats[0][short_name]["y_limits"] = stats_config["y_limits"]
+            stats[0][short_name]["x_bin_width"] = (
+                (stats_config["x_limits"][1] - stats_config["x_limits"][0])
+                / stats_config["x_nbins"])
+            stats[0][short_name]["y_bin_width"] = (
+                (stats_config["y_limits"][1] - stats_config["y_limits"][0])
+                / stats_config["y_nbins"])
+            stats[0][short_name]["counts"].fill(0.0)
+            continue
+
         for field in stats_config:
             if field not in ["score", "nbins", "limits"]:
                 raise ValueError(f"Unknown histogram config field: {field} "
@@ -173,7 +223,8 @@ def zero_stats(stats):
     """
     for field in stats_fields:
         stats[field]["counts"].fill(0.0)
-        stats[field]["power_sums"].fill(0.0)
+        if "power_sums" in stats[field].dtype.names:
+            stats[field]["power_sums"].fill(0.0)
 
 
 def merge_stats(total_stats, stats):
@@ -185,9 +236,10 @@ def merge_stats(total_stats, stats):
             total statistics
     """
     for field in stats_fields:
-            total_power_sums = total_stats[field]["power_sums"]
-            power_sums = stats[field]["power_sums"]
-            total_power_sums += power_sums
+            if "power_sums" in total_stats[field].dtype.names:
+                total_power_sums = total_stats[field]["power_sums"]
+                power_sums = stats[field]["power_sums"]
+                total_power_sums += power_sums
             total_counts = total_stats[field]["counts"]
             counts = stats[field]["counts"]
             total_counts += counts
@@ -218,6 +270,28 @@ def _score(stats_distribution, value, ivar, weight=1.0):
 
 
 @jit(debug=config.DEBUG)
+def _score2d(stats_distribution, x, y, ivar, weight=1.0):
+    if stats_distribution["score"]:
+        if x < stats_distribution["x_limits"][0]:
+            ix = 0
+        elif x < stats_distribution["x_limits"][1]:
+            ix = int((x - stats_distribution["x_limits"][0]) /
+                     stats_distribution["x_bin_width"]) + 1
+        else:
+            ix = -1
+
+        if y < stats_distribution["y_limits"][0]:
+            iy = 0
+        elif y < stats_distribution["y_limits"][1]:
+            iy = int((y - stats_distribution["y_limits"][0]) /
+                     stats_distribution["y_bin_width"]) + 1
+        else:
+            iy = -1
+
+        stats_distribution["counts"][ivar, ix, iy] += weight
+
+
+@jit(debug=config.DEBUG)
 def _score_stop(stats, proj):
     """Score a projectile that has stopped inside the target."""
     ivar = proj["ielem"]
@@ -226,6 +300,7 @@ def _score_stop(stats, proj):
 
     _score(stats["x"], x, ivar)
     _score(stats["y"], y, ivar)
+    _score2d(stats["xy"], x, y, ivar)
 
 
 @jit(debug=config.DEBUG)
@@ -259,6 +334,7 @@ def score_eed(stats, proj, dee):
 
     _score(stats["xe"], x, ivar, weight=dee)
     _score(stats["ye"], y, ivar, weight=dee)
+    _score2d(stats["xye"], x, y, ivar, weight=dee)
 
 
 @jit(debug=config.DEBUG)
@@ -271,6 +347,7 @@ def score_ned(stats, proj):
 
     _score(stats["xn"], x, ivar, weight=ned)
     _score(stats["yn"], y, ivar, weight=ned)
+    _score2d(stats["xyn"], x, y, ivar, weight=ned)
 
 
 @jit(debug=config.DEBUG)
@@ -282,6 +359,7 @@ def score_start(stats, proj, nelem_target):
 
     _score(stats["x"], x, ivar)
     _score(stats["y"], y, ivar)
+    _score2d(stats["xy"], x, y, ivar)
 
 
 @jit(debug=config.DEBUG)
@@ -392,6 +470,8 @@ def plot_histograms(stats, log=False):
 
     for field in stats.dtype.names:
         if not stats[field]["score"]:
+            continue
+        if "nbins" not in stats[field].dtype.names:
             continue
         hist = stats[field]
         for ivar in range(hist["counts"].shape[0]):

@@ -44,7 +44,7 @@ def _build_measure_configs(input_params, include_unscored=False):
 
     configs = {}
     for name, group in input_params["output"].items():
-        if name == "trajectories":
+        if name in ["trajectories", "distribution_2d"]:
             continue
         for subname, cfg in group.items():
             key = f"{short_names[name]}{short_names[subname]}"
@@ -103,38 +103,72 @@ def _read_column_labels(path):
     return labels
 
 
-def _read_histogram_binary_2d(path, expected_nvar, expected_nx, expected_ny):
+def _build_2d_measure_configs(input_params):
+    names = {
+        "ion_recoils": "xy",
+        "nuclear_energy_deposition": "xyn",
+        "electronic_energy_deposition": "xye",
+    }
+    _, nelem_target = _get_element_names_from_input(input_params)
+    nelem = 1 + nelem_target
+    follow_recoils = input_params["simulation"]["follow_recoils"]
+    nvar = {
+        "xy": nelem + nelem_target if follow_recoils else nelem,
+        "xyn": nelem,
+        "xye": nelem,
+    }
+    configs = {}
+    distribution_2d = input_params["output"]["distribution_2d"]
+    for name, key in names.items():
+        cfg = distribution_2d[name]
+        configs[key] = {
+            "score": bool(cfg["score"]),
+            "x_nbins": int(cfg["nbins"][0]),
+            "y_nbins": int(cfg["nbins"][1]),
+            "x_limits": tuple(cfg["limits"][0]),
+            "y_limits": tuple(cfg["limits"][1]),
+            "nvar": int(nvar[key]),
+        }
+    return configs
+
+
+def _read_histogram_binary_2d(path, expected_nvar=None, expected_nx=None, expected_ny=None):
     with open(path, "rb") as f:
-        n_species = np.fromfile(f, dtype="<u4", count=1)
-        if n_species.size != 1:
-            raise ValueError(f"Invalid binary histogram header in {path}")
         version = np.fromfile(f, dtype="<u2", count=1)
-        shape = np.fromfile(f, dtype="<u4", count=2)
-        x_limits = np.fromfile(f, dtype="<f8", count=2)
-        y_limits = np.fromfile(f, dtype="<f8", count=2)
-        bin_widths = np.fromfile(f, dtype="<f8", count=2)
-        species_ids = np.fromfile(f, dtype="<i4", count=int(n_species[0]))
+        if version.size != 1:
+            raise ValueError(f"Invalid binary histogram header in {path}")
+        shape = np.fromfile(f, dtype="<u4", count=3)
+        if shape.size != 3:
+            raise ValueError(f"Invalid binary histogram shape header in {path}")
+        n_species, nx, ny = [int(value) for value in shape]
+        species_labels = np.fromfile(f, dtype="S32", count=n_species)
+        x_values = np.fromfile(f, dtype="<f8", count=nx)
+        y_values = np.fromfile(f, dtype="<f8", count=ny)
         counts = np.fromfile(f, dtype="<f8")
 
     if int(version[0]) != 0x00fa:
         raise ValueError(f"Unsupported binary histogram version in {path}: {int(version[0])}")
-    if int(n_species[0]) != expected_nvar:
+    if expected_nvar is not None and n_species != expected_nvar:
         raise ValueError(
-            f"Invalid species count in {path}: expected {expected_nvar}, got {int(n_species[0])}"
+            f"Invalid species count in {path}: expected {expected_nvar}, got {n_species}"
         )
-    if tuple(shape) != (expected_nx, expected_ny):
+    if expected_nx is not None and expected_ny is not None and (nx, ny) != (expected_nx, expected_ny):
         raise ValueError(
-            f"Invalid binary histogram shape in {path}: expected {(expected_nx, expected_ny)}, got {tuple(shape)}"
+            f"Invalid binary histogram shape in {path}: expected {(expected_nx, expected_ny)}, got {(nx, ny)}"
         )
-    expected_size = expected_nvar * (expected_nx + 2) * (expected_ny + 2)
+    if species_labels.size != n_species or x_values.size != nx or y_values.size != ny:
+        raise ValueError(f"Invalid binary histogram axis metadata in {path}")
+    expected_size = n_species * (nx + 2) * (ny + 2)
     if counts.size != expected_size:
         raise ValueError(
             f"Invalid binary histogram payload size in {path}: expected {expected_size}, got {counts.size}"
         )
-    return counts.reshape(expected_nvar, expected_nx + 2, expected_ny + 2), x_limits, y_limits, bin_widths, species_ids
+    counts = counts.reshape(n_species, nx + 2, ny + 2)
+    labels = [label.rstrip(b"\x00").decode("utf-8") for label in species_labels]
+    return counts, x_values, y_values, labels
 
 
-def _hist_from_binary_pair(base_path, key, configs):
+def _hist_from_binary_pair(base_path, key, configs, configs_2d):
     pairs = {
         "x": ("xy", "x", "y"),
         "y": ("xy", "x", "y"),
@@ -147,22 +181,26 @@ def _hist_from_binary_pair(base_path, key, configs):
         return None
 
     binary_key, x_key, y_key = pairs[key]
+    cfg_2d = configs_2d.get(binary_key)
     path = base_path / f"{binary_key}.hisb"
-    if not path.exists() or x_key not in configs or y_key not in configs:
+    if cfg_2d is None or not cfg_2d["score"] or not path.exists():
+        return None
+    if x_key not in configs or y_key not in configs:
         return None
 
-    x_cfg = configs[x_key]
-    y_cfg = configs[y_key]
-    counts, _, _, _, _ = _read_histogram_binary_2d(
-        path, x_cfg["nvar"], x_cfg["nbins"], y_cfg["nbins"]
+    counts, x_values, y_values, _ = _read_histogram_binary_2d(
+        path, cfg_2d["nvar"], cfg_2d["x_nbins"], cfg_2d["y_nbins"]
     )
     if key == x_key:
-        values = np.linspace(x_cfg["limits"][0], x_cfg["limits"][1], x_cfg["nbins"])
+        if len(x_values) != configs[x_key]["nbins"]:
+            return None
         marginal = counts[:, 1:-1, :].sum(axis=2)
-    else:
-        values = np.linspace(y_cfg["limits"][0], y_cfg["limits"][1], y_cfg["nbins"])
-        marginal = counts[:, :, 1:-1].sum(axis=1)
-    return np.vstack((values, marginal)).T
+        return np.vstack((x_values, marginal)).T
+
+    if len(y_values) != configs[y_key]["nbins"]:
+        return None
+    marginal = counts[:, :, 1:-1].sum(axis=1)
+    return np.vstack((y_values, marginal)).T
 
 
 def _build_helper_labels(configs, base_path):
@@ -197,6 +235,7 @@ def read_stats(input_params, include_unscored=False):
     configs = _build_measure_configs(
         input_params, include_unscored=include_unscored
     )
+    configs_2d = _build_2d_measure_configs(input_params)
     stats = np.zeros(1, dtype=_build_stats_dtype(configs))
     nmom = max_order + 1
 
@@ -211,7 +250,7 @@ def read_stats(input_params, include_unscored=False):
                 f"Missing moments file for active metric '{key}': {mom_path}"
             )
 
-        hist_data = _hist_from_binary_pair(base_path, key, configs)
+        hist_data = _hist_from_binary_pair(base_path, key, configs, configs_2d)
         if hist_data is None:
             if not hist_path.exists():
                 raise FileNotFoundError(

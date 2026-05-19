@@ -114,10 +114,9 @@ def init_stats(NELEM_ION, NELEM_TARGET, input_params):
         "xyn": ("xn", "yn"),
         "xye": ("xe", "ye"),
     }
-    paired_1d_configs = {"x", "y", "xn", "yn", "xe", "ye"}
     for short_name, (x_key, y_key) in paired_configs.items():
         stats_configs[short_name] = {
-            "score": stats_configs[x_key]["score"] or stats_configs[y_key]["score"],
+            "score": stats_configs[x_key]["score"] and stats_configs[y_key]["score"],
             "x_nbins": stats_configs[x_key]["nbins"],
             "y_nbins": stats_configs[y_key]["nbins"],
             "x_limits": stats_configs[x_key]["limits"],
@@ -141,15 +140,6 @@ def init_stats(NELEM_ION, NELEM_TARGET, input_params):
                 ("counts", np.float64, (nvar[short_name],
                                         stats_config["x_nbins"] + 2,
                                         stats_config["y_nbins"] + 2)),
-            ], align=True)
-        elif short_name in paired_1d_configs:
-            stats_dtype = np.dtype([
-                ("score", np.int64),
-                ("nvar", np.int32),
-                ("nbins", np.int32),
-                ("limits", np.float64, (2,)),
-                ("bin_width", np.float64),
-                ("power_sums", np.float64, (nvar[short_name], 2*max_order + 1)),
             ], align=True)
         else:
             stats_dtype = np.dtype([
@@ -259,7 +249,7 @@ def merge_stats(total_stats, stats):
 
 
 @jit(debug=config.DEBUG)
-def _score(stats_distribution, value, ivar, weight=1.0):
+def _score1d(stats_distribution, value, ivar, weight=1.0):
     """Score a projectile's contribution to a statistics distribution.
     
     Arguments:
@@ -280,13 +270,6 @@ def _score(stats_distribution, value, ivar, weight=1.0):
         else:
             ibin = -1  # Overflow bin
         stats_distribution["counts"][ivar, ibin] += weight
-
-
-@jit(debug=config.DEBUG)
-def _score_moments(stats_distribution, value, ivar, weight=1.0):
-    if stats_distribution["score"]:
-        for i in range(2*max_order + 1):
-            stats_distribution["power_sums"][ivar, i] += weight * value ** i
 
 
 @jit(debug=config.DEBUG)
@@ -318,8 +301,8 @@ def _score_stop(stats, proj):
     x = proj["pos"][0]
     y = proj["pos"][1]
 
-    _score_moments(stats["x"], x, ivar)
-    _score_moments(stats["y"], y, ivar)
+    _score1d(stats["x"], x, ivar)
+    _score1d(stats["y"], y, ivar)
     _score2d(stats["xy"], x, y, ivar)
 
 
@@ -330,8 +313,8 @@ def _score_backscattered(stats, proj):
     energy = proj["e"]
     angle = math.degrees(math.atan2(proj["dir"][1], -proj["dir"][0]))
 
-    _score(stats["be"], energy, ivar)
-    _score(stats["ba"], angle, ivar)
+    _score1d(stats["be"], energy, ivar)
+    _score1d(stats["ba"], angle, ivar)
 
 
 @jit(debug=config.DEBUG)
@@ -341,8 +324,8 @@ def _score_transmitted(stats, proj):
     energy = proj["e"]
     angle = math.degrees(math.atan2(proj["dir"][1], proj["dir"][0]))
 
-    _score(stats["te"], energy, ivar)
-    _score(stats["ta"], angle, ivar)
+    _score1d(stats["te"], energy, ivar)
+    _score1d(stats["ta"], angle, ivar)
 
 
 @jit(debug=config.DEBUG)
@@ -352,8 +335,8 @@ def score_eed(stats, proj, dee):
     x = proj["pos"][0]  # TODO: Take center of point and previous point
     y = proj["pos"][1]
 
-    _score_moments(stats["xe"], x, ivar, weight=dee)
-    _score_moments(stats["ye"], y, ivar, weight=dee)
+    _score1d(stats["xe"], x, ivar, weight=dee)
+    _score1d(stats["ye"], y, ivar, weight=dee)
     _score2d(stats["xye"], x, y, ivar, weight=dee)
 
 
@@ -365,8 +348,8 @@ def score_ned(stats, proj):
     y = proj["pos"][1]
     ned = proj["e"]
 
-    _score_moments(stats["xn"], x, ivar, weight=ned)
-    _score_moments(stats["yn"], y, ivar, weight=ned)
+    _score1d(stats["xn"], x, ivar, weight=ned)
+    _score1d(stats["yn"], y, ivar, weight=ned)
     _score2d(stats["xyn"], x, y, ivar, weight=ned)
 
 
@@ -377,8 +360,8 @@ def score_start(stats, proj, nelem_target):
     x = proj["pos"][0]
     y = proj["pos"][1]
 
-    _score_moments(stats["x"], x, ivar)
-    _score_moments(stats["y"], y, ivar)
+    _score1d(stats["x"], x, ivar)
+    _score1d(stats["y"], y, ivar)
     _score2d(stats["xy"], x, y, ivar)
 
 
@@ -484,21 +467,6 @@ def print_moments(stats):
                   f"{std_moments[4]:.2f} +/- {std_moments_err[4]:.2f}")
 
 
-def histogram_counts(stats, field):
-    pairs = {
-        "x": ("xy", 2),
-        "y": ("xy", 1),
-        "xn": ("xyn", 2),
-        "yn": ("xyn", 1),
-        "xe": ("xye", 2),
-        "ye": ("xye", 1),
-    }
-    if "counts" in stats[field].dtype.names:
-        return stats[field]["counts"]
-    pair_key, axis = pairs[field]
-    return stats[pair_key]["counts"].sum(axis=axis)
-
-
 def plot_histograms(stats, log=False):
     """Plot the histogram using matplotlib."""
     import matplotlib.pyplot as plt
@@ -509,9 +477,8 @@ def plot_histograms(stats, log=False):
         if "nbins" not in stats[field].dtype.names:
             continue
         hist = stats[field]
-        counts = histogram_counts(stats, field)
-        for ivar in range(counts.shape[0]):
-            plt.stairs(counts[ivar, 1:-1],
+        for ivar in range(hist["counts"].shape[0]):
+            plt.stairs(hist["counts"][ivar, 1:-1],
                     edges=np.linspace(hist["limits"][0], hist["limits"][1], 
                                         hist["nbins"]+1),
                     label=f"Species {ivar}, Hist '{field}'")

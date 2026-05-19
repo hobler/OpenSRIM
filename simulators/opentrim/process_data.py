@@ -78,17 +78,20 @@ def _write_histogram(path, val, x_vals, header_indexes, header_elems):
     with open(path, "w") as f:
         np.savetxt(f, data, delimiter=", ", fmt="%d", header=header + "\n" + column_row)
 
-def _write_histogram_binary_2d(path, val, species_indexes):
+def _write_histogram_binary_2d(path, val, species_labels):
     counts = np.asarray(val["counts"], dtype="<f8")
-    n_species, nx_total, ny_total = counts.shape
+    n_species, _, _ = counts.shape
+    nx = int(val["x_nbins"])
+    ny = int(val["y_nbins"])
+    x_values = np.linspace(val["x_limits"][0], val["x_limits"][1], nx, dtype="<f8")
+    y_values = np.linspace(val["y_limits"][0], val["y_limits"][1], ny, dtype="<f8")
+    labels = np.asarray(species_labels, dtype="S32")
     header = [
-        np.array([n_species], dtype="<u4"),
         np.array([0x00fa], dtype="<u2"),
-        np.array([int(val["x_nbins"]), int(val["y_nbins"])], dtype="<u4"),
-        np.asarray(val["x_limits"], dtype="<f8"),
-        np.asarray(val["y_limits"], dtype="<f8"),
-        np.array([val["x_bin_width"], val["y_bin_width"]], dtype="<f8"),
-        np.asarray(species_indexes, dtype="<i4"),
+        np.array([n_species, nx, ny], dtype="<u4"),
+        labels,
+        x_values,
+        y_values,
     ]
     with open(path, "wb") as f:
         for item in header:
@@ -158,11 +161,11 @@ def write_stats(input_params, stats):
             continue
         if key in ["xy", "xyn", "xye"]:
             source_key = {"xy": "x", "xyn": "xn", "xye": "xe"}[key]
-            header_indexes, _ = _build_distribution_headers(
+            _, header_elems = _build_distribution_headers(
                 source_key, elems, follow_recoils, nelem_target
             )
-            if header_indexes is not None:
-                _write_histogram_binary_2d(out_path / f"{key}.hisb", val, header_indexes[1:])
+            if header_elems is not None:
+                _write_histogram_binary_2d(out_path / f"{key}.hisb", val, header_elems[1:])
             continue
 
         x_vals = np.linspace(val["limits"][0], val["limits"][1], val["nbins"])

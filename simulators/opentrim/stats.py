@@ -89,7 +89,7 @@ def init_stats(NELEM_ION, NELEM_TARGET, input_params):
     stats_configs = {}
     
     for name in output_params:
-        if name == "trajectories":
+        if name in ["trajectories", "distribution_2d"]:
             continue
         if name not in short_names:
             raise ValueError(f"Unknown output field: {name}")
@@ -114,13 +114,22 @@ def init_stats(NELEM_ION, NELEM_TARGET, input_params):
         "xyn": ("xn", "yn"),
         "xye": ("xe", "ye"),
     }
-    for short_name, (x_key, y_key) in paired_configs.items():
+    distribution_2d = output_params["distribution_2d"]
+    distribution_2d_names = {
+        "xy": "ion_recoils",
+        "xyn": "nuclear_energy_deposition",
+        "xye": "electronic_energy_deposition",
+    }
+    for short_name in paired_configs:
+        cfg = distribution_2d[distribution_2d_names[short_name]]
+        nbins = cfg["nbins"]
+        limits = cfg["limits"]
         stats_configs[short_name] = {
-            "score": stats_configs[x_key]["score"] and stats_configs[y_key]["score"],
-            "x_nbins": stats_configs[x_key]["nbins"],
-            "y_nbins": stats_configs[y_key]["nbins"],
-            "x_limits": stats_configs[x_key]["limits"],
-            "y_limits": stats_configs[y_key]["limits"],
+            "score": bool(cfg["score"]),
+            "x_nbins": int(nbins[0]),
+            "y_nbins": int(nbins[1]),
+            "x_limits": tuple(limits[0]),
+            "y_limits": tuple(limits[1]),
         }
 
     # Build a structured array data type of statistics parameters

@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 import numpy as np
-from .stats import histogram_counts, standardize_moments
+from .stats import standardize_moments
 
 def _get_element_names_from_input(input_params):
     beam = input_params["beam"]
@@ -174,8 +174,7 @@ def write_stats(input_params, stats):
 
         species_labels = header_elems[1:]
         species_indexes = header_indexes[1:]
-        hist_val = {"counts": histogram_counts(stats, key)}
-        _write_histogram(out_path / f"{key}.his", hist_val, x_vals, header_indexes, header_elems)
+        _write_histogram(out_path / f"{key}.his", val, x_vals, header_indexes, header_elems)
         _write_moments(out_path / f"{key}.mom", val, species_labels, species_indexes)
         # _write_raw_moments(out_path / "moments_raw" / f"{key}.mom", val, species_labels, species_indexes)
     return out_path

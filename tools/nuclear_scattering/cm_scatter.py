@@ -3,8 +3,10 @@
 Calculate scattering angle and time integral for given interatomic potential,
 energy, and impact parameter, using Gauss-Legendre quadrature.
 """
+import os
 import numpy as np
 from scipy.special import roots_legendre
+from utils import atom, ask_if_save
 
 
 def setup(n_absc):
@@ -113,6 +115,8 @@ def plot_chi(r0_vals, screen_fun):
     import matplotlib.pyplot as plt
     plt.rcParams.update({'font.size': 14})
 
+    fig = plt.figure()
+
     u = np.linspace(0.001, 0.999, 999)
 
     for r0 in r0_vals:
@@ -126,12 +130,19 @@ def plot_chi(r0_vals, screen_fun):
     plt.legend()
     if type(screen_fun) == ZBL_screen:
         plt.title('ZBL potential', fontsize='medium')
+        potname = 'zbl'
     elif type(screen_fun) is NLHlin_screen:
         plt.title(fr'NLHlin potential, Z$_1$={screen_fun.Z1}, '
                   fr'Z$_2$={screen_fun.Z2}', fontsize='medium')
+        potname = f'nlhlin_{atom[screen_fun.Z1]}_{atom[screen_fun.Z2]}'
     else:
         print(type(screen_fun))
     plt.show()
+
+    fname = f"figs/chi_{potname}.pdf"
+    fname = ask_if_save(fname)
+    if fname is not None:
+        fig.savefig(os.path.join(os.path.dirname(__file__), fname))
 
 
 def plot_chi_near_zero(r0_vals, screen_fun):
@@ -282,12 +293,19 @@ def plot_theta_error(screen_fun):
         plt.ylabel(r'relative error in scattering angle $\theta$')
         if type(screen_fun) is ZBL_screen:
             title = 'ZBL potential'
+            potname = 'zbl'
         elif type(screen_fun) is NLHlin_screen:
             title = (fr'NLHlin potential, Z$_1$={screen_fun.Z1}, '
                      fr'Z$_2$={screen_fun.Z2}')
+            potname = f'nlhlin_{atom[screen_fun.Z1]}_{atom[screen_fun.Z2]}'
         title += fr', $\varepsilon$={e}'
         plt.title(title, fontsize='medium')
         plt.show()
+
+        fname = f"figs/error_theta_eps{e}_{potname}.pdf"
+        fname = ask_if_save(fname)
+        if fname is not None:
+            fig.savefig(os.path.join(os.path.dirname(__file__), fname))
 
 
 def plot_tau_error(screen_fun):
@@ -335,12 +353,19 @@ def plot_tau_error(screen_fun):
         #plt.ylabel(r'relative error in time integral T')
         if type(screen_fun) is ZBL_screen:
             title = 'ZBL potential'
+            potname = 'zbl'
         elif type(screen_fun) is NLHlin_screen:
             title = (fr'NLHlin potential, Z$_1$={screen_fun.Z1}, '
                      fr'Z$_2$={screen_fun.Z2}')
+            potname = f'nlhlin_{atom[screen_fun.Z1]}_{atom[screen_fun.Z2]}'
         title += fr', $\varepsilon$={e}'
         plt.title(title, fontsize='medium')
         plt.show()
+
+        fname = f"figs/error_tau_eps{e}_{potname}.pdf"
+        fname = ask_if_save(fname)
+        if fname is not None:
+            fig.savefig(os.path.join(os.path.dirname(__file__), fname))
 
 
 def plot_tau_over_theta(screen_fun):
@@ -432,12 +457,12 @@ if __name__ == "__main__":
     from zbl import ZBL_screen
     from nlhlin import NLHlin_screen
 
-    screen_fun = ZBL_screen()
+    #screen_fun = ZBL_screen()
 
     Z1 = 33
     Z2 = 14
     rnorm = 0.4685 / (np.sqrt(np.sqrt(Z1)) + np.sqrt(np.sqrt(Z2)))
-    #screen_fun = NLHlin_screen(Z1, Z2, rnorm)
+    screen_fun = NLHlin_screen(Z1, Z2, rnorm)
     
     r0_vals = [0.01, 0.1, 1, 10]
     #print(screen_fun(1.0))
@@ -446,8 +471,8 @@ if __name__ == "__main__":
     #plot_chi_near_one(r0_vals, screen_fun)
 
     #plot_theta_error(screen_fun)
-    #plot_tau_error(screen_fun)
+    plot_tau_error(screen_fun)
 
     #plot_tau_over_theta(screen_fun)
-    plot_sinhalftheta_over_p(screen_fun)
+    #plot_sinhalftheta_over_p(screen_fun)
     

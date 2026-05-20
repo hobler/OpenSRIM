@@ -1,6 +1,8 @@
 """Fit the Sn and Qn values by an analytical function."""
+import os
 import numpy as np
 from scipy.optimize import curve_fit
+from utils import atom, ask_if_save
 
 
 def sn_fit_func(eps, a, b, c, d):
@@ -35,7 +37,9 @@ def fit_sn(p1, p2, fname, plot=True, Z1=None, Z2=None):
         max_relerr (float): Maximum relative error (%) of the fit.
         Z1, Z2 (int): atomic numbers of the two atoms (if provided)
     """
-    fname = f"data/p{p1}_{round(p2, 2)}/" + fname
+    fname = os.path.join(os.path.dirname(__file__), 
+                         '../../data/nuclear_scattering',
+                         fname)
     data = np.loadtxt(fname)
     energies = data[:, 0]
     sn_data = data[:, 1]
@@ -47,7 +51,7 @@ def fit_sn(p1, p2, fname, plot=True, Z1=None, Z2=None):
     initial_guess = [1.1383, 0.01321, 0.21226, 0.19593]
     #initial_guess = [0.94127, 0.09252, 0.40137, 0.15247]  # for 2 38
     #initial_guess = [0.74490,  0.58785,  0.44206, -0.54043]  # for 2 52
-    initial_guess = [0.99600,  0.00007, -0.19004,  0.38612]  # for 4 70
+    #initial_guess = [0.99600,  0.00007, -0.19004,  0.38612]  # for 4 70
     # Adjust initial guess for b based on first data point
     #initial_guess[1] = (initial_guess[0] / (2*sn_data[0]) 
     #                    * energies[0]**(1-initial_guess[2]))
@@ -83,6 +87,7 @@ def fit_sn(p1, p2, fname, plot=True, Z1=None, Z2=None):
     if plot:
         import matplotlib.pyplot as plt
         plt.rcParams.update({'font.size': 14})
+
         print("Fitted Sn parameters:")
         print(f"a = {popt[0]}")
         print(f"b = {popt[1]}")
@@ -92,6 +97,8 @@ def fit_sn(p1, p2, fname, plot=True, Z1=None, Z2=None):
               f"{rms_relerr_initial:5.2f}/{max_relerr_initial:5.2f}")
         #print(f"relerr(%)={relerr}")
         print(f"RMS/maximum error(%): {rms_relerr:5.2f}/{max_relerr:5.2f}")
+
+        fig = plt.figure()
         plt.loglog(energies, sn_data, 'b.', label='Data')
         plt.loglog(energies, fitted_sn_values, 'r-', label='Fit')
         #plt.loglog(energies, initial_sn_values, 'g--', label='Initial Guess')
@@ -113,15 +120,28 @@ def fit_sn(p1, p2, fname, plot=True, Z1=None, Z2=None):
         if p1 == 1:
             text += fr'(Z$_1$+Z$_2$)'
         else:
-            text += fr'(Z$_1^{{{p1:.2f}}}$+Z$_2^{{{p1:.2f}}}$)'
+            text += fr'(Z$_1^{{{round(p1, 2)}}}$+Z$_2^{{{round(p1, 2)}}}$)'
         if p2 != 1:
-            text += fr'$^{{{p2:.2f}}}$'
+            text += fr'$^{{{round(p2, 2)}}}$'
         plt.text(0.5, 0.05, text, 
                 horizontalalignment='center', verticalalignment='bottom',
                 transform=plt.gca().transAxes, fontsize='medium')
 
         plt.tight_layout()
         plt.show()
+
+        if (round(p1, 2), round(p2, 2)) == (0.23, 1):
+            potname = 'zbl'
+        elif (round(p1, 2), round(p2, 2)) == (0.5, 0.67):
+            potname = 'krc'
+        else:
+            potname = f"nlhlin_{atom[Z1]}_{atom[Z2]}"
+        fname = os.path.join(os.path.dirname(__file__), 
+                            f"figs/sn_fit_{potname}.pdf")
+        fname = ask_if_save(fname)
+        if fname is not None:
+            fig.savefig(os.path.join(os.path.dirname(__file__), fname))
+            print(f"Saved figure to {fname}")
 
     return popt, rms_relerr, max_relerr
 
@@ -152,7 +172,9 @@ def fit_qn(p1, p2, fname, plot=True, Z1=None, Z2=None):
         rms_relerr (float): Root mean square relative error (%) of the fit.
         max_relerr (float): Maximum relative error (%) of the fit.
     """
-    fname = f"data/p{p1}_{round(p2, 2)}/" + fname
+    fname = os.path.join(os.path.dirname(__file__), 
+                         '../../data/nuclear_scattering',
+                         fname)
     data = np.loadtxt(fname)
     energies = data[:, 0]
     qn_data = data[:, 2]
@@ -186,6 +208,7 @@ def fit_qn(p1, p2, fname, plot=True, Z1=None, Z2=None):
     if plot:
         import matplotlib.pyplot as plt
         plt.rcParams.update({'font.size': 14})
+
         print("Fitted Qn parameters:")
         print(f"a = {popt[0]}")
         print(f"b = {popt[1]}")
@@ -195,6 +218,8 @@ def fit_qn(p1, p2, fname, plot=True, Z1=None, Z2=None):
               f"{rms_relerr_initial:5.2f}/{max_relerr_initial:5.2f}")
         #print(f"relerr(%)={relerr}")
         print(f"RMS/maximum error(%): {rms_relerr:5.2f}/{max_relerr:5.2f}")
+
+        fig = plt.figure()
         plt.loglog(energies, qn_data, 'b.', label='Data')
         plt.loglog(energies, fitted_qn_values, 'r-', label='Fit')
         #plt.loglog(energies, initial_qn_values, 'g--', label='Initial Guess')
@@ -214,9 +239,9 @@ def fit_qn(p1, p2, fname, plot=True, Z1=None, Z2=None):
         if p1 == 1:
             text += fr'(Z$_1$+Z$_2$)'
         else:
-            text += fr'(Z$_1^{{{p1:.2f}}}$+Z$_2^{{{p1:.2f}}}$)'
+            text += fr'(Z$_1^{{{round(p1, 2)}}}$+Z$_2^{{{round(p1, 2)}}}$)'
         if p2 != 1:
-            text += fr'$^{{{p2:.2f}}}$'
+            text += fr'$^{{{round(p2, 2)}}}$'
         plt.text(0.5, 0.05, text, 
                 horizontalalignment='center', verticalalignment='bottom',
                 transform=plt.gca().transAxes, fontsize='medium')
@@ -224,26 +249,36 @@ def fit_qn(p1, p2, fname, plot=True, Z1=None, Z2=None):
         plt.tight_layout()
         plt.show()
 
+        if (round(p1, 2), round(p2, 2)) == (0.23, 1):
+            potname = 'zbl'
+        elif (round(p1, 2), round(p2, 2)) == (0.5, 0.67):
+            potname = 'krc'
+        else:
+            potname = f"nlhlin_{atom[Z1]}_{atom[Z2]}"
+        fname = os.path.join(os.path.dirname(__file__), 
+                            f"figs/qn_fit_{potname}.pdf")
+        fname = ask_if_save(fname)
+        if fname is not None:
+            fig.savefig(os.path.join(os.path.dirname(__file__), fname))
+            print(f"Saved figure to {fname}")
+
     return popt, rms_relerr, max_relerr
 
 
-def tab_sn_fit(p1, p2):
-    """Tabulate parameters for Sn fit of all Z1-Z2 combinations.
-    
-    Parameters:
-        p1 (float): power in RNORM formula.
-        p2 (float): power in RNORM formula.
+def tab_sn_fit():
+    """Tabulate parameters for NLHlin Sn fit of all Z1-Z2 combinations.
     """
-    p1 = round(p1, 2)
-    p2 = round(p2, 2)
-    directory = f"data/p{p1}_{p2}"
+    directory = os.path.join(os.path.dirname(__file__),
+                             "../../data/nuclear_scattering/nlhlin")
     with open(f"{directory}/sn_fit_params.txt", "w") as f:
         f.write("# Z1 Z2 a b c d rms_err(%) max_err(%)\n")
         for Z1 in range(1, 93):
             for Z2 in range(Z1, 93):
-                fname = f"sn_qn_table_nlhlin_{Z1:02d}_{Z2:02d}.txt"
+                fname = (f"{directory}/sn_qn_tables/"
+                         f"sn_qn_table_nlhlin_{Z1:02d}_{Z2:02d}.txt")
                 #print(f"Fitting Sn for Z1={Z1}, Z2={Z2} from {fname}")
-                popt, rms_relerr, max_relerr = fit_sn(p1, p2, fname, plot=False)
+                popt, rms_relerr, max_relerr = fit_sn(p1=0.5, p2=0.5, 
+                                                      fname=fname, plot=False)
                 #print(f"Z1={Z1}, Z2={Z2}, a={popt[0]}, b={popt[1]}, "
                 #      f"c={popt[2]}, d={popt[3]}")
                 f.write(f"{Z1:2d} {Z2:2d} {popt[0]:8.5f} {popt[1]:8.5f}"
@@ -251,23 +286,19 @@ def tab_sn_fit(p1, p2):
                         f"{rms_relerr:5.2f} {max_relerr:5.2f}\n")
 
 
-def tab_qn_fit(p1, p2):
-    """Tabulate parameters for Qn fit of all Z1-Z2 combinations.
-    
-    Parameters:
-        p1 (float): power in RNORM formula.
-        p2 (float): power in RNORM formula.
-    """
-    p1 = round(p1, 2)
-    p2 = round(p2, 2)
-    directory = f"data/p{p1}_{p2}"
+def tab_qn_fit():
+    """Tabulate parameters for NLHlin Qn fit of all Z1-Z2 combinations."""
+    directory = os.path.join(os.path.dirname(__file__),
+                             "../../data/nuclear_scattering/nlhlin")
     with open(f"{directory}/qn_fit_params.txt", "w") as f:
         f.write("# Z1 Z2 a b c d rms_err(%) max_err(%)\n")
         for Z1 in range(1, 93):
             for Z2 in range(Z1, 93):
-                fname = f"sn_qn_table_nlhlin_{Z1:02d}_{Z2:02d}.txt"
+                fname = (f"{directory}/sn_qn_tables/"
+                         f"sn_qn_table_nlhlin_{Z1:02d}_{Z2:02d}.txt")
                 #print(f"Fitting Qn for Z1={Z1}, Z2={Z2} from {fname}")
-                popt, rms_relerr, max_relerr = fit_qn(p1, p2, fname, plot=False)
+                popt, rms_relerr, max_relerr = fit_qn(p1=0.5, p2=0.5, 
+                                                      fname=fname, plot=False)
                 #print(f"Z1={Z1}, Z2={Z2}, a={popt[0]}, b={popt[1]}, "
                 #      f"c={popt[2]}, d={popt[3]}")
                 f.write(f"{Z1:2d} {Z2:2d} {popt[0]:8.5f} {popt[1]:8.5f}"
@@ -302,6 +333,8 @@ def plot_sn_ratio_at_e(e, p1, p2, Z1=None, Z2=None, krc=False):
         Z1_vals = [Z1]
     assert Z2 is None, "Currently only implemented for Z2=Z1"
 
+    fig = plt.figure()
+
     for energy in energies:
         sn_ratios = []
         for Z1 in Z1_vals:
@@ -311,7 +344,9 @@ def plot_sn_ratio_at_e(e, p1, p2, Z1=None, Z2=None, krc=False):
             M1_M2 = 1
             enorm = (M1_M2+1) * 14.4 * Z1 * Z2 / rnorm
 
-            fname = f"data/p{round(p1, 2)}_{round(p2, 2)}/sn_fit_params.txt"
+            directory = os.path.join(os.path.dirname(__file__),
+                                     "../../data/nuclear_scattering")
+            fname = f"{directory}/nlhlin/sn_fit_params_nlhlin.txt"
             Z1_, Z2_, a, b, c, d, *_ = np.loadtxt(fname, unpack=True)
             idx = np.where((Z1_ == Z1) & (Z2_ == Z2))[0]
 
@@ -325,7 +360,7 @@ def plot_sn_ratio_at_e(e, p1, p2, Z1=None, Z2=None, krc=False):
                 M1_M2 = 1
                 enorm = (M1_M2+1) * 14.4 * Z1 * Z2 / rnorm
 
-                fname = f"data/p0.5_0.67/sn_fit_params_krc.txt"
+                fname = f"{directory}/krc/sn_fit_params_krc.txt"
                 a, b, c, d, *_ = np.loadtxt(fname, unpack=True)
 
                 eps = energy / enorm
@@ -337,7 +372,7 @@ def plot_sn_ratio_at_e(e, p1, p2, Z1=None, Z2=None, krc=False):
                 M1_M2 = 1
                 enorm = (M1_M2+1) * 14.4 * Z1 * Z2 / rnorm
 
-                fname = f"data/p0.23_1/sn_fit_params_zbl.txt"
+                fname = f"{directory}/zbl/sn_fit_params_zbl.txt"
                 a, b, c, d, *_ = np.loadtxt(fname, unpack=True)
 
                 eps = energy / enorm
@@ -354,9 +389,9 @@ def plot_sn_ratio_at_e(e, p1, p2, Z1=None, Z2=None, krc=False):
     if p1 == 1:
         text += fr'(Z$_1$+Z$_2$)'
     else:
-        text += fr'(Z$_1^{{{p1:.2f}}}$+Z$_2^{{{p1:.2f}}}$)'
+        text += fr'(Z$_1^{{{round(p1, 2)}}}$+Z$_2^{{{round(p1, 2)}}}$)'
     if p2 != 1:
-        text += fr'$^{{{p2:.2f}}}$'
+        text += fr'$^{{{round(p2, 2)}}}$'
     plt.text(0.95, 0.05, text, 
              horizontalalignment='right', verticalalignment='bottom',
              transform=plt.gca().transAxes, fontsize='medium')
@@ -371,28 +406,38 @@ def plot_sn_ratio_at_e(e, p1, p2, Z1=None, Z2=None, krc=False):
     plt.xticks(ticks)
     plt.gca().xaxis.set_minor_locator(MultipleLocator(1))
     plt.grid(True, which='major', ls='--')
-    plt.legend()
+    plt.legend(loc='upper left')
     plt.tight_layout()
     plt.show()
 
+    if krc:
+        potname = "krc"
+    else:
+        potname = "zbl"
+    fname = os.path.join(os.path.dirname(__file__), 
+                        f"figs/sn_ratio_homo_{potname}_at_e.pdf")
+    fname = ask_if_save(fname)
+    if fname is not None:
+        fig.savefig(os.path.join(os.path.dirname(__file__), fname))
+        print(f"Saved figure to {fname}")
+
 
 if __name__ == "__main__":
-    #p1, p2 = 0.23, 1    # ZBL
-    p1, p2 = 1/2, 1/2   # NLHlin
-    #p1, p2 = 1/2, 2/3   # Firsov (KrC)
-    Z1 = 1
-    Z2 = 67
+    Z1 = 12
+    Z2 = 12
     
-    #fit_sn(p1, p2, f"sn_qn_table_zbl.txt")
-    #fit_sn(p1, p2, f"sn_qn_table_krc.txt")
-    #fit_sn(p1, p2, f"sn_qn_table_nlhlin_{Z1:02d}_{Z2:02d}.txt", Z1=Z1, Z2=Z2)
-    #tab_sn_fit(p1, p2)
+    #fit_sn(p1=0.23, p2=1, fname="zbl/sn_qn_tables/sn_qn_table_zbl.txt")
+    #fit_sn(p1=0.5, p2=2/3, fname="krc/sn_qn_tables/sn_qn_table_krc.txt")
+    #fit_sn(p1=1/2, p2=1/2, fname="nlhlin/sn_qn_tables/sn_qn_table_nlhlin_"
+    #       f"{Z1:02d}_{Z2:02d}.txt", Z1=Z1, Z2=Z2)
+    #tab_sn_fit()
 
-    #fit_qn(p1, p2,f"sn_qn_table_zbl.txt")
-    #fit_qn(p1, p2, f"sn_qn_table_krc.txt")
-    #fit_qn(p1, p2, f"sn_qn_table_nlhlin_{Z1:02d}_{Z2:02d}.txt", Z1=Z1, Z2=Z2)
-    #tab_qn_fit(p1, p2)
+    #fit_qn(p1=0.23, p2=1, fname="zbl/sn_qn_tables/sn_qn_table_zbl.txt")
+    #fit_qn(p1=0.5, p2=2/3, fname="krc/sn_qn_tables/sn_qn_table_krc.txt")
+    #fit_qn(p1=1/2, p2=1/2, fname="nlhlin/sn_qn_tables/sn_qn_table_nlhlin_"
+    #       f"{Z1:02d}_{Z2:02d}.txt", Z1=Z1, Z2=Z2)
+    #tab_qn_fit()
 
     energies = [10, 100, 1000, 10000]
-    plot_sn_ratio_at_e(energies, p1, p2)
-    #plot_sn_ratio_at_e(energies, p1, p2, krc=True)
+    #plot_sn_ratio_at_e(energies, p1=1/2, p2=1/2)
+    plot_sn_ratio_at_e(energies, p1=1/2, p2=1/2, krc=True)

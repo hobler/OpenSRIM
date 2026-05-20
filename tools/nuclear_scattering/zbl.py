@@ -9,7 +9,9 @@ The functions in this module use normalized units:
       ENORM = 14.39979 * Z1 * Z2 / RNORM * (1 + m1/m2) eV
 
 Available functions:
-    ZBL_screen: Callable object for the ZBL screening function.
+    ZBL_screen: Callable object for the ZBL screening function. Also defines 
+        a method impulse integral for calculating the integral that appears in 
+        the impulse approximation.
     estimate_apsis: estimate distance of closest approach in a collision.
     magic: calculate scattering angle using Biersack's magic formula.
 """
@@ -161,7 +163,6 @@ class ZBL_screen:
         integral, _ = quad(integrand, 0, xmax)
         
         return integral
-
 
 
 # Constants for apsis estimation for the ZBL potential

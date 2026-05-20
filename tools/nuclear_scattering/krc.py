@@ -2,7 +2,6 @@
 """
 import numpy as np
 
-from zbl import B3
 from apsis import Apsis
 
 

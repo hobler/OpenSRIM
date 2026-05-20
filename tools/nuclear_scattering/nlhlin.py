@@ -1,7 +1,9 @@
 """Define the NLHlin screening function.
 
 Available functions:
-    NLHlin_screen: Callable object for the NLHlin screening function.
+    NLHlin_screen: Callable object for the NLHlin screening function. Also 
+        defines a method impulse integral for calculating the integral that 
+        appears in the impulse approximation.
     
 Moreover, there are plotting functions for testing and visualization:
     plot_screen: plot NLHlin screening function for various atomic numbers.
@@ -11,6 +13,8 @@ import os, sys
 import numpy as np
 from scipy.integrate import quad
 from apsis import Apsis
+from utils import atom, ask_if_save
+
 
 class NLHlin_screen:
     """Defines the NLHlin screening function.
@@ -28,8 +32,9 @@ class NLHlin_screen:
         self.Z1 = Z1
         self.Z2 = Z2
         
-        #fname = '../../data/NLHlin/NLHlin_1eV.dat')
-        fname = '../../data/NLHlin/NLHlin_3eV.dat')
+        fname = os.path.join(os.path.dirname(__file__), 
+                             #'../../data/NLHlin/NLHlin_1eV.dat')
+                             '../../data/NLHlin/NLHlin_3eV.dat')
         if not os.path.exists(fname):
             print(f'NLHlin_screen: Coefficients file {fname} not found')
             sys.exit()
@@ -53,7 +58,7 @@ class NLHlin_screen:
         self.rnorm = rnorm
 
         self.rmax = float(rmax) / rnorm
-        print(self.rnorm, self.rmax)
+        #print(self.rnorm, self.rmax)
         self.c = 1 - self.a[0] - self.a[1] - self.a[2]
         self.d = (self.a[0]*np.exp(-self.b[0]*self.rmax) 
                   + self.a[1]*np.exp(-self.b[1]*self.rmax) 
@@ -145,7 +150,8 @@ class NLHlin_screen:
 
         from p to rmax.
 
-        The calculation uses quad from SciPy for numerical integration.
+        The calculation uses quad from SciPy for numerical integration and
+        should yield the same result as impulse_integral.
         
         Parameters:
             p (float): impact parameter (RNORM)
@@ -158,7 +164,7 @@ class NLHlin_screen:
             return (screen - r*dscreen) * p / (r**2 * np.sqrt(r**2 - p**2))
         
         xmax = np.sqrt(self.rmax**2 - p**2) if p < self.rmax else 0
-        print(p, xmax)
+        #print(p, xmax)
         integral, _ = quad(integrand, p, self.rmax)
         
         return integral
@@ -195,9 +201,9 @@ def post_plot(p1, p2, Z2, xmax=None, ymin=None):
         if p1 == 1:
             text += fr'(Z$_1$+Z$_2$)'
         else:
-            text += fr'(Z$_1^{{{p1:.2f}}}$+Z$_2^{{{p1:.2f}}}$)'
+            text += fr'(Z$_1^{{{round(p1, 2)}}}$+Z$_2^{{{round(p1, 2)}}}$)'
         if p2 != 1:
-            text += fr'$^{{{p2:.2f}}}$'
+            text += fr'$^{{{round(p2, 2)}}}$'
         text += '\n'
     if Z2 is None:
         text += f' Z$_2$=Z$_1$'
@@ -218,8 +224,9 @@ def post_plot(p1, p2, Z2, xmax=None, ymin=None):
     cmap = mpl.cm.viridis
     norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
     plt.colorbar(mpl.cm.ScalarMappable(norm=norm, cmap=cmap), 
-                label=r'atomic number Z$_1$', 
-                ticks=ticks)
+                 ax=plt.gca(),
+                 label=r'atomic number Z$_1$', 
+                 ticks=ticks)
 
     plt.tight_layout()
 
@@ -239,9 +246,9 @@ def plot_screen(p1, p2, z2=None, xmax=None, ymin=None):
 
     rmax_A  = 3.0
 
-    plt.figure()
-    #cmap = mpl.cm.get_cmap('jet', 92)
-    cmap = mpl.cm.get_cmap('viridis', 92)
+    fig = plt.figure()
+    #cmap = plt.get_cmap('jet', 92)
+    cmap = plt.get_cmap('viridis', 92)
     plt.rcParams.update({'font.size': 14})
     #plt.gca().set_facecolor('darkgray')
 
@@ -259,7 +266,7 @@ def plot_screen(p1, p2, z2=None, xmax=None, ymin=None):
         r = np.linspace(0.0, rmax, 101)
         screen, _ = NLHlin_screen(Z1, Z2, rnorm)(r)
         plt.plot(r, screen, ':', color=cmap((Z1-1)/92), zorder=Z1)
-        mask = (14.4 * Z1 * Z2 / (r*rnorm) * screen > 1)
+        mask = (14.4 * Z1 * Z2 / np.maximum(1e-10, r*rnorm) * screen > 1)
         plt.plot(r[mask], screen[mask], color=cmap((Z1-1)/92), zorder=Z1)
 
     if (p1, p2) == (0.23, 1):
@@ -272,8 +279,17 @@ def plot_screen(p1, p2, z2=None, xmax=None, ymin=None):
         #plt.legend(loc='right')
 
     post_plot(p1, p2, Z2=z2, xmax=xmax, ymin=ymin)
-
     plt.show()
+
+    if (p1, p2) == (0, 0):
+        fname = f"figs/nlhlin_unscaled.pdf"
+    elif z2 is None:
+        fname = f"figs/nlhlin_p{round(p1, 2)}_p{round(p2, 2)}.pdf"
+    else:
+        fname = f"figs/nlhlin_p{round(p1, 2)}_p{round(p2, 2)}_{atom[Z2]}.pdf"
+    fname = ask_if_save(fname)
+    if fname is not None:
+        fig.savefig(os.path.join(os.path.dirname(__file__), fname))
 
 
 def plot_ZBLscreen(p1, p2, z2=None, xmax=None, ymin=None):
@@ -291,9 +307,9 @@ def plot_ZBLscreen(p1, p2, z2=None, xmax=None, ymin=None):
 
     rmax_A  = 3.0
 
-    plt.figure()
-    #cmap = mpl.cm.get_cmap('jet', 92)
-    cmap = mpl.cm.get_cmap('viridis', 92)
+    fig = plt.figure()
+    #cmap = plt.get_cmap('jet', 92)
+    cmap = plt.get_cmap('viridis', 92)
     plt.rcParams.update({'font.size': 14})
     #plt.gca().set_facecolor('darkgray')
 
@@ -311,13 +327,20 @@ def plot_ZBLscreen(p1, p2, z2=None, xmax=None, ymin=None):
         r = np.linspace(0.0, rmax_A, 101)
         screen, _ = ZBL_screen()(r/a_ZBL)
         plt.plot(r/rnorm, screen, ':', color=cmap((Z1-1)/92), zorder=Z1)
-        mask = (14.4 * Z1 * Z2 / (r*rnorm) * screen > 1)
+        mask = (14.4 * Z1 * Z2 / np.maximum(1e-10, r*rnorm) * screen > 1)
         plt.plot(r[mask]/rnorm, screen[mask], color=cmap((Z1-1)/92), zorder=Z1)
 
     post_plot(p1, p2, Z2=r'Z$_1$', xmax=xmax, ymin=ymin)
     plt.ylabel('ZBL screening function')
-
     plt.show()
+
+    if (p1, p2) == (0, 0):
+        fname = f"figs/zbl_unscaled.pdf"
+    else:
+        fname = f"figs/zbl_p{round(p1, 2)}_p{round(p2, 2)}.pdf"
+    fname = ask_if_save(fname)
+    if fname is not None:
+        fig.savefig(os.path.join(os.path.dirname(__file__), fname))
 
 
 if __name__ == "__main__":

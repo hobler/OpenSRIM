@@ -4,8 +4,10 @@ Available functions:
 - apsis_setup: Setup apsis table for head-on collisions.
 - calc_apsis: Calculate the distance of closest approach (apsis) in a collision.
 """
+import os
 import numpy as np
 from table1d import Table1D
+from utils import atom, ask_if_save
 
 
 class Apsis:
@@ -122,7 +124,9 @@ def plot_iteration_counts(screen_fun, Z1=None, Z2=None):
     apsis = Apsis(screen_fun)
 
     e_values = np.logspace(-6, 2, 9)
-    p_values = 10.0 * np.linspace(0, 2, 11)**2  * 0.75
+    p_values = 10.0 * np.linspace(0, 2, 11)**2
+    if type(screen_fun) is NLHlin_screen:
+        p_values *= 0.75
     e_idx = np.arange(len(e_values)+1) - 0.5
     p_idx = np.arange(len(p_values)+1) - 0.5
 
@@ -155,12 +159,18 @@ def plot_iteration_counts(screen_fun, Z1=None, Z2=None):
 
     if type(screen_fun) is ZBL_screen:
         ax.set_title("Universal ZBL potential", fontsize="small")
+        fname = "figs/iter_apsis_zbl.pdf"
     elif type(screen_fun) is NLHlin_screen:
         ax.set_title(fr"NLHlin potential, Z$_1$={Z1}, Z$_2$={Z2}", 
                      fontsize="small")
+        fname = f"figs/iter_apsis_nlhlin_{atom[Z1]}_{atom[Z2]}.pdf"
     plt.tight_layout()
-    
     plt.show()
+
+    fname = ask_if_save(fname)
+    if fname is not None:
+        fig.savefig(os.path.join(os.path.dirname(__file__), fname))
+
 
 if __name__ == "__main__":
     from zbl import ZBL_screen

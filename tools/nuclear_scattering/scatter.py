@@ -1,10 +1,12 @@
 """Tests for the scattering functions."""
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 plt.rcParams.update({'font.size': 14})
 from zbl import ZBL_screen
 from nlhlin import NLHlin_screen
 from cm_scatter import setup, scatter_integrals
+from utils import atom, ask_if_save
 
 
 def md_scatter(e, p, screen_fun, dx=0.001):
@@ -37,7 +39,8 @@ def md_scatter(e, p, screen_fun, dx=0.001):
            "md_scatter: screening length must be 1 A"
 
     Z = screen_fun.Z1
-    with open('ATOMDATA', 'r') as f:
+    with open(os.path.join(os.path.dirname(__file__), 
+                           '../../data/atom_data/ATOMDATA'), 'r') as f:
         for line in f:
             if line.startswith('#'):
                 continue
@@ -98,7 +101,8 @@ def plot_psi_and_de(e, Z1, Z2, screen_fun):
             Screening function object
     """
     data = np.genfromtxt(
-        'ATOMDATA',
+        os.path.join(os.path.dirname(__file__), 
+                     '../../data/atom_data/ATOMDATA'),
         dtype='i8, U2, U16, i8, f8, f8, f8, f8, f8, f8, f8, f8',
         names=['Z', 'symbol', 'name', 'mass', 'M1', 'M2', 'density', 'N',
             'vF', 'Esurf', 'density_gas', 'Ngas'],
@@ -138,6 +142,7 @@ def plot_psi_and_de(e, Z1, Z2, screen_fun):
     psi_impulse_vals = np.array(psi_impulse_vals)
     de_impulse_vals = np.array(de_impulse_vals)
 
+    fig = plt.figure()
     plt.plot(p_vals[psi_vals>0], np.degrees(psi_vals[psi_vals>0]), 
             'C0',label='Exact scattering angle')
     plt.plot(p_vals, np.degrees(psi_impulse_vals), 
@@ -157,6 +162,18 @@ def plot_psi_and_de(e, Z1, Z2, screen_fun):
     plt.tight_layout()
     plt.show()
 
+    if screen_fun.name == "ZBL":
+        potname = f"zbl_{atom[screen_fun.Z1]}_{atom[screen_fun.Z2]}"
+    elif screen_fun.name == "NLHlin":
+        potname = f"nlhlin_{atom[screen_fun.Z1]}_{atom[screen_fun.Z2]}"
+    else:
+        potname = screen_fun.name
+    fname = f"figs/impulse_{potname}.pdf"
+    fname = ask_if_save(fname)
+    if fname is not None:
+        fig.savefig(os.path.join(os.path.dirname(__file__), fname))
+        print(f"Saved figure to {fname}")
+
 
 def compare_theta_and_tau(screen_fun):
     """Compare scattering angle and time integral between MD and numerical."""
@@ -165,8 +182,8 @@ def compare_theta_and_tau(screen_fun):
     
     p_vals = np.linspace(0.0, 3.0, 300)
     #p_vals = np.linspace(0.0, 1e-7, 10)
-    #for i, eps in enumerate((1e-4, 1e-3, 1e-2, 0.1, 1.0, 10.0, 100.0)):
-    for i, eps in enumerate((1e-4, 100.0)):
+    for i, eps in enumerate((1e-4, 1e-3, 1e-2, 0.1, 1.0, 10.0, 100.0)):
+    #for i, eps in enumerate((1e-4, 100.0)):
         e = eps * 2 * 14.4 * screen_fun.Z1**2
         print(f'ε={eps}, e={e} eV')
         
@@ -214,13 +231,25 @@ def compare_theta_and_tau(screen_fun):
     plt.tight_layout()
     plt.show()
 
+    if screen_fun.name == "ZBL":
+        potname = "zbl"
+    elif screen_fun.name == "NLHlin":
+        potname = f"nlhlin_{atom[screen_fun.Z1]}_{atom[screen_fun.Z2]}"
+    else:
+        potname = screen_fun.name
+    fname = f"figs/theta_tau_{potname}.pdf"
+    fname = ask_if_save(fname)
+    if fname is not None:
+        fig.savefig(os.path.join(os.path.dirname(__file__), fname))
+        print(f"Saved figure to {fname}")
+
 
 if __name__ == "__main__":
     setup(n_absc=4)
-    Z1 = 14
-    Z2 = 14
+    Z1 = 2
+    Z2 = 74
     #screen_fun = ZBL_screen(Z1, Z2, rnorm=1.0)
     screen_fun = NLHlin_screen(Z1, Z2, rnorm=1.0)
-    #plot_psi_and_de(e=3000, Z1=Z1, Z2=Z2, screen_fun=screen_fun)
+    plot_psi_and_de(e=3000, Z1=Z1, Z2=Z2, screen_fun=screen_fun)
 
-    compare_theta_and_tau(screen_fun)
+    #compare_theta_and_tau(screen_fun)

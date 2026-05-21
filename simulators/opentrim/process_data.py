@@ -55,7 +55,7 @@ def _build_distribution_headers(key, elems, follow_recoils, nelem_target):
 
     if key[1] in ["n", "e"]:
         kind_map = {"n": "NED", "e": "EED"}
-        mom_species = elem_names[:] if follow_recoils else elem_names[:1]
+        mom_species = elem_names[:]
         species_labels = mom_species[:]
         header_indexes = [0]
         for i, label in enumerate(species_labels):

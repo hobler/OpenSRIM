@@ -2,11 +2,11 @@ import time
 
 from . import config
 import numpy as np
-from numba import jit, prange, typed, int32
+from numba import jit, prange, typed, get_thread_id
 import numba as nb
 from . import cascade
 from .mytypes import Projectile, PROJ_DTYPE, PROJ_NUMBA_DTYPE
-from .stats import STATS_DTYPE, merge_stats, zero_stats
+from .stats import merge_stats, zero_stats
 from .process_data import write_stats, save_progress
 
 
@@ -28,31 +28,33 @@ def simulate(nion, params, stats, sim_idx=0):
         empty_stats = stats[0].copy()
         zero_stats(empty_stats)
 
-    # Construct an array of stats for each ion, since lists cannot be used in 
-    # Numba-jitted functions
-    stats_per_ion = np.array([empty_stats.copy() for _ in range(nion)], 
-                             dtype=STATS_DTYPE)
+    # Construct an array of stats for each Numba worker thread. Each parallel
+    # iteration selects its buffer via get_thread_id(), avoiding concurrent
+    # writes to the same statistics record.
+    nthreads = nb.get_num_threads()
+    stats_per_thread = np.array([empty_stats.copy() for _ in range(nthreads)],
+                                dtype=stats.dtype)
 
-    _simulate(nion, params, stats_per_ion, sim_idx)
+    _simulate(nion, params, stats_per_thread, sim_idx)
 
     #print("Chunk processed")
 
-    # Merge stats from each ion into the total stats
-    for i in range(len(stats_per_ion)):
-        merge_stats(stats, stats_per_ion[i])
+    # Merge stats from each thread into the total stats
+    for i in range(len(stats_per_thread)):
+        merge_stats(stats, stats_per_thread[i])
 
     return
 
 
 @jit(cache=config.ENABLE_CACHING, parallel=config.PARALLEL, 
      nogil=config.PARALLEL, debug=config.DEBUG)
-def _simulate(nion, params, stats_per_ion, sim_idx):
+def _simulate(nion, params, stats_per_thread, sim_idx):
     """Perform simulation on given number of projectiles
     
     Parameters:
         nion: (int) Total number of projectiles to simulate
         params: (PARAMS_DTYPE) Simulation parameters
-        stats_per_ion: (ndarray[STATS_DTYPE]) Array of stats for each ion
+        stats_per_thread: (ndarray[STATS_DTYPE]) Array of stats for each thread
         sim_idx: (int) Simulation index (for chunked simulations)
     """
     # Initial conditions of the projectile
@@ -71,8 +73,9 @@ def _simulate(nion, params, stats_per_ion, sim_idx):
     # Parallel loop over collision cascades
     for i in prange(nion):  # ty:ignore[not-iterable]
         np.random.seed(params[0].rng_seed + sim_idx + i)
+        tid = get_thread_id()
         proj_sim[i] = cascade.cascade(
-            proj_dummy[0], params[0], stats_per_ion[i])
+            proj_dummy[0], params[0], stats_per_thread[tid])
     
     proj_count = 0
     for proj_lst in proj_sim:

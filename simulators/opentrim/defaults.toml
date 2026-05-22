@@ -91,6 +91,21 @@ stopped       = false   # record stopping points
 backscattered = false   # record backscattered projectiles
 transmitted   = false   # record transmitted projectiles
 
+[output.distribution_2d.ion_recoils]
+score = true
+nbins = [60, 60]
+limits = [[0.0, 4000.0], [0.0, 4000.0]]
+
+[output.distribution_2d.nuclear_energy_deposition]
+score = true
+nbins = [60, 60]
+limits = [[0.0, 4000.0], [0.0, 4000.0]]
+
+[output.distribution_2d.electronic_energy_deposition]
+score = true
+nbins = [60, 60]
+limits = [[0.0, 4000.0], [0.0, 4000.0]]
+
 # --- Depth distributions ---
 [output.depth_distribution.ion_recoils]
 score  = true

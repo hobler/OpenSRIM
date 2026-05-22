@@ -1,0 +1,380 @@
+% Scattering Angle in the CM System
+
+\subsubsection{Change of variables}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+The integral in \cref{eq:sn_reduced_theta} is of the form
+%
+\begin{equation}
+    \label{eq:sn_integration_integral_R}
+    \int_{R_0}^\infty F(R) \, \mathrm{d}R ~,
+\end{equation}
+%
+where \(R_0\) is a pole of $F(R)$, which is obtained by solving \cref{eq:sn_apsis}, see Section~\ref{s:apsis}.
+Having a numerically determined pole of the integrand as an integration boundary is inconvenient, so the first step of calculating the scattering integrals is to change the integration variable.
+One possibility is \cite{Eck91}
+%
+\begin{equation}
+    \label{eq:sn_transform1}
+    R = \frac{ R_0 }{ (1-u^2) } ~,
+\end{equation}
+%
+which yields
+%
+\begin{equation}
+    \label{eq:sn_integration_integral_u1}
+    \int_{R_0}^\infty F(R) \, \mathrm{d}R =
+        2 R_0 \int_0^1 F \left( \frac{ R_0 }{ 1-u^2 } \right)
+        \frac{ u \, \mathrm{d}u }{ (1-u^2)^2 } ~.
+\end{equation}
+%
+With \cref{eq:sn_reduced_theta}
+%
+\begin{equation*}
+    \pi - \theta = 2 \, P \int_{R_0}^\infty
+        \frac{ \mathrm{d}R }{ R^2 \, g(R) }
+\end{equation*}
+%
+we obtain
+%
+\begin{equation}
+    \label{eq:sn_cmangl_legendre_theta_u}
+    \pi - \theta = \frac{ 4 P }{ R_0 } \int_0^1
+        \frac{ u \, \mathrm{d}u }{ g \left( \frac{ R_0 }{ 1-u^2 } \right) } ~,
+\end{equation}
+%
+where $g(R)$ is given by \cref{eq:sn_reduced_g}
+%
+\begin{equation*}
+    g(R) = \sqrt{ 1 - \frac{ 1 }{ \varepsilon R } \Phi(R)
+        - \frac{ P^2 }{ R^2 } } ~.
+\end{equation*}
+%
+In the following we show that the integrand is well-behaved in the interval $[0, 1]$.
+
+\subsubsection{Rewriting the integrand}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+It is still tricky to evaluate the integrand of \cref{eq:sn_cmangl_legendre_theta_u} near $u = 0$ (corresponding to $R \approx R_0$), since the evaluation of $g \left ( \frac{ R_0 }{ 1-u^2 } \right)$ heavily depends on the accuracy of the numerically determined value of $R_0$.
+To avoid potential problems arising from this we subtract \cref{eq:sn_apsis}
+%
+\begin{equation*}
+    1 - \frac{1}{\varepsilon R_0} \Phi(R_0) - \frac{P^2}{R_0^2} = 0
+\end{equation*}
+
+from the expression under the square root of
+%
+\begin{equation}
+    \label{eq:sn_cmangl_legendre_g_u}
+    g \left( \frac{ R_0 }{ 1-u^2 } \right) =
+    \sqrt{ 1 - \frac{ 1 }{ \varepsilon R_0 }
+        \Phi\left( \frac{ R_0 }{ 1-u^2 } \right) (1-u^2)
+        - \frac{ P^2 }{ R_0^2 } (1-u^2)^2 } ~,
+\end{equation}
+%
+which yields
+%
+\begin{equation}
+    \label{eq:sn_cmangl_legendre_g_chi}
+    g \left( \frac{ R_0 }{ 1-u^2 } \right) =
+        \sqrt{ \frac{ R_0 }{ \varepsilon P^2 } \,
+               \frac{ \Phi(R_0) - \Phi\left( \frac{ R_0 }{ 1-u^2 } \right) \, (1-u^2) }{ u^2 }
+               + ( 2 - u^2 ) } ~.
+\end{equation}
+%
+\Cref{eq:sn_cmangl_legendre_g_chi} can be rewritten
+%
+\begin{equation}
+    \label{eq:sn_cmangl_legendre_g_G}
+    g \left( \frac{ R_0 }{ 1-u^2 } \right) =
+        u \frac{P}{R_0} \, G(u)
+\end{equation}
+%
+with
+%
+\begin{equation}
+    \label{eq:sn_cmangl_legendre_G_chi}
+    G(u) = \sqrt{ \rho \, \chi(u) + (2-u^2) } ~,
+\end{equation}
+%
+~
+%
+\begin{equation}
+    \label{eq:sn_cmangl_legendre_chi}
+    \chi(u) = \frac{ \Phi(R_0) - \Phi\left( \frac{ R_0 }{ 1-u^2 } \right) \, (1-u^2) }{ u^2 } ~,
+\end{equation}
+%
+and
+%
+\begin{equation}
+    \label{eq:sn_cmangl_legendre_rho}
+    \rho = \frac{ R_0 }{ \varepsilon P^2 } ~.
+\end{equation}
+
+\(\chi(u)\) is well-behaved with
+%
+\begin{equation}
+    \label{eq:sn_cmangl_legendre_chi_lim}
+    \lim_{u \rightarrow 0} \chi(u) = \Phi(R_0) - R_0 \Phi'(R_0) , \qquad
+    \chi(1) = \Phi(R_0) ~.
+\end{equation}
+%
+The former is obtained by l’Hospital’s rule.
+Rounding errors can be minimized by replacing \cref{eq:sn_cmangl_legendre_chi} by \cref{eq:sn_cmangl_legendre_chi_lim} for $u$ smaller than the square root of the floating point precision.
+It is also easily seen that $\chi(u)$ is always positive for repulsive potentials ($\Phi'(R) < 0$ for $R \ge R_0$).
+\(\chi(u)\) is plotted in \cref{fig:sn_cmangl-legendre-chi-plot} for some values of \(R_0\).
+%
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[scale=0.5]{chi_zbl.pdf} ~~
+    \includegraphics[scale=0.5]{chi_nlhlin_As_Si.pdf}
+    \caption{Function \(\chi(u)\) according to \cref{eq:sn_cmangl_legendre_chi} for the ZBL universal potential (left) and the NLHlin potential for the atom pair As-Si (right).}
+    \label{fig:sn_cmangl-legendre-chi-plot}
+\end{figure}
+
+\Cref{eq:sn_cmangl_legendre_theta_u} may now be rewritten
+%
+\begin{equation}
+    \label{eq:sn_cmangl_legendre_theta_chi}
+    \pi - \theta = 4 \int_0^1  \frac{ 1 }{ G(u) } \, \mathrm{d}u .
+\end{equation}
+%
+The integrand has no poles, and the integral is amenable to standard methods of numerical quadrature.
+
+$G(u)$ evaluates to infinity for $P = 0$. To avoid handling infinite values, we define
+%
+\begin{equation}
+    \label{eq:sn_H_def}
+    H(u) = P \, G(u) = \sqrt{\frac{R_0}{\varepsilon} \chi(u) + P^2 (2-u^2)} \, .
+\end{equation}
+%
+Then \cref{eq:sn_cmangl_legendre_theta_chi} can be rewritten
+%
+\begin{equation}
+    \label{eq:sn_cmangl_legendre_theta_H}
+    \pi - \theta = 4 P \int_0^1  \frac{ 1 }{ H(u) } \, \mathrm{d}u .
+\end{equation}
+%
+Apart from showing $\theta = \pi$, this explicitly shows that $\pi - \theta \sim P$ for small impact parameters.
+
+\subsubsection{Integration using Gauss-Legendre quadrature}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+Using Gauss-Legendre quadrature, we can approximate \cref{eq:sn_cmangl_legendre_theta_chi} by
+%
+\begin{equation}
+    \label{eq:sn_cmangl_legendre_theta_chi_approx_plain}
+    \pi - \theta \approx
+        4 \sum_{i=1}^n \frac{ \tilde{w}_i }{ G(\tilde{u}_i) }
+\end{equation}
+%
+with \(\tilde{u}_i\) and \(\tilde{w}_i\) from \cref{eq:sn_legendre_transform}. With $a=0$ and $b=1$ they read
+%
+\begin{equation}
+    \label{eq:sn_gauss_legendre_transform_infinite}
+    \tilde{u}_i = \frac{ u_i + 1 }{ 2 }, \qquad
+    \tilde{w} = \frac{ w_i }{ 2 }.
+\end{equation}
+
+\Cref{eq:sn_cmangl_legendre_theta_chi_approx_plain}, however, has the problem that $\theta$ does not tend to zero exactly as $P \rightarrow \infty$ or $\varepsilon \rightarrow \infty$, since the right-hand side only approximates $\pi$.
+Note that for \(\rho \rightarrow 0\) the integral in \cref{eq:sn_cmangl_legendre_theta_chi} becomes
+%
+\begin{equation}
+    \label{eq:sn_cmangl_legendre_pi}
+    \int_0^1 \frac{ 1 }{ \sqrt{ 2-u^2 } } \, \mathrm{d}u = \frac{ \pi }{ 4 } ~,
+\end{equation}
+%
+and \(\theta \rightarrow 0\) as it should.
+Since the integrand is not a polynomial, the Legendre approximation of the integral will not exactly evaluate to \(\pi/4\), and \cref{eq:sn_cmangl_legendre_theta_chi_approx_plain} will not tend to $\pi$ as \(\rho \rightarrow 0\).
+This may be fixed by scaling the integral to the correct value of \(\pi/4\):
+%
+\begin{equation}
+    \label{eq:sn_cmangl_legendre_theta_chi_approx}
+    \pi - \theta \approx
+        \frac{ \pi }{ \pi_\mathrm{num}/4 }
+        \sum_{i=1}^n \frac{ \tilde{w}_i }{ G(\tilde{u}_i) }
+\end{equation}
+%
+with
+%
+\begin{equation}
+    \label{eq:sn_cmangl_legendre_pinum}
+    \frac{\pi_\mathrm{num}}{4} =
+        \sum_{i=1}^n \frac{ \tilde{w}_i  }{ \sqrt{ 2-\tilde{u}_i^2 } }
+\end{equation}
+%
+Since the sum in \cref{eq:sn_cmangl_legendre_theta_chi_approx} evaluates to \(\pi_\mathrm{num}/4\) for \(\rho \rightarrow 0\), $\pi - \theta$ tends to $\pi$ and \(\theta \rightarrow 0\).
+At the same time, for \(\rho \rightarrow \infty\) (i.e., for $\varepsilon \rightarrow 0$ or $P \rightarrow 0$), $G(u) \rightarrow \infty$, and the sum in \cref{eq:sn_cmangl_legendre_theta_chi_approx} goes to zero and \(\theta \rightarrow \pi\) as it should.
+
+In terms of the function $H(u)$, \cref{eq:sn_H_def}, \cref{eq:sn_cmangl_legendre_theta_chi_approx} reads
+%
+\begin{equation}
+    \label{eq:sn_cmangl_legendre_theta_H_approx}
+    \pi - \theta \approx
+        \frac{ \pi }{ \pi_\mathrm{num}/4 }  \,
+        P \sum_{i=1}^n \frac{ \tilde{w}_i }{ H(\tilde{u}_i) }
+\end{equation}
+
+One can also apply this correction to the Gauss-Legendre approximation of \cref{eq:sn_cmangl_legendre_theta_u}:
+%
+\begin{equation*}
+    %\label{eq:sn_cmangl_legendre_theta_g_approx}
+    \pi - \theta \approx
+        \frac{ \pi }{ \pi_\mathrm{num}/4 } \, \frac{ P }{ R_0 }
+        \sum_{i=1}^n
+        \frac{ \tilde{w}_i \tilde{u}_i
+        }{ g \left( \frac{ R_0 }{ 1-\tilde{u}_i^2 } \right) } \, .
+\end{equation*}
+%
+This expression is not numerically equivalent to \cref{eq:sn_cmangl_legendre_theta_chi_approx}.
+It does not require the evaluation of \(\Phi(R_0)\), which might represent a noticable saving of computation time if few abscissas are used.
+For few abscissas, the results are very similar.
+With increasing number of abscissas, the results are increasingly dependent on the accuracy of the apsis \(R_0\).
+The term under the square root of $g(\frac{R_0}{1-u^2})$, \cref{eq:sn_cmangl_legendre_g_chi}, or $G(u)$, \cref{eq:sn_cmangl_legendre_G_chi}, may even become negative, if the accuracy of \(R_0\) is low and the number of abscissas is large.
+
+\subsubsection{Modifications for finite-range screened Coulomb potentials}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+If $\Phi(R) = 0$ for $R$ larger than some $R_\mathrm{max}$,
+%
+\begin{equation}
+    \Phi(R) = 0 \quad \text{for} \quad R \ge R_\mathrm{max}
+\end{equation}
+%
+then for $P \ge R_\mathrm{max}$ we trivially have $\theta = 0$.
+Otherwise the integral in \cref{eq:sn_reduced_theta} must be divided in two parts:
+%
+\begin{equation}
+    \label{eq:sn_reduced_theta_finite}
+    \pi - \theta =
+        2 \, P \int_{R_0}^\infty \frac{ \mathrm{d}R }{ R^2 \, g(R) } =
+        2 \, P \int_{R_0}^{R_\mathrm{max}} \frac{ \mathrm{d}R }{ R^2 \, g(R) } +
+        2 \, P \int_{R_\mathrm{max}}^{\infty} \frac{ \mathrm{d}R }{ R^2 \, g(R) } ~.
+\end{equation}
+%
+The second term on the right-hand side may be evaluated analytically using $g(R)$ with $\Phi(R) = 0$
+%
+\begin{equation}
+    \label{eq:sn_g_phi=0}
+    g(R) = \sqrt{ 1 - \frac{ P^2 }{ R_0^2 }}
+\end{equation}
+%
+and \cite[2.275.4]{Gra80}
+%
+\begin{equation}
+    \label{eq:sn_reduced_theta_finite_2}
+    2 \, P \int_{R_\mathrm{max}}^{\infty} \frac{ \mathrm{d}R }{ R^2 \, g(R) } =
+        2 \, P \int_{R_\mathrm{max}}^{\infty}
+            \frac{ \mathrm{d}R }{ R^2 \sqrt{ 1 - \frac{P^2}{R^2}} } =
+        2 \arcsin \frac{P}{R_\mathrm{max}} ~.
+\end{equation}
+%
+Note that for $R_\mathrm{max} \rightarrow \infty$, this term vanishes.
+
+Applying the substitution \cref{eq:sn_transform1} to the remaining integral yields
+%
+\begin{equation}
+    \pi - \theta =
+        4 \int_0^{u_\mathrm{max} } \frac{ \mathrm{d}u }{G(u)} +
+        2 \arcsin \frac{P}{R_\mathrm{max}}
+\end{equation}
+%
+with
+%
+\begin{equation}
+    \label{eq:sn_umax}
+    u_\mathrm{max} = \sqrt{ 1 - \frac{ R_0 }{ R_\mathrm{max} } } ~,
+\end{equation}
+
+The integral can be evaluated by Gauss-Legendre quadrature
+%
+\begin{equation}
+    \label{eq:sn_cmangl_legendre_theta_chi_finite_approx_plain}
+    \pi - \theta =
+        4 \sum_{i=1}^n \frac{ \tilde{w}_i }{G(\tilde{u}_i)} +
+        2 \arcsin \frac{P}{R_\mathrm{max}}
+\end{equation}
+%
+with
+%
+\begin{equation}
+    \label{eq:sn_gauss_legendre_transform_finite}
+    \tilde{u}_i = u_\mathrm{max} \frac{ u_i + 1 }{ 2 }, \qquad
+    \tilde{w}_i = u_\mathrm{max} \frac{ w_i }{ 2 }
+\end{equation}
+%
+which follows from \cref{eq:sn_legendre_transform} with $a=0$ and $b=u_\mathrm{max}$.
+
+As with \cref{eq:sn_cmangl_legendre_theta_chi_approx_plain}, for numerical reasons $\rho \rightarrow 0$ might not exactly result in $\theta \rightarrow 0$ as it should.
+Unlike for infinite-range potentials, this does not happen for $P \rightarrow \infty$, because for $P > R_\mathrm{max}$ we have the trivial solution $\theta = 0$.
+Also for $P = R_\mathrm{max}$ there is no problem because the first term evaluates to zero and the second term evaluates to $\pi$.
+But for very high energies $\varepsilon \rightarrow \infty$ and not too small $P$, $\rho$ can become very small.
+In that case,
+%
+\begin{equation}
+    \lim_{\varepsilon \rightarrow \infty} \left[
+        4 \int_{0}^{u_\mathrm{max}} \frac{ \mathrm{d} u}{G(u)} \right] =
+        4 \int_{0}^{u_\mathrm{max}} \frac{ \mathrm{d} u}{\sqrt{2-u^2}} =
+        4 \arcsin \frac{u_\mathrm{max}}{\sqrt{2}} = 2 \arccos \frac{R_0}{R_\mathrm{max}}
+\end{equation}
+%
+One can therefore numerically correct \cref{eq:sn_cmangl_legendre_theta_chi_finite_approx_plain} by
+%
+\begin{equation}
+    \label{eq:sn_cmangl_legendre_theta_chi_finite}
+    \pi - \theta =
+        2 \, \frac{\arccos (R_0 / R_\mathrm{max})}{\frac{1}{2} \arccos_\mathrm{num}} \,
+            \sum_{i=1}^n \frac{ \tilde{w}_i }{G( \tilde{u}_i)}
+        + 2 \arcsin \frac{P}{R_\mathrm{max}}
+\end{equation}
+%
+with
+%
+\begin{equation}
+    \frac{1}{2} \arccos_\mathrm{num} =
+        \sum_{i=1}^n \frac{ \tilde{w}_i }{\sqrt{2 - \tilde{u}_i^2}} \, .
+\end{equation}
+$\theta$ tends to 0 as $\varepsilon \rightarrow \infty$, since $\rho \rightarrow 0$ and $R_0 \rightarrow P$, and $\arccos x + \arcsin x = \pi/2$. Contrary to $\pi_\mathrm{num}$, \cref{eq:sn_cmangl_legendre_pinum}, the second sum in \cref{eq:sn_cmangl_legendre_theta_chi_finite} depends on $\varepsilon$ and $P$ via $u_\mathrm{max}$ and $R_0$.
+
+For $P = 0$, $\rho \rightarrow \infty$ and therefore $G(u) \rightarrow \infty$, and both terms vanish. So there is no problem in evaluating \cref{eq:sn_cmangl_legendre_theta_chi_finite} for head-on collisions.
+Contrary to $\pi_\mathrm{num}/4$, \cref{eq:sn_cmangl_legendre_pinum}, $\frac{1}{2} \arccos_\mathrm{num}$ depends on $\varepsilon$ and $P$ via $u_\mathrm{max}$ and $R_0$.
+
+In terms of the function $H(u)$, \cref{eq:sn_H_def}, \cref{eq:sn_cmangl_legendre_theta_chi_finite} reads
+%
+\begin{equation}
+    \label{eq:sn_cmangl_legendre_theta_H_finite}
+    \pi - \theta =
+        2 \, \frac{\arccos (R_0 / R_\mathrm{max})}{\frac{1}{2}\arccos_\mathrm{num}} \,
+        P \sum_{i=1}^n \frac{ \tilde{w}_i }{H( \tilde{u}_i)}
+        + 2 \arcsin \frac{P}{R_\mathrm{max}} \, .
+\end{equation}
+%
+Also for finite-range interatomic potentials, $\pi - \theta \sim P$ for small P, since $\arcsin x \approx x$ for small $x$.
+
+\subsubsection{Convergence}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[scale=0.5]{error_theta_eps0.0001_zbl.pdf} ~~
+    \includegraphics[scale=0.5]{error_theta_eps0.0001_nlhlin_As_Si.pdf} \\ \smallskip
+    \includegraphics[scale=0.5]{error_theta_eps0.1_zbl.pdf} ~~
+    \includegraphics[scale=0.5]{error_theta_eps0.1_nlhlin_As_Si.pdf} \\ \smallskip
+    \includegraphics[scale=0.5]{error_theta_eps100_zbl.pdf} ~~
+    \includegraphics[scale=0.5]{error_theta_eps100_nlhlin_As_Si.pdf}
+    \caption{Relative errors in \(\theta\) of n-point Gauss-Legendre quadrature as a function of reduced impact parameter for three energies using \cref{eq:sn_cmangl_legendre_theta_chi_finite} with the number of abscissae $n=1$,2, 3, 4, 5, and 10.
+        As interatomic potentials the universal ZBL potential (left) and the NLHlin potential for $Z_1=33$ and $Z_2=14$ were used together with a screening length given by \cref{eq:sn_aNLH}.
+        For the ZBL potential the results of Biersack's magic formula \cite{Bie80} (check!) are also included with dashed lines.
+        The reference simulations were evaluated using \cref{eq:sn_cmangl_legendre_theta_chi_finite} with 32-point Gauss-Legendre quadrature.
+        The relative accuracy of the apsis is better than \(10^{-3}\).}
+    \label{fig:error-legendre-theta}
+\end{figure}
+%
+In \cref{fig:error-legendre-theta}, the relative errors in \(\theta\) as calculated by \cref{eq:sn_cmangl_legendre_theta_chi_finite} are shown as a function of reduced impact parameter $P$ for reduced energies \(\varepsilon = 10^{-4}\), \(\varepsilon = 10^{-1}\), and \(\varepsilon = 100\), and different numbers of abscissae $n$ in the Gauss-Legendre quadrature.
+The results for the ZBL potential are shown in the left column, while those for the NLHlin potential are found in the right column.
+For the ZBL potential, the result of Biersacks magic formula \cite{Bie80} (check!) are also shown.
+Notably, the accuracy of the magic formula, about 1~\%, is already reached with only $n=2$ abscissae in the Gauss-Legendre quadrature.
+An accuracy 10$^{-4}$--10$^{-3}$ is reached with $n = 4$.
+For the NLHlin potential, convergence is even faster in general.
+
+\textbf{TODO: Magic formula}

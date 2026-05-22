@@ -12,8 +12,10 @@ import numpy as np
 from numba import jit
 from .mytypes import PROJ_DTYPE
 from .target import get_layer_index, get_element_index, is_inside_target
+from . import config
 
-@jit
+
+@jit(debug=config.DEBUG)
 def select_recoil(proj, recoil, params):
     """Get the position of the recoil hit after the next free flight path.
 
@@ -39,14 +41,26 @@ def select_recoil(proj, recoil, params):
             recoil (A)
         (ndarray): direction vector from collision point to recoil (size 3)
     """
+    e = proj["e"]
     pos = proj["pos"][:]
     dir = proj["dir"][:]
+    ielem1 = proj["ielem"]
     ilayer = proj["ilayer"]
+    imat = ilayer
     
     # free flight path and impact parameter
-    free_path = params.recoil.mean_free_path[ilayer]
+    #pmax = params.cascade.pmax[ilayer]
+    pmax = np.interp(e, params.cascade.pmax_energies[ielem1, imat], 
+                     params.cascade.pmax_vals)
+
+    #free_path = params.cascade.mean_free_path[ilayer]
+    free_path = 1 / (params.materials[imat].density * np.pi * pmax**2)
+    if proj["first_ffp"]:
+        free_path *= np.random.rand()
+        proj["first_ffp"] = False
+
+    p = pmax * sqrt(np.random.rand())
     collision_pos = pos[:] + free_path * dir[:]
-    p = params.recoil.pmax[ilayer] * sqrt(np.random.rand())
 
     # Azimuthal angle fi
     fi = 2 * np.pi * np.random.rand()
@@ -54,7 +68,7 @@ def select_recoil(proj, recoil, params):
     sin_fi = sin(fi)
 
     # Convert direction vector to polar angles
-    # make k point to the smallest dir(:) so sin_alpha > sqrt(2/3)
+    # make k point to the smallest dir[:] so sin_alpha > sqrt(2/3)
     k = np.argmin(np.abs(dir[:]))
     i = (k + 1) % 3
     j = (i + 1) % 3

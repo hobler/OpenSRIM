@@ -277,29 +277,6 @@ def _get_estop_params(input_params, nelem, elements_params):
     return estop_params
 
 
-def _get_recoil_params(input_params):
-    """Get the recoil parameters from the input parameters.
-
-    Parameters:
-        input_params: (dict) The input parameters dictionary.
-
-    Returns:
-        recoil_params: (np.recarray) The recoil parameters.
-    """
-    densities = np.array([layer["density"] for layer in input_params["layer"]])
-
-    RECOIL_PARAMS_DTYPE = np.dtype([
-        ("pmax", np.float64, (NMAT,)),
-        ("mean_free_path", np.float64, (NMAT)),
-    ], align=True)
-
-    recoil_params = np.recarray(1, dtype=RECOIL_PARAMS_DTYPE)
-    recoil_params[0].pmax = densities**(-1/3) / sqrt(np.pi)
-    recoil_params[0].mean_free_path = densities**(-1/3)
-
-    return recoil_params
-
-
 def _get_scatter_params(input_params, nelem, elements_params):
     """Get the scattering parameters from the input parameters.
 
@@ -382,7 +359,8 @@ def _get_scatter_params(input_params, nelem, elements_params):
     return scatter_params
 
 
-def _get_cascade_params(input_params):
+def _get_cascade_params(input_params, nelem, elements_params, materials_params,
+                        scatter_params):
     """Get the cascade parameters from the input parameters.
 
     Parameters:
@@ -391,18 +369,71 @@ def _get_cascade_params(input_params):
     Returns:
         cascade_params: (np.recarray) The cascade parameters.
     """
+    NPMAX = 64
     CASCADE_PARAMS_DTYPE = np.dtype([
         ("follow_recoils", np.int64),  # stored as int for better compatibility with Numba
         ("emin", np.float64),
         ("ed", np.float64),
+        ("pmax", np.float64, (NMAT,)),
+        ("mean_free_path", np.float64, (NMAT,)),
+        ("pmax_vals", np.float64, (NPMAX,)),
+        ("pmax_energies", np.float64, (NELEM, NMAT, NPMAX)),
     ], align=True)
 
     cascade_params = np.recarray(1, dtype=CASCADE_PARAMS_DTYPE)
     cascade_params[0].follow_recoils = (
         input_params["simulation"]["follow_recoils"])
     cascade_params[0].emin = 5.0
+    # TODO: get ed from input_params
     cascade_params[0].ed = 15.0
 
+    densities = np.array([layer["density"] for layer in input_params["layer"]])
+    cascade_params[0].pmax = densities**(-1/3) / sqrt(np.pi)
+    cascade_params[0].mean_free_path = densities**(-1/3)
+
+    # TODO: get psimin and demin from input_params
+    psimin = np.radians(5.0)
+    demin = 15.0
+
+    # TODO: get pmaxmin and pmaxmax from input_params
+    pmaxmax = 4.0
+    pmaxmin = 0
+    #pmaxmax = 1.53
+    #pmaxmin = pmaxmax
+    pmaxmin = max(pmaxmin, pmaxmax / NPMAX)
+    pmax_vals = np.linspace(pmaxmin, pmaxmax, NPMAX)
+    cascade_params[0].pmax_vals = pmax_vals[::-1]
+
+    nmat = len(input_params["layer"])
+
+    for ielem1 in range(nelem):
+        z1 = elements_params[ielem1].Z
+        m1 = elements_params[ielem1].M
+        for imat in range(nmat):
+            pmax_energies = np.zeros(NPMAX, dtype=np.float64)
+            for ielem in range(materials_params[imat].nelem):
+                ielem2 = materials_params[imat].ielem[ielem]
+                z2 = elements_params[ielem2].Z
+                m2 = elements_params[ielem2].M
+                rnorm = scatter_params[0].rnorm[ielem1, ielem2]
+                for i, pmax in enumerate(pmax_vals):
+                    if scatter_params[0].pot_model == "NLHlin":
+                        integral = nlhlin.impulse_integral(
+                            pmax/rnorm, 
+                            scatter_params[0].pot_coefs[ielem1, ielem2]
+                        )
+                    else:
+                        integral = zbl.impulse_integral(
+                            pmax/rnorm, 
+                            scatter_params[0].pot_coefs[ielem1, ielem2]
+                        )
+                    energy_psi = 14.39979 * z1 * z2 / rnorm * integral / psimin
+                    energy_de = m1/m2 * (
+                        (14.39979 * z1 * z2 / rnorm * integral)**2 / demin)
+                    pmax_energies[i] = max(pmax_energies[i], 
+                                           energy_psi, energy_de)
+            cascade_params[0].pmax_energies[ielem1, imat] = pmax_energies[::-1]
+            
     return cascade_params
 
 
@@ -427,9 +458,9 @@ def get_params(input_params):
     nelem_target, nelem, elements_params, materials_params = (
         _get_elements_and_materials_params(input_params))
     estop_params = _get_estop_params(input_params, nelem, elements_params)
-    recoil_params = _get_recoil_params(input_params)
     scatter_params = _get_scatter_params(input_params, nelem, elements_params)
-    cascade_params = _get_cascade_params(input_params)
+    cascade_params = _get_cascade_params(input_params, nelem, elements_params,
+                                         materials_params, scatter_params)
 
     # TODO: include n_absc in params
     #cm_scatter.setup(input_params["models"]["scattering integrals"]["n_absc"])
@@ -441,7 +472,6 @@ def get_params(input_params):
         ("nelem", np.int32),         # align=True
         ("beam", beam_params.dtype),
         ("cascade", cascade_params.dtype),
-        ("recoil", recoil_params.dtype),
         ("geometry", geometry_params.dtype),
         ("elements", elements_params.dtype, (elements_params.size,)),
         ("materials", materials_params.dtype, (materials_params.size,)),
@@ -457,7 +487,6 @@ def get_params(input_params):
     params[0].nelem = nelem
     params[0].beam = beam_params
     params[0].cascade = cascade_params
-    params[0].recoil = recoil_params
     params[0].geometry = geometry_params
     params[0].elements = elements_params
     params[0].materials = materials_params

@@ -1,0 +1,119 @@
+% Apsis of Collision
+
+The apsis of collision is the distance of closest approach during a collision.
+The reduced apsis of collision $R_0$ is the solution of \cref{eq:sn_apsis}.
+For actually solving this equation with Newtons method, it is convenient to define the function $f(R) = R \, g^2(R)$ so that $R_0$ is the solution of:
+%
+\begin{equation}
+    \label{eq:sn_apsis_eq}
+    f(R) = R - \frac{1}{\varepsilon} \Phi(R) - \frac{P^2}{R} = 0.
+\end{equation}
+%
+For screening functions given by a sum of exponentials, \cref{eq:sn_sum_exp}, and also for the finite-range screening function \cref{eq:sn_NLHlin}, the first derivative is always negative, \(\Phi'(R)<0\), and the second derivative is always positive, \(\Phi''(R)>0\).
+It follows that \(f'(R)>0\) and \(f''(R)<0\) for all values of \(R\).
+As a consequence, Newton’s method is guaranteed to converge if the initial condition \(R_{0,0}\) is chosen to the left of the solution \(R_0\) (\(R_{0,0} < R_0\)).
+
+\subsubsection{Obtaining an initial condition}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+For purely repulsive potentials \(R_0 > P\). Therefore, \(P\) is to the left of \(R_0\), and
+%
+\begin{equation}
+    \label{eq:sn_apsis_ic_p}
+    R_0^\mathrm{(0,P)} = P
+\end{equation}
+%
+is a possible initial condition, guaranteeing convergence of Newton’s method.
+It turns out that convergence with initial condition \cref{eq:sn_apsis_ic_p} is slow for large scattering angles (i.e., small impact parameters $P$).
+Therefore, a second lower boundary to $R_0$ is desirable.
+
+For a head-on collision ($P = 0$), \cref{eq:sn_apsis_eq} reduces to
+%
+\begin{equation}
+    \label{eq:sn_apsis_ic_eps}
+    R_0^{(0,\varepsilon)} - \frac{ 1 }{ \varepsilon } \Phi(R_0^{(0,\varepsilon)}) = 0 ~.
+\end{equation}
+%
+where we have replaced \(R\) by \(R_0^{(0,\varepsilon)}\), since we want to use this equation to obtain an alternative initial condition for $R_0$.
+This equation also can be solved by iteration only.
+However, it is easy to produce a table \(\varepsilon = \varepsilon(R_0^{(0,\varepsilon)})\) by calculating $\varepsilon$ from given values of $R_0^{(0,\varepsilon)}$, and to obtain a value of \(R_0^{(0,\varepsilon)}\) for a given $\varepsilon$ by interpolation in the inverse table \(R_0^{(0,\varepsilon)}(\varepsilon)\).
+If the interpolation is done cubic, the derivatives \(\mathrm{d} R_0^{(0,\varepsilon)} / \mathrm{d} \varepsilon\) need to be tabulated as well. They are obtained by differentiating \cref{eq:sn_apsis_ic_eps} with respect to $\varepsilon$ and reinserting $\varepsilon$ from \cref{eq:sn_apsis_ic_eps}:
+%
+\begin{equation}
+    \frac{ \mathrm{d} R_0^{(0,\varepsilon)} }{ \mathrm{d} \varepsilon } =
+        - \frac{ (R_0^{(0,\varepsilon)})^2 }{ \Phi(R_0^{(0,\varepsilon)}) - R_0^{(0,\varepsilon)} \, \Phi'(R_0^{(0,\varepsilon)}) } ~.
+\end{equation}
+%
+Note that $\Phi'(R) < 0$ and therefore $\mathrm{d} R_0^{(0,\varepsilon)} / \mathrm{d} \varepsilon < 0$ for all $R_0^{(0,\varepsilon)}$.%
+%
+\footnote{It can be shown that $\mathrm{d}^2 R_0^{(0,\varepsilon)} / \mathrm{d} \varepsilon^2 > 0$. Therefore it is advisable to use cubic rather than linear interpolation, since linear interpolation would in general overestimate $R_0^{(0,\varepsilon)}$, which could result in $R_0^{(0,\varepsilon)} > R_0$.
+}
+
+To set up the table, it seems more convenient to select values for $\varepsilon$ than for $R_0^{(0,\varepsilon)}$, since the range of \(\varepsilon\) required is known to be between the implant and the trajectory cutoff energy.
+It is also possible to choose the \(\varepsilon\) limits generously, e.g. by \(\varepsilon_\mathrm{min} = 10^{-8}\) and \(\varepsilon_\mathrm{max} = 10^4\), which then would allow to use a precomputed table for all simulations.
+
+If we desire to determine $R_0^{(0,\varepsilon)}(\varepsilon_i)$ for $\varepsilon_i = \varepsilon_\mathrm{max}/2^i$, $i = 0 \ldots n$, and $\varepsilon_\mathrm{max}/2^n \le \varepsilon_\mathrm{min} < \varepsilon_\mathrm{max}/2^{n-1}$, we can start with determining the \(R_0^{(0,\varepsilon)}\) value corresponding to \(\varepsilon_{max}\) by Newton iteration of \cref{eq:sn_apsis_eq} with $P=0$.
+An initial condition for the iteration, which is to the left of the solution, is \(R_0^{(0,\varepsilon,0)} = 1/\varepsilon_\mathrm{max}\), which follows from \cref{eq:sn_apsis_ic_eps} together with \(\Phi(R_0^{(0,\varepsilon,0)}) \le 1\). Once \(R_0^{(0,\varepsilon)}(\varepsilon_\mathrm{max})\) has been determined, \(R_0^{(0,\varepsilon)}(\varepsilon_\mathrm{max}/2)\) is determined in the same way, using \(R_0^{(0,\varepsilon)}(\varepsilon_\mathrm{max})\) as initial condition, then \(R_0^{(0,\varepsilon)}(\varepsilon_\mathrm{max}/4)\) using \(R_0^{(0,\varepsilon)}(\varepsilon_\mathrm{max}/2)\) as initial condition and so on, until \(\varepsilon_\mathrm{max}/2^n \le \varepsilon_\mathrm{min}\).
+
+$R_0^{(0,\varepsilon)}$ can also be taken as an initial condition for $P > 0$. This can be seen by
+bringing the second and third term of \cref{eq:sn_apsis_eq} to the right-hand side and writing $R_0$ instead of $R$ (since the equation is fulfilled for $R = R_0$):
+%
+\begin{equation*}
+    R_0 = \frac{1}{\varepsilon} \Phi(R_0) + \frac{P^2}{R_0} .
+\end{equation*}
+%
+Similarly, we can rewrite \cref{eq:sn_apsis_ic_eps}
+%
+\begin{equation*}
+    R_0^{(0,\varepsilon)} = \frac{1}{\varepsilon} \Phi(R_0^{(0,\varepsilon)}) .
+\end{equation*}
+%
+We can easily prove that $R_0^{(0,\varepsilon)} \ge R_0$ is not possible for any $P > 0$. If $R_0^{(0,\varepsilon)} \ge R_0$ were true for some $P > 0$, because of $\mathrm{d} \Phi / \mathrm{d} R < 0$
+%
+\begin{equation}
+    R_0 = \frac{1}{\varepsilon} \Phi(R_0) + \frac{P^2}{R_0}
+        \ge \frac{1}{\varepsilon} \Phi(R_0^{(0,\varepsilon)}) + \frac{P^2}{R_0}
+        = R_0^{(0,\varepsilon)} +  \frac{P^2}{R_0}
+\end{equation}
+%
+for that $P$.
+Since $P^2 / R_0 > 0$, this would mean that $R_0 > R_0^{(0,\varepsilon)}$ which contradicts the assumption $R_0^{(0,\varepsilon)} \ge R_0$.
+Consequently, $R_0^{(0,\varepsilon)}$ must be smaller than $R_0$ for all $P > 0$.
+So when $R_0^{(0,\varepsilon)}$ is used as an initial condition for the Newton iteration, the iteration is guaranteed to converge.
+
+Now, as we can use both $R_0^{(0,P)}$ and $R_0^{(0,\varepsilon)}$ as initial conditions, we can choose the larger one
+%
+\begin{equation}
+    \label{eq:sn_apsis_ic}
+    R_0^{(0)} = \max( R_0^{(0,P)}, R_0^{(0,\varepsilon)} ) ,
+\end{equation}
+%
+and we will do so as it is closer to the final solution $R_0$ than the smaller one.
+\Cref{eq:sn_apsis_ic} can then be used as the initial condition in a Newton iteration
+%
+\begin{equation}
+    \label{eq:sn_apsis_newton}
+    R_0^{(i+1)} = R_0^{(i)} - f(R_0^{(i)})/f'(R_0^{(i)})
+\end{equation}
+%
+It guarantees convergence of the iterations for screening functions with $\Phi'(R) < 0$ and $\Phi''(r) > 0$.
+
+\subsubsection{Convergence}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+\Cref{fig:iter-apsis} shows the number of iterations required to reach a relative accuracy of \(10^{-3}\) between the last two calculated values of \(R_0\) for the universal ZBL and the NLHlin potential.
+Usually this means that the last value is accurate to \(10^{-6}\), assuming quadratic convergence has been reached.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[scale=0.41]{iter_apsis_zbl.pdf} ~~
+    \includegraphics[scale=0.41]{iter_apsis_nlhlin_As_Si.pdf}
+    \caption{Number of iterations required to reach a relative accuracy of \(10^{-3}\) in \(R_0\) as a function of energy and impact parameter.
+    Left: Universal ZBL potential.
+    Right: NLHlin potential for As-Si using \cref{eq:sn_aNLH} as the screening length.
+    The reduced impact parameters $P$ have been chosen as to cover the same range of unscaled impact parameters $p$.
+    }
+    \label{fig:iter-apsis}
+\end{figure}
+
+For combination of low energies and small impact parameters as well as for combinations of high energies and large impact parameters only 1-2 iterations are necessary. This is because in these cases either $R_0^{(0,P)}$ or $R_0^{(0,\varepsilon)}$ already is a good approximation to $R_0$. In other combination of $\varepsilon$ and $P$ up to 4 iterations are necessary.

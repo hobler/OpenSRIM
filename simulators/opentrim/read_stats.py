@@ -141,8 +141,10 @@ def _read_histogram_binary_2d(path, expected_nvar=None, expected_nx=None, expect
         if shape.size != 3:
             raise ValueError(f"Invalid binary histogram shape header in {path}")
         n_species, nx, ny = [int(value) for value in shape]
+        x_values = np.fromfile(f, dtype="<f8", count=nx)
+        y_values = np.fromfile(f, dtype="<f8", count=ny)
         species_labels = np.fromfile(f, dtype="S32", count=n_species)
-        tables = np.fromfile(f, dtype="<f8")
+        counts = np.fromfile(f, dtype="<f8")
 
     if int(version[0]) != 0x00fa:
         raise ValueError(f"Unsupported binary histogram version in {path}: {int(version[0])}")
@@ -154,16 +156,16 @@ def _read_histogram_binary_2d(path, expected_nvar=None, expected_nx=None, expect
         raise ValueError(
             f"Invalid binary histogram shape in {path}: expected {(expected_nx, expected_ny)}, got {(nx, ny)}"
         )
-    if species_labels.size != n_species:
-        raise ValueError(f"Invalid binary histogram species metadata in {path}")
-    expected_size = n_species * (nx + 1) * (ny + 1)
-    if tables.size != expected_size:
+    if species_labels.size != n_species or x_values.size != nx or y_values.size != ny:
+        raise ValueError(f"Invalid binary histogram metadata in {path}")
+    expected_size = n_species * nx * ny
+    if counts.size != expected_size:
         raise ValueError(
-            f"Invalid binary histogram payload size in {path}: expected {expected_size}, got {tables.size}"
+            f"Invalid binary histogram payload size in {path}: expected {expected_size}, got {counts.size}"
         )
-    tables = tables.reshape(n_species, nx + 1, ny + 1)
+    counts = counts.reshape(n_species, nx, ny)
     labels = [label.rstrip(b"\x00").decode("utf-8") for label in species_labels]
-    return tables, labels
+    return counts, x_values, y_values, labels
 
 
 def _build_stats_2d_dtype(configs_2d):
@@ -173,7 +175,9 @@ def _build_stats_2d_dtype(configs_2d):
             continue
         measure_dtype = np.dtype(
             [
-                ("hist", np.float64, (cfg["nvar"], cfg["x_nbins"] + 1, cfg["y_nbins"] + 1)),
+                ("x_values", np.float64, (cfg["x_nbins"],)),
+                ("y_values", np.float64, (cfg["y_nbins"],)),
+                ("hist", np.float64, (cfg["nvar"], cfg["x_nbins"], cfg["y_nbins"])),
             ],
             align=True,
         )
@@ -193,8 +197,6 @@ def _measure_label_2d(measure_key):
 def _read_stats_2d(base_path, configs_2d):
     stats_2d = np.zeros(1, dtype=_build_stats_2d_dtype(configs_2d))
     labels_2d = {
-        "x_values": {"pos": [1, 0], "type": "column"},
-        "y_values": {"pos": [0, 1], "type": "row"},
         "metrics": {},
     }
 
@@ -206,13 +208,15 @@ def _read_stats_2d(base_path, configs_2d):
             raise FileNotFoundError(
                 f"Missing binary histogram file for active 2D metric '{key}': {path}"
             )
-        tables, species = _read_histogram_binary_2d(
+        counts, x_values, y_values, species = _read_histogram_binary_2d(
             path, cfg["nvar"], cfg["x_nbins"], cfg["y_nbins"]
         )
-        stats_2d[0][key]["hist"] = tables
+        stats_2d[0][key]["x_values"] = x_values
+        stats_2d[0][key]["y_values"] = y_values
+        stats_2d[0][key]["hist"] = counts
         labels_2d["metrics"][_measure_label_2d(key)] = {
             "hist": {
-                "shape": list(tables.shape),
+                "shape": list(counts.shape),
                 "species": species,
             }
         }

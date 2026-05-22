@@ -1018,18 +1018,93 @@ class KoralPage(QWidget):
             "solver": self._koral_solver_settings,
         }
 
+    # The target density value is stored canonically as an atomic number
+    # density in atoms/cm³; the UI may display it in a different unit.
+    _AMU_G = 1.66053906660e-24
+
+    def _target_avg_mass_amu(self) -> float:
+        """Stoichiometry-weighted average atomic mass of the target (amu)."""
+        entries = getattr(self, "element_entries", [])
+        total_ratio = sum(float(e.get("ratio", 0.0) or 0.0) for e in entries)
+        if total_ratio <= 0.0:
+            return 0.0
+        avg = 0.0
+        for e in entries:
+            ratio = float(e.get("ratio", 0.0) or 0.0)
+            override = e.get("mass_override")
+            mass = 0.0
+            if override is not None:
+                try:
+                    mass = float(override)
+                except (ValueError, TypeError):
+                    mass = 0.0
+            if mass <= 0.0:
+                mass = float((e.get("element") or {}).get("atomic_mass", 0.0) or 0.0)
+            avg += (ratio / total_ratio) * mass
+        return avg
+
+    def _density_to_canonical(self, value: float, unit: str) -> float:
+        """Convert a displayed density value (in `unit`) to atoms/cm³."""
+        if unit == "atoms/cm³":
+            return value
+        if unit == "atoms/m³":
+            return value * 1.0e-6
+        denom = self._target_avg_mass_amu() * self._AMU_G
+        if denom <= 0.0:
+            return 0.0
+        if unit == "g/cm³":
+            return value / denom
+        if unit == "kg/m³":
+            return value / 1000.0 / denom
+        return value
+
+    def _density_from_canonical(self, value: float, unit: str) -> float:
+        """Convert an atoms/cm³ value to the displayed `unit`."""
+        if unit == "atoms/cm³":
+            return value
+        if unit == "atoms/m³":
+            return value * 1.0e6
+        g_cm3 = value * self._target_avg_mass_amu() * self._AMU_G
+        if unit == "g/cm³":
+            return g_cm3
+        if unit == "kg/m³":
+            return g_cm3 * 1000.0
+        return value
+
+    def _on_density_unit_changed(self) -> None:
+        """Re-display the target density value in the newly selected unit."""
+        if not hasattr(self, "cmb_density_unit"):
+            return
+        new_unit = self.cmb_density_unit.currentText()
+        old_unit = getattr(self, "_density_unit", new_unit)
+        if new_unit == old_unit:
+            return
+        try:
+            val = float(self.spin_target_density.text())
+        except (ValueError, TypeError):
+            val = 0.0
+        canonical = self._density_to_canonical(val, old_unit)
+        self._density_unit = new_unit
+        self.spin_target_density.setText(
+            f"{self._density_from_canonical(canonical, new_unit):.4e}"
+        )
+
     def _get_target_density(self) -> float:
+        """Return the target density in atoms/cm³, regardless of display unit."""
         if not hasattr(self, "spin_target_density"):
             return 0.0
         try:
-            return float(self.spin_target_density.text())
+            val = float(self.spin_target_density.text())
         except (ValueError, TypeError):
             return 0.0
+        return self._density_to_canonical(val, getattr(self, "_density_unit", "atoms/cm³"))
 
     def _set_target_density(self, value: float) -> None:
+        """Set the target density (given in atoms/cm³) in the current display unit."""
         if not hasattr(self, "spin_target_density"):
             return
-        self.spin_target_density.setText(f"{value:.4e}")
+        disp = self._density_from_canonical(value, getattr(self, "_density_unit", "atoms/cm³"))
+        self.spin_target_density.setText(f"{disp:.4e}")
 
     def _convert_stopping(self, value_J_per_m: float, unit: str, *, number_density_atoms_cm3: float, density_g_cm3: float) -> float:
         """Convert stopping from SI base (J/m) to the selected unit."""
@@ -2182,6 +2257,8 @@ class KoralPage(QWidget):
             output["compound_corr"] = float(self.spin_compound_corr.value())
         if hasattr(self, "spin_target_density"):
             output["target_density"] = self._get_target_density()
+        if hasattr(self, "cmb_density_unit"):
+            output["target_density_unit"] = self.cmb_density_unit.currentText()
         if hasattr(self, "chk_gas"):
             output["gas"] = bool(self.chk_gas.isChecked())
         if hasattr(self, "sw_koral_mode"):
@@ -2325,6 +2402,12 @@ class KoralPage(QWidget):
                     self.spin_compound_corr.setValue(float(output.get("compound_corr", self.spin_compound_corr.value())))
                 except (TypeError, ValueError):
                     pass
+
+            if hasattr(self, "cmb_density_unit") and "target_density_unit" in output:
+                idx = self.cmb_density_unit.findText(str(output["target_density_unit"]))
+                if idx >= 0:
+                    self.cmb_density_unit.setCurrentIndex(idx)
+                    self._density_unit = self.cmb_density_unit.currentText()
 
             if hasattr(self, "spin_target_density") and "target_density" in output:
                 try:
@@ -2568,7 +2651,7 @@ class KoralPage(QWidget):
         self.elem_table.itemChanged.connect(self._handle_element_item_changed)
         self.elem_table.cellDoubleClicked.connect(self._handle_element_cell_double_clicked)
 
-        # Compound correction + target density on one row (50% each); gas below.
+        # Compound correction + gas on one row (50% each); target density below.
         params_box = QWidget(box)
         params_v = QVBoxLayout(params_box)
         params_v.setContentsMargins(0, 0, 0, 0)
@@ -2594,30 +2677,44 @@ class KoralPage(QWidget):
         cc_l.addWidget(QLabel("Compound correction"))
         cc_l.addWidget(self.spin_compound_corr, 1)
 
-        # --- target density (right half) ---
+        # --- gas (right half) ---
+        self.chk_gas = QCheckBox("Gas")
+        self.chk_gas.setToolTip("Treat the target material as a gas.")
+        gas_holder = QWidget()
+        gas_l = QHBoxLayout(gas_holder)
+        gas_l.setContentsMargins(0, 0, 0, 0)
+        gas_l.setSpacing(4)
+        gas_l.addWidget(self.chk_gas)
+        gas_l.addStretch(1)
+
+        inputs_row.addWidget(cc_holder, 1)
+        inputs_row.addWidget(gas_holder, 1)
+        params_v.addLayout(inputs_row)
+
+        # --- target density (own row, with selectable unit) ---
         self.spin_target_density = QLineEdit()
         self.spin_target_density.setText("0.0")
         self.spin_target_density.textEdited.connect(lambda: setattr(self, "_density_user_override", True))
         self.spin_target_density.setToolTip(
-            "Weighted atomic number density of the target compound.\n"
+            "Weighted density of the target compound.\n"
             "Auto-filled from the material database when elements are added.\n"
             "You can override this value manually.\n"
             "Supports scientific notation, e.g. 5.0e22."
         )
+        self.cmb_density_unit = QComboBox()
+        self.cmb_density_unit.addItems(["atoms/cm³", "g/cm³", "atoms/m³", "kg/m³"])
+        self._density_unit = "atoms/cm³"
+        self.cmb_density_unit.setToolTip("Unit for the target density value.")
+        self.cmb_density_unit.currentIndexChanged.connect(self._on_density_unit_changed)
+
         td_holder = QWidget()
         td_l = QHBoxLayout(td_holder)
         td_l.setContentsMargins(0, 0, 0, 0)
         td_l.setSpacing(4)
-        td_l.addWidget(QLabel("Target Density (atoms/cm³)"))
+        td_l.addWidget(QLabel("Target Density"))
         td_l.addWidget(self.spin_target_density, 1)
-
-        inputs_row.addWidget(cc_holder, 1)
-        inputs_row.addWidget(td_holder, 1)
-        params_v.addLayout(inputs_row)
-
-        self.chk_gas = QCheckBox("Gas")
-        self.chk_gas.setToolTip("Treat the target material as a gas.")
-        params_v.addWidget(self.chk_gas)
+        td_l.addWidget(self.cmb_density_unit)
+        params_v.addWidget(td_holder)
 
         v.addWidget(params_box)
 

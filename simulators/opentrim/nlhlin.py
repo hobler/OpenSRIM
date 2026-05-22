@@ -10,9 +10,11 @@ Moreover, there are plotting functions for testing and visualization:
 import os
 import sys
 import numpy as np
+from scipy.integrate import quad
 from scipy.optimize import brentq
 from numba import jit
 from numba.core.extending import register_jitable
+from . import config
 
 
 def get_coefs(Z1, Z2):
@@ -34,7 +36,8 @@ def get_coefs(Z1, Z2):
     if Z1 > Z2:
         Z1, Z2 = Z2, Z1
 
-    fname = os.path.join(os.path.dirname(__file__), "dmol_coeffs_rmax.dat")
+    #fname = os.path.join(os.path.dirname(__file__), "dmol_coeffs_rmax.dat")
+    fname = os.path.join(os.path.dirname(__file__), "NLHlin_3eV.dat")
     if not os.path.exists(fname):
         print(f"get_nlhlin_coefs: Coefficients file {fname} not found")
         sys.exit()
@@ -104,7 +107,42 @@ def get_coefs(Z1, Z2):
     return rnorm, a, b, c, d, r34, rmax, k
 
 
-@register_jitable
+def impulse_integral(p, pot_coefs):
+    """Evaluate the integral that appears in the impulse approximation.
+    
+    This integral is defined as one half of the integral of 
+    
+        Phi(r) - r*Phi'(r)
+        ------------------ * p
+                r^3
+
+    along a straight line which passes by the center of the potential at 
+    a distance p.
+
+    The calculation uses quad from SciPy for numerical integration.
+    
+    Parameters:
+        p (float): impact parameter (RNORM)
+
+    Returns:
+        (float): value of the integral
+    """
+    if p >= pot_coefs.rmax:
+        return 0.0
+    
+    def integrand(x, p):
+        r = np.sqrt(x**2 + p**2)
+        screen, dscreen = screen_fun(r, pot_coefs)
+        return (screen[0] - r*dscreen[0]) * p / r**3
+    
+    xmax = np.sqrt(pot_coefs.rmax**2 - p**2) if p < pot_coefs.rmax else 0
+    integral, abserr = quad(integrand, 0, xmax, args=(p,))
+    #print(p, xmax, pot_coefs.rmax, integral, abserr)
+    
+    return integral
+
+
+@register_jitable(debug=config.DEBUG)
 def screen_fun(r, pot_coefs):
     """Calculate the NLHlin screening function and its derivative.
     

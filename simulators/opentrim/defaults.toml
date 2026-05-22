@@ -63,11 +63,13 @@ gas                 = false     # treat layer as gas
 [models]
 # -----------------------------------------------------------------------------
 
-potential          = "ZBL"       # interatomic potential for nuclear scattering
-electronic_stopping = "SRIM" # model for electronic stopping power; "Lindhard" or "SRIM"
+#potential          = "ZBL"       # "ZBL" or "NLHlin"; interatomic potential
+potential          = "NLHlin"
+electronic_stopping = "SRIM"  # "Lindhard" or "SRIM"; electronic stopping power
 
 [models.scattering_integrals]
-algorithm = "magic"  # "magic" or "Gauss-Legendre"
+#algorithm = "magic"  # "magic" or "Legendre"
+algorithm = "Legendre"
 n_absc    = 4        # number of abscissas (Gauss-Legendre only)
 
 [models.lindhard_correction]
@@ -88,6 +90,21 @@ collisions    = false   # record collision points
 stopped       = false   # record stopping points
 backscattered = false   # record backscattered projectiles
 transmitted   = false   # record transmitted projectiles
+
+[output.distribution_2d.ion_recoils]
+score = true
+nbins = [60, 60]
+limits = [[0.0, 4000.0], [0.0, 4000.0]]
+
+[output.distribution_2d.nuclear_energy_deposition]
+score = true
+nbins = [60, 60]
+limits = [[0.0, 4000.0], [0.0, 4000.0]]
+
+[output.distribution_2d.electronic_energy_deposition]
+score = true
+nbins = [60, 60]
+limits = [[0.0, 4000.0], [0.0, 4000.0]]
 
 # --- Depth distributions ---
 [output.depth_distribution.ion_recoils]

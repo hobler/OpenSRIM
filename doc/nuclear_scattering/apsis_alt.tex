@@ -1,0 +1,124 @@
+\subsubsection{Obtaining an initial condition}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+An alternative approach to finding an initial solution of \cref{eq:sn_apsis_eq},
+%
+\begin{equation}
+    \label{eq:sn_apsis_alt_eq}
+    f(R) = R - \frac{1}{\varepsilon} \Phi(R) - \frac{P^2}{R} = 0.
+\end{equation}
+%
+is to approximate $\Phi(R)$ by a piecewise function $\phi(R)$ which is always larger than or equal to $\Phi(R)$, and which allows \cref{eq:sn_apsis_alt_eq}.
+Such a function is
+%
+\begin{equation}
+    \label{eq:sn_apsis_alt_approx}
+    \phi(R) =
+        \begin{cases}
+            1 - k_1 R                 &  \text{for $0 \le R \le R_{12}$} \\
+            k_2 / R                   &  \text{for $R_{12} \le R \le R_{23}$} \\
+            k_3 / R^3                 &  \text{for $R_{23} \le R \le R_{34}$} \\
+            k_4 (R_\mathrm{max} - R)  &  \text{for $R_{34} \le R$} \\
+        \end{cases}
+\end{equation}
+%
+where the last case is used only with a finite maximum range $R_\mathrm{max}$, and $R_{12}$, $R_{23}$, and $R_{34}$ are chosen such that the function is continuous and its first derivative is continuous at $R_{12}$ and $R_{34}$:
+%
+\begin{equation}
+    \label{eq:sn_apsis_alt_join}
+    k_1 = \frac{ 1 }{ 4 k_2 },
+    \quad R_{12} = \sqrt{ \frac{ k_2 }{ k_1 }},
+    \quad R_{23} = \sqrt{ \frac{ k_3 }{ k_2 }},
+    \quad R_{34} = \frac{3}{4} R_\mathrm{max},
+    \quad k_4 = \frac{ 3 k_3 }{ R_{34}^4 }
+\end{equation}
+%
+The constants $k_2$ and $k_3$ are chosen such that the function touches $\Phi(R)$, i.e., $\phi(R) = \Phi(R)$ and $\phi'(R) = \Phi'(R)$.
+The touch points and coefficients are obtained by solving the equations
+%
+\begin{equation}
+    \Phi(R_2) + R_2 \Phi'(R_2) = 0, \qquad k_2 = R_2 \Phi(R_2)
+\end{equation}
+%
+and
+%
+\begin{equation}
+    \Phi(R_3) + \frac{1}{3} R_3 \Phi'(R_3) = 0, \qquad k_3 = R_3^3 \Phi(R_3)
+\end{equation}
+
+In order to approximately solve \cref{eq:sn_apsis_alt_eq}, we replace $\Phi(R)$ by $\phi(R)$ for each of the three intervals and obtain
+%
+\begin{equation}
+    \label{eq:sn_apsis_alt_sol_R_tmp}
+    R_0^{(0)} =
+        \begin{cases}
+            \displaystyle
+            \frac{ 1 + \sqrt{ 1 + 4 (\varepsilon + k_1 ) \varepsilon P^2 }}{
+                2 (\varepsilon + k_1 )}
+            & \text{for } 0 \le R \le R_{12} \\[10pt]
+            \sqrt{ P^2 + \frac{ k_2 }{ \varepsilon} }
+            & \text{for } R_{12} \le R \le R_{23} \\[10pt]
+            \sqrt{ \frac{ P^2 }{ 2 } + \sqrt{ \frac{ P^4 }{ 4 } + \frac{ k_3 }{ \varepsilon }}}
+            & \text{for } R_{23} \le R \le R_{34} \\[10pt]
+            \displaystyle
+            \frac{ k_4 R_\mathrm{max}
+                   + \sqrt{ (k_4 R_\mathrm{max})^2
+                             + 4 (\varepsilon + k_4 ) \varepsilon P^2 }}{
+            2 (\varepsilon + k_4 )}
+            &  \text{for } R_{34} \le R \\
+        \end{cases}
+\end{equation}
+%
+Inserting the solutions $R_0^{(0)}$ into the conditions for $R$ and using \cref{eq:sn_apsis_alt_join}, one can rewrite the conditions in terms of $P^2 + k_2 / \varepsilon$, so that we finally obtain
+\begin{equation}
+    \label{eq:sn_apsis_alt_sol_R}
+    R_0^{(0)} =
+    \begin{cases}
+        \displaystyle
+        \frac{ 1 + \sqrt{ 1 + 4 (\varepsilon + k_1 ) \varepsilon P^2 }}{
+            2 (\varepsilon + k_1 )}
+        & \text{for } P^2 \le \frac{ k_2 }{ k_1 } - \frac{ k_2 }{ \varepsilon } \\[10pt]
+        \sqrt{ P^2 + \frac{ k_2 }{ \varepsilon} }
+        & \text{for } \frac{ k_2 }{ k_1 } - \frac{ k_2 }{ \varepsilon } \le P^2
+            \le \frac{ k_3 }{ k_2 } - \frac{ k_2 }{ \varepsilon } \\[10pt]
+        \sqrt{ \frac{ P^2 }{ 2 } + \sqrt{ \frac{ P^4 }{ 4 } + \frac{ k_3 }{ \varepsilon }}}
+        & \text{for } \frac{ k_3 }{ k_2 } - \frac{ k_2 }{ \varepsilon } \le P^2
+            \le R_{34}^2 - \frac{ k_3 }{ \varepsilon R_{34}^2 }\\[10pt]
+            \displaystyle
+        \frac{ k_4 R_\mathrm{max}
+               + \sqrt{ (k_4 R_\mathrm{max})^2
+                        + 4 (\varepsilon + k_4 ) \varepsilon P^2 } }{
+               2 (\varepsilon + k_4 )}
+        &  \text{for } R_{34}^2 - \frac{ k_3 }{ \varepsilon R_{34}^2 } \le P^2 \\
+    \end{cases}
+\end{equation}
+
+The case $r > R_{34}$ cannot be used for screening functions with infinite range.
+Instead, the procedure implemented in TRIM85 \cite{ZBL85} can be used, which solves the equation \cref{eq:sn_apsis_alt_eq} for the head-on case ($P=0$) for an approximate screening function $\Phi(R) = \exp(-0.37 R)$ by fix-point iteration:
+%
+\begin{equation}
+    R = \frac{1}{\varepsilon} \exp(-0.37 R)
+\end{equation}
+%
+Starting with $R = P$, up to two iterations are done, and the algorithm falls back to $R = P$ if $R$ gets smaller than $P$ during iteration.
+If the approximation to the apsis determined in this way is smaller than the touch point of $k_3/R^3$, the remaining cases of \cref{eq:sn_apsis_alt_sol_R} can be used.
+
+\subsubsection{Convergence}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[scale=0.41]{ZBLuniv_iter_apsis_phiapprox.pdf} ~~
+    \includegraphics[scale=0.41]{NLHlin_iter_apsis_phiapprox.pdf}
+    \caption{Number of iterations required to reach a relative accuracy of \(10^{-3}\) in \(R_0\) as a function of energy and impact parameter.
+    Left: Universal ZBL potential.
+    Right: NLHlin potential for As-Si using \cref{eq:sn_aNLH} as the screening length.
+    The reduced impact parameters $P$ have been chosen as to cover the same range of unscaled impact parameters $p$.
+    }
+    \label{fig:iter-apsis_phiapprox}
+\end{figure}
+%
+\Cref{fig:iter-apsis_phiapprox} shows the number of iterations required to reach a relative accuracy of \(10^{-3}\) between the last two calculated values of \(R_0\) for the universal ZBL and the NLHlin potential, using the approximations to $\Phi(R)$ described in this section for obtaining an initial condition.
+Usually this means that the last value is accurate to \(10^{-6}\), assuming quadratic convergence has been reached.
+
+From \cref{fig:iter-apsis_phiapprox} it is apparent that the NLHlin potential shows better convergence behavior than the ZBL potential at low projectile energies, while the convergence is similar for higher energies.

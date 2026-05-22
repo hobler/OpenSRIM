@@ -14,9 +14,10 @@ from .scatter import scatter
 from .estop import eloss
 from .target import get_layer_index, is_inside_target
 from .stats import score_eed, score_ned, score_start, score_end
+from . import config
 
 
-@jit
+@jit(debug=config.DEBUG)
 def cascade(initial_proj, params, stats):
     """Simulate one projectile trajectory.
     
@@ -50,9 +51,11 @@ def cascade(initial_proj, params, stats):
     
         # set recoil parameters (recoil modified in-place)
         free_path, p, dirp = select_recoil(proj, recoil, params)
+        free_path += proj["dffp_new"]
 
         # step projectile forward considering electronic energy loss
-        dee = eloss(proj, free_path, params.estop, params.materials)
+        dee = eloss(proj, free_path+proj["dffp_old"], params.estop, 
+                    params.materials)
         proj["e"] -= dee
         proj["pos"] += free_path * proj["dir"]
         proj["ilayer"] = get_layer_index(proj["pos"], params.geometry)

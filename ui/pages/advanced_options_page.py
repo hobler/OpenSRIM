@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QLabel,
+    QLineEdit,
     QScrollArea,
     QDoubleSpinBox,
     QSpinBox,
@@ -147,6 +148,8 @@ class AdvancedOptionsPage(QWidget):
     columns_changed = pyqtSignal(int)        # 0=auto, 1, 2, 3
     borders_visibility_changed = pyqtSignal(bool)
     plot_font_size_changed = pyqtSignal(float)
+    koral_solver_changed = pyqtSignal(dict)
+    histogram_settings_changed = pyqtSignal(dict)
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -237,6 +240,93 @@ class AdvancedOptionsPage(QWidget):
         electronic_opts_l.addWidget(QLabel("Electronic stopping options (placeholder)"))
         electronic_opts_l.addStretch(1)
 
+        # --- KORAL Solver content ---
+        koral_solver = QWidget(content)
+        koral_solver_l = QVBoxLayout(koral_solver)
+        koral_solver_l.setContentsMargins(0, 0, 0, 0)
+        koral_solver_l.setSpacing(8)
+
+        iter_row = QHBoxLayout()
+        iter_row.addWidget(QLabel("Iterations:"))
+        self.spin_koral_nr_iter = QSpinBox()
+        self.spin_koral_nr_iter.setRange(1, 20)
+        self.spin_koral_nr_iter.setValue(1)
+        self.spin_koral_nr_iter.setToolTip("Number of KORAL iterations")
+        iter_row.addWidget(self.spin_koral_nr_iter)
+        iter_row.addStretch(1)
+        koral_solver_l.addLayout(iter_row)
+
+        method_row = QHBoxLayout()
+        method_row.addWidget(QLabel("Integration Method:"))
+        self.cmb_koral_method = QComboBox()
+        self.cmb_koral_method.addItems(["LSODA", "RK45", "RK23", "DOP853", "Radau", "BDF"])
+        self.cmb_koral_method.setCurrentIndex(0)
+        self.cmb_koral_method.setToolTip("ODE solver method (SciPy solve_ivp)")
+        method_row.addWidget(self.cmb_koral_method)
+        method_row.addStretch(1)
+        koral_solver_l.addLayout(method_row)
+
+        rtol_row = QHBoxLayout()
+        rtol_row.addWidget(QLabel("Rel. Tolerance (rtol):"))
+        self.le_koral_rtol = QLineEdit("1e-6")
+        self.le_koral_rtol.setToolTip("Relative integration tolerance (e.g. 1e-6)")
+        rtol_row.addWidget(self.le_koral_rtol)
+        koral_solver_l.addLayout(rtol_row)
+
+        atol_row = QHBoxLayout()
+        atol_row.addWidget(QLabel("Abs. Tolerance (atol):"))
+        self.le_koral_atol = QLineEdit("1e-6")
+        self.le_koral_atol.setToolTip("Absolute integration tolerance (e.g. 1e-6)")
+        atol_row.addWidget(self.le_koral_atol)
+        koral_solver_l.addLayout(atol_row)
+
+        koral_solver_l.addStretch(1)
+
+        # --- Output histogram settings ---
+        hist = QWidget(content)
+        hist_l = QVBoxLayout(hist)
+        hist_l.setContentsMargins(0, 0, 0, 0)
+        hist_l.setSpacing(8)
+
+        self.chk_hist_override = QCheckBox("Override histogram limits")
+        self.chk_hist_override.setChecked(False)
+        hist_l.addWidget(self.chk_hist_override)
+
+        self.spin_hist_nbins = QSpinBox()
+        self.spin_hist_nbins.setRange(10, 10000)
+        self.spin_hist_nbins.setSingleStep(10)
+        self.spin_hist_nbins.setValue(120)
+        row_nbins = QHBoxLayout()
+        row_nbins.addWidget(QLabel("Bins:"))
+        row_nbins.addWidget(self.spin_hist_nbins)
+        row_nbins.addStretch(1)
+        hist_l.addLayout(row_nbins)
+
+        def _range_row(label: str, default_min: float, default_max: float):
+            row = QHBoxLayout()
+            row.addWidget(QLabel(label))
+            s_min = QDoubleSpinBox()
+            s_min.setRange(-1e9, 1e9)
+            s_min.setDecimals(4)
+            s_min.setValue(default_min)
+            s_max = QDoubleSpinBox()
+            s_max.setRange(-1e9, 1e9)
+            s_max.setDecimals(4)
+            s_max.setValue(default_max)
+            row.addWidget(QLabel("Min"))
+            row.addWidget(s_min)
+            row.addWidget(QLabel("Max"))
+            row.addWidget(s_max)
+            row.addStretch(1)
+            hist_l.addLayout(row)
+            return s_min, s_max
+
+        self.spin_depth_min, self.spin_depth_max = _range_row("Depth (Å):", 0.0, 4000.0)
+        self.spin_lateral_min, self.spin_lateral_max = _range_row("Lateral (Å):", -2000.0, 2000.0)
+        self.spin_energy_min, self.spin_energy_max = _range_row("Energy (keV):", 0.0, 1000.0)
+        self.spin_angle_min, self.spin_angle_max = _range_row("Angle (deg):", -90.0, 90.0)
+        hist_l.addStretch(1)
+
         # --- Display Settings content (MC Results plots) ---
         display = QWidget(content)
         display_l = QVBoxLayout(display)
@@ -280,6 +370,8 @@ class AdvancedOptionsPage(QWidget):
         self._acc_cascade = AccordionItem("Cascade Options", cascade_opts, expanded=False, parent=content)
         self._acc_nuclear = AccordionItem("Nuclear Stopping", nuclear_opts, expanded=False, parent=content)
         self._acc_electronic = AccordionItem("Electronic Stopping", electronic_opts, expanded=False, parent=content)
+        self._acc_koral_solver = AccordionItem("KORAL Solver", koral_solver, expanded=False, parent=content)
+        self._acc_hist = AccordionItem("Output Histograms", hist, expanded=False, parent=content)
         self._acc_display = AccordionItem("Display Settings", display, expanded=False, parent=content)
 
         self._accordion_by_id = {
@@ -289,13 +381,15 @@ class AdvancedOptionsPage(QWidget):
             "cascade_options": self._acc_cascade,
             "nuclear_stopping": self._acc_nuclear,
             "electronic_stopping": self._acc_electronic,
+            "koral_solver": self._acc_koral_solver,
+            "histogram_settings": self._acc_hist,
             "display_settings": self._acc_display,
         }
 
         self._all_accordions = (
             self._acc_ion, self._acc_atoms, self._acc_model,
             self._acc_cascade, self._acc_nuclear, self._acc_electronic,
-            self._acc_display,
+            self._acc_koral_solver, self._acc_hist, self._acc_display,
         )
         for item in self._all_accordions:
             item.toggled.connect(lambda on, src=item: self._handle_item_toggled(src, on))
@@ -306,6 +400,8 @@ class AdvancedOptionsPage(QWidget):
         content_l.addWidget(self._acc_cascade)
         content_l.addWidget(self._acc_nuclear)
         content_l.addWidget(self._acc_electronic)
+        content_l.addWidget(self._acc_koral_solver)
+        content_l.addWidget(self._acc_hist)
         content_l.addWidget(self._acc_display)
         content_l.addStretch(1)
         content.setLayout(content_l)
@@ -316,6 +412,23 @@ class AdvancedOptionsPage(QWidget):
         self.chk_latt.toggled.connect(self._emit_atoms_visibility)
         self.chk_surf.toggled.connect(self._emit_atoms_visibility)
         self.spin_mc_ion_angle.valueChanged.connect(self._emit_mc_ion_angle)
+        self.spin_koral_nr_iter.valueChanged.connect(self._emit_koral_solver)
+        self.cmb_koral_method.currentIndexChanged.connect(self._emit_koral_solver)
+        self.le_koral_rtol.textChanged.connect(self._emit_koral_solver)
+        self.le_koral_atol.textChanged.connect(self._emit_koral_solver)
+        self.chk_hist_override.toggled.connect(self._emit_histogram_settings)
+        self.spin_hist_nbins.valueChanged.connect(self._emit_histogram_settings)
+        for spin in (
+            self.spin_depth_min,
+            self.spin_depth_max,
+            self.spin_lateral_min,
+            self.spin_lateral_max,
+            self.spin_energy_min,
+            self.spin_energy_max,
+            self.spin_angle_min,
+            self.spin_angle_max,
+        ):
+            spin.valueChanged.connect(self._emit_histogram_settings)
 
     def _handle_item_toggled(self, source: AccordionItem, expanded: bool) -> None:
         if not expanded:
@@ -334,6 +447,26 @@ class AdvancedOptionsPage(QWidget):
     def _emit_mc_ion_angle(self, value: float) -> None:
         self.mc_ion_angle_changed.emit(float(value))
 
+    def _emit_koral_solver(self, *_args) -> None:
+        self.koral_solver_changed.emit(self._collect_koral_solver())
+
+    def _collect_histogram_settings(self) -> dict:
+        return {
+            "enabled": bool(self.chk_hist_override.isChecked()),
+            "nbins": int(self.spin_hist_nbins.value()),
+            "depth_min": float(self.spin_depth_min.value()),
+            "depth_max": float(self.spin_depth_max.value()),
+            "lateral_min": float(self.spin_lateral_min.value()),
+            "lateral_max": float(self.spin_lateral_max.value()),
+            "energy_min": float(self.spin_energy_min.value()),
+            "energy_max": float(self.spin_energy_max.value()),
+            "angle_min": float(self.spin_angle_min.value()),
+            "angle_max": float(self.spin_angle_max.value()),
+        }
+
+    def _emit_histogram_settings(self, *_args) -> None:
+        self.histogram_settings_changed.emit(self._collect_histogram_settings())
+
     # Backwards-compat helper: treat set_ion_angle as the MC angle.
     def set_ion_angle(self, value: float) -> None:
         self.set_mc_ion_angle(value)
@@ -344,6 +477,14 @@ class AdvancedOptionsPage(QWidget):
             self.spin_mc_ion_angle.setValue(float(value))
         finally:
             self.spin_mc_ion_angle.blockSignals(False)
+
+    def _collect_koral_solver(self) -> dict:
+        return {
+            "nr_iterations": int(self.spin_koral_nr_iter.value()),
+            "integration_method": str(self.cmb_koral_method.currentText()),
+            "rtol": str(self.le_koral_rtol.text()),
+            "atol": str(self.le_koral_atol.text()),
+        }
 
     def collect_config(self) -> dict:
         return {
@@ -358,6 +499,8 @@ class AdvancedOptionsPage(QWidget):
             "model_selection": {
                 "nbins": int(self.spin_nbins.value()),
             },
+            "koral_solver": self._collect_koral_solver(),
+            "histogram_settings": self._collect_histogram_settings(),
             "display_settings": {
                 "show_toolbars": bool(self.chk_toolbars.isChecked()),
                 "show_borders": bool(self.chk_borders.isChecked()),
@@ -399,6 +542,46 @@ class AdvancedOptionsPage(QWidget):
                 self.spin_nbins.setValue(int(model_sel["nbins"]))
             except (TypeError, ValueError):
                 pass
+
+        ks = payload.get("koral_solver") or {}
+        if isinstance(ks, dict):
+            if "nr_iterations" in ks:
+                try:
+                    self.spin_koral_nr_iter.setValue(int(ks["nr_iterations"]))
+                except (TypeError, ValueError):
+                    pass
+            if "integration_method" in ks:
+                idx = self.cmb_koral_method.findText(str(ks["integration_method"]))
+                if idx >= 0:
+                    self.cmb_koral_method.setCurrentIndex(idx)
+            if "rtol" in ks:
+                self.le_koral_rtol.setText(str(ks["rtol"]))
+            if "atol" in ks:
+                self.le_koral_atol.setText(str(ks["atol"]))
+
+        hist = payload.get("histogram_settings") or {}
+        if isinstance(hist, dict):
+            self.chk_hist_override.setChecked(bool(hist.get("enabled", self.chk_hist_override.isChecked())))
+            if "nbins" in hist:
+                try:
+                    self.spin_hist_nbins.setValue(int(hist["nbins"]))
+                except (TypeError, ValueError):
+                    pass
+            for key, spin in (
+                ("depth_min", self.spin_depth_min),
+                ("depth_max", self.spin_depth_max),
+                ("lateral_min", self.spin_lateral_min),
+                ("lateral_max", self.spin_lateral_max),
+                ("energy_min", self.spin_energy_min),
+                ("energy_max", self.spin_energy_max),
+                ("angle_min", self.spin_angle_min),
+                ("angle_max", self.spin_angle_max),
+            ):
+                if key in hist:
+                    try:
+                        spin.setValue(float(hist[key]))
+                    except (TypeError, ValueError):
+                        pass
 
         disp = payload.get("display_settings") or {}
         if isinstance(disp, dict):

@@ -1,0 +1,75 @@
+The range of the ions is determined by both nuclear and electronic stopping. The average energy loss per path length is therefore given by
+%
+\begin{equation}
+    \frac{ \mathrm{d} E' }{ \mathrm{d} r } =
+        \left( \frac{ \mathrm{d} E' }{ \mathrm{d} r } \right)_\mathrm{n} +
+        \left( \frac{ \mathrm{d} E' }{ \mathrm{d} r } \right)_\mathrm{e} =
+        - N (S_\mathrm{n}(E') + S_\mathrm{e}(E'))
+\end{equation}
+%
+where $S_\mathrm{e}$ characterizes the energy loss to electrons but is otherwise defined like $S_\mathrm{n}$. Compared to \cref{eq:sn_sndef}, we have replaced energy $E$ by $E'$ to distinguish the initial energy $E$ from the current energy $E'$. Separation of variables and integration of the path length from $0$ to $R$ and of energy from $E$ to $0$ gives the total path length
+%
+\begin{equation}
+    \label{eq:sn_range}
+    R = \int_0^E \frac{ \mathrm{d} E' }{ N (S_\mathrm{n}(E') + S_\mathrm{e}(E'))}
+\end{equation}
+%
+In differential form this reads
+%
+\begin{equation}
+    \label{eq:sn_range_differential}
+    \frac{ \mathrm{d} R }{ \mathrm{d} E } =
+        \frac{ 1 }{ N (S_\mathrm{n}(E) + S_\mathrm{e}(E))}
+\end{equation}
+%
+We have silently neglected the statistical nature of nuclear stopping by dropping the overbar of \cref{eq:sn_sndef}. Lindhard \cite{Lin63} showed that $R$ is a satisfactory approximation of the mean range along the path.
+
+Projected range is defined by the projection of the stop position of an ion to its initial direction, measured from its initial position. The distribution of projected ranges is what is measured when a depth profile is determined of ions implanted into a flat target at normal incidence, with its origin at the surface. The most basic characteristics of this distribution is the mean penetration depth or mean projected range $R_\mathrm{p}$, which in sloppy parlance is called ``the'' projected range.
+
+It has been shown \cite{Bie82,Ash91}, that an approximation to the projected range can be calculated from
+%
+\begin{equation}
+    \label{eq:sn_rp_differential}
+    \frac{ \mathrm{d} R_\mathrm{p} }{ \mathrm{d} E } =
+        \frac{ 1 }{ N (S_\mathrm{n}(E) + S_\mathrm{e}(E))}
+        \left( 1 - \frac{ \mu N S_\mathrm{n} }{ 2 E } R_\mathrm{p} \right),
+        \quad \mu = \frac{ M_2 }{ M_1 }
+\end{equation}
+
+\begin{figure}
+    \centering
+    \includegraphics[scale=0.5]{rp_As_Si.pdf}
+    \caption{Projected range $R_\mathrm{p}$ as a function of energy for the NLHlin potential (solid line) and the ZBL potential (dashed and dotted lines). For the ZBL potential, our own results (dotted line) agree well with those obtained by SRIM \cite{SRIM-2013}.}
+    \label{fig:sn_rp_As_Si}
+\end{figure}
+%
+\begin{figure}
+    \centering
+    \includegraphics[scale=0.5]{rp_ratio_homo_zbl.pdf} ~~
+    \includegraphics[scale=0.5]{rp_ratio_homo_zbl_at_e}
+    \caption{The ratio of the projected ranges calculated with the NLHlin and ZBL potentials as a function of energy (left) and as a function of atomic number (right) for homonuclear atom pairs.}
+    \label{fig:sn_rp_ratio_homo_zbl}
+\end{figure}
+%
+\begin{figure}
+    \centering
+    \includegraphics[scale=0.5]{rp_ratio_homo_krc.pdf} ~~
+    \includegraphics[scale=0.5]{rp_ratio_homo_krc_at_e}
+    \caption{The ratio of the projected ranges calculated with the NLHlin and KrC potentials as a function of energy (left) and as a function of atomic number (right) for homonuclear atom pairs.}
+    \label{fig:sn_rp_ratio_homo_krc}
+\end{figure}
+%
+Using tabulated $S_\mathrm{e}$ values from SRIM \cite{SRIM-2013}, the projected ranges have been calculated as a function of energy.
+Results for As in Si are shown in \cref{fig:sn_rp_As_Si}.
+The ratios of the projected ranges obtained with the NLHlin potentials and the ZBL potential are shown in \cref{fig:sn_rp_ratio_homo_zbl} as a function of implantation energy.
+The ratios of the projected ranges obtained with NLHlin and KrC potential is depicted in \cref{fig:sn_rp_ratio_homo_krc}.
+Very significant deviations between the NLHlin and the conventional potentials can be seen except for the noble gases ($Z=2,10,18,36,54,86$).
+Comparing Figs.~\ref{fig:sn_rp_ratio_homo_zbl} and \ref{fig:sn_rp_ratio_homo_krc}, KrC performs much better than ZBL for heavy atoms, while KrC performs poorer for lighter elements.
+
+\begin{figure}
+    \centering
+    \includegraphics[scale=0.5]{rp_ratio_all_zbl_at_e.pdf} ~~
+    \includegraphics[scale=0.5]{rp_ratio_all_krc_at_e.pdf}
+    \caption{Projected range ratio with respect to ZBL (left) and KrC (right) for all combinations of $Z_1$ and $Z_2$.}
+    \label{fig:sn_ratio_all}
+\end{figure}

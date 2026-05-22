@@ -1,0 +1,117 @@
+\documentclass[twoside,12pt]{book}
+
+\usepackage{gensymb}
+\usepackage[resetlabels]{multibib}
+\usepackage[T1]{fontenc}
+\usepackage{graphicx}
+\usepackage{multirow}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{appendix}                % provides subappendices
+\usepackage{etoolbox}                % to add sub appendices to toc
+\AtBeginEnvironment{subappendices}{
+\addcontentsline{toc}{chapter}{Appendices}
+\counterwithin{figure}{section}
+\counterwithin{table}{section}
+\counterwithin{equation}{section}
+}
+\usepackage[capitalize]{cleveref}                % simplify references to Eqs., Figs., Tabs.
+%\usepackage{natbib}
+\newcommand{\ifprivate}{\iftrue}     % activate this line for a private version
+%\newcommand{\ifprivate}{\iffalse}    % activate this line for a public version
+
+\input{manualstyle}
+%
+\sloppy\raggedbottom
+\pagestyle{headings}
+\graphicspath{ {./figs/} {../../tools/nuclear_scattering/figs/} }
+                % to add other graphics paths, just add other {./...} items
+\usepackage[font={small}]{caption}
+
+\newcommand{\mathAA}{\mathring{\mathrm{A}}}
+\renewcommand{\eqref}[1]{Eq.~(\ref{#1})}
+%
+\begin{document}
+%
+\bibliographystyle{unsrt}
+%
+%%%%%%%%%%%%%
+% Titlepage %       Remark: for printing the titlepage font cmr17 scaled
+%%%%%%%%%%%%%               \magstep7 is required.
+%
+\begin{titlepage}
+\input{titlepage.tex}
+\end{titlepage}
+%
+%%%%%%%%%%%%%%%%%%%%%%
+% Inhaltsverzeichnis %
+%%%%%%%%%%%%%%%%%%%%%%
+%
+\tableofcontents
+\thispagestyle{empty}
+%
+%%%%%%%%%%%%%%%%%%%%
+% Nuclear Stopping %
+%%%%%%%%%%%%%%%%%%%%
+%
+\chapter{Nuclear Stopping}
+\label{k:sn}
+%
+\section{Binary Collision Physics}
+\label{s:bcp}
+\input{bcp.tex}
+%
+\section{Scattering Quantities for Screened Coulomb Potentials}
+\label{s:screen}
+\input{screen.tex}
+
+\section{Calculation of the Apsis of Collision}
+\label{s:apsis}
+\input{apsis.tex}
+
+\section{Calculation of the Scattering Angle in the CM System}
+\label{s:cmangle}
+\input{cmangle.tex}
+
+\section{Calculation of the Time Integral}
+\label{s:time}
+\input{time.tex}
+
+\section{Nuclear Stopping Cross Section and Straggling}
+\label{s:stopping}
+\input{stopping.tex}
+
+\section{Range}
+\label{s:range}
+\input{range.tex}
+
+\newpage
+\begin{subappendices}
+    \section{Gauss-Legendre Quadrature}
+    \label{s:gauss-legendre}
+    \input{gauss-legendre.tex}
+
+    \section{Impulse approximation}
+    \label{sn:impulse}
+    \input{impulse.tex}
+
+    \section{Alternative Calculation of the Apsis of Collision}
+    \label{s:apsis_alt}
+    \input{apsis_alt.tex}
+
+    \section{Variants of Newtons Method for Obtaining the Apsis of Collision (legacy)}
+    \label{s:apsis_legacy}
+    \input{apsis_legacy.tex}
+
+    %\section{Scattering Angle in the CM System (legacy)}
+    %\label{s:cmangle_legacy}
+    %\input{cmangle_legacy.tex}
+\end{subappendices}
+%
+%%%%%%%%%%%%%%
+% Literature %
+%%%%%%%%%%%%%%
+%
+\bibliography{nuclear_scattering}
+%
+\end{document}

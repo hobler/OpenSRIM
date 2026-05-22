@@ -1,0 +1,106 @@
+% Variants of Newtons Method for Obtaining the Apsis of Collision
+
+\subsection{Iterating towards the Exact Solution}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\label{s:sn_apsis_iterating}
+%
+We consider three options for iteration:
+%
+\subsubsection{Newton’s method}
+%
+Newton's method to solve \cref{eq:sn_apsis_eq} for $R = R_0$ is given by \cref{eq:sn_apsis_newton}.
+The initial condition \cref{eq:sn_apsis_ic} guarantees convergence of the iterations for screening functions with $\Phi'(R) < 0$ and $\Phi''(r) > 0$.
+
+\subsubsection{Modified Newton's method}
+%
+Newton's method applied to \cref{eq:sn_apsis_eq} can also be interpreted as constructing the tangent lines to the terms $\Phi(R)/\varepsilon$ and $R - P^2/R$ and intersecting the two tangents, see the dashed lines in \cref{fig:apsis-iteration}.
+%
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[scale=0.6]{apsis_iteration.pdf}
+    \caption{Illustration of Newton’s method (linearization of both \(\Phi(R)\) and \(R-P^2/R\)) and the method based on linearization of \(\Phi(R)\) only.
+    The latter comes closer to the actual solution \(R_0\).
+    For both methods \(R_0^{(i)} < R_0^{(i+1)} < R_0\) provided \(R_0^{(i)} < R_0\).}
+    \label{fig:apsis-iteration}
+\end{figure}
+
+Instead, one could also intersect the tangent to $\Phi(R)/\varepsilon$ with the function $R - P^2/R$.
+The resulting quadratic equation has the solution%
+%
+\footnote{The other sign in front of the square root is not possible since all coefficients $a$, $b$, and $c$ are positive, which would result in a negative value of $R_0^{(i+1)}$.
+}
+%
+\begin{equation}
+    \label{eq:sn_apsis_linphi}
+    R_0^{(i+1)} = \frac{ b + \sqrt{ b^2 + 4ac } }{ 2a }
+\end{equation}
+%
+with
+%
+\begin{equation}
+    \label{eq:sn_apsis_linphi_params}
+    a = \varepsilon-\Phi'(R_0^{(i)}), \quad
+    b = \Phi(R_0^{(i)}) - R_0^{(i)} \Phi'(R_0^{(i)}), \quad
+    c = \varepsilon P^2
+\end{equation}
+%
+As shown in \cref{fig:apsis-iteration}, both methods warrant \(R_0^{(i)} < R_0^{(i+1)} < R_0\) provided \(R_0^{(i)} < R_0\), as long as $\Phi''(R) > 0$.
+In addition, \cref{fig:apsis-iteration} demonstrates that \cref{eq:sn_apsis_linphi} is a better approximation to \(R_0\) than \cref{eq:sn_apsis_newton}. This comes at the expense of another square root evaluation.
+
+\subsubsection{Newton's method applied to $\log(f(R))$}
+%
+Instead of using \cref{eq:sn_apsis_newton} with \(f(R)\) from \cref{eq:sn_apsis_eq}, one can move the first and third term of $f(R)$  to the right-hand side of $f(R) = 0$, take the logarithm, and move the right-hand side back to the left-hand side.
+One then obtains
+
+\begin{equation}
+    \label{eq:sn_apsis_newton_log}
+    f_{\log}(R) = \log \left[ \frac{ 1 }{ \varepsilon } \Phi(R) \left/
+        \left( R - \frac{ P^2 }{ R } \right)
+        \right. \right]
+        = 0
+\end{equation}
+%
+The function \(f_{\log}(R)\) can be used with Newton’s method \cref{eq:sn_apsis_newton}.
+It maintains the properties \(f_{\log}'(R) < 0\) and \(f_{\log}''(R) > 0\) for screening functions that are given by a sum of exponentials.
+Therefore, Newton’s method is guaranteed to converge if one starts with an initial condition to the left of the solution.
+The idea of taking the logarithm is to reduce the nonlinearity of \(f(R)\), but obviously comes at the expense of the evaluation of another special function.
+
+\subsection{Convergence}
+%%%%%%%%%%%%%%%%%%%%%%%%
+\label{s:sn_apsis_performance}
+%
+\Cref{fig:iter-apsis-legacy} evaluates the perfomance of the combinations of initial condition and iteration algorithm for the ZBL screening function.
+It shows the number of iterations required to reach a relative accuracy of \(10^{-3}\) between the last two calculated values of \(R_0\).
+Usually this means that the last value is accurate to \(10^{-6}\), assuming quadratic convergence has been reached.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[scale=0.8]{iter_apsis_zbl.pdf}
+    \caption{Number of iterations required to reach a relative accuracy of \(10^{-3}\) in \(R_0\) as a function of energy and impact parameter.
+    Left column: using \(R_0^{(0)} = P\) \cref{eq:sn_apsis_ic_p} as initial condition.
+    Right column: using \cref{eq:sn_apsis_ic} as initial condition.
+    The columns differ by the iteration method used:
+    First row: Newton.
+    Second row: \cref{eq:sn_apsis_linphi} in the first iteration, then Newton.
+    Third row: \cref{eq:sn_apsis_linphi} for all iterations.
+    Fourth row: \cref{eq:sn_apsis_linphi} in the first iteration, then logarithmic Newton \cref{eq:sn_apsis_newton_log}.
+    The interatomic potential used was the universal ZBL potential.}
+    \label{fig:iter-apsis-legacy}
+\end{figure}
+
+In the left column, results for the initial condition \cref{eq:sn_apsis_ic_p} (\(R_0^{(0)} = P\)) are shown.
+As expected, fewer iterations are required for large energies and large impact parameters (small deflection angles) than for small energies and small impact parameters (large deflection angles), since \(R_0\) is closer to \(P\).
+For large deflection angles, more than 10 iterations may be required using ordinary Newton or \cref{eq:sn_apsis_linphi}.
+Significant improvement is obtained by using the logarithmic function \cref{eq:sn_apsis_newton_log}, limiting the number of iterations to 6.
+Note that Newton’s method with the logarithmic function cannot be started with \(R_0^{(0)} = P\), since this would lead to \(f_{\log}(R \rightarrow P) \rightarrow \infty\).
+Therefore, \cref{eq:sn_apsis_linphi} has been used in the first iteration.
+
+In the right column, the table of \(R_0^{(0,\varepsilon)}(\varepsilon)\) for head-on collisions has been used as described above.
+Compared to the left column, the number of iterations at low energies and small impact parameters is significantly reduced (not couting the iterations necessary to obtain the table).
+There are only slight differences in the iteration counts between the different iteration methods.
+Using \cref{eq:sn_apsis_linphi} and \cref{eq:sn_apsis_newton_log} save one iteration in rare cases (compare first, second, and fourth row), while using \cref{eq:sn_apsis_linphi} beyond the first collision has no benefit (compare second and third row).
+Since convergence is only marginally improved by using \cref{eq:sn_apsis_linphi} and \cref{eq:sn_apsis_newton_log}, while additional evaluations of a square root or a logarithm is necessary, using ordinary Newton’s method seems to be sufficient.
+
+In summary, when no table of \(R_0^{(0,\varepsilon)}(\varepsilon)\) for head-on collisions is used, it is recommended to use \cref{eq:sn_apsis_linphi} in the first iteration and Newton’s method with the logarithmic function \cref{eq:sn_apsis_newton_log} for the remaining iterations. Significant acceleration is obtained by using the table of \(R_0^{(0,\varepsilon)}(\varepsilon)\) for head-on collisions to obtain an initial condition.
+Then it is sufficient to use ordinary Newton’s method.
+Note that the table needs to be calculated only once for a given interatomic potential.

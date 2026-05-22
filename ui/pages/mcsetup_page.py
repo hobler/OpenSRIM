@@ -155,6 +155,7 @@ class MCSetupPage(QWidget):
         self._working_directory: Optional[str] = None
         self._density_user_override: set[int] = set()
         self._updating_layers_table = False
+        self._histogram_settings: dict = {}
 
         # Hints
         self._hint_system: Optional[HintSystem] = None
@@ -323,6 +324,10 @@ class MCSetupPage(QWidget):
             "lateral_ion_recoil": bool(self.chk_lateral_ion_recoil.isChecked()) if hasattr(self, "chk_lateral_ion_recoil") else False,
             "lateral_phonons": bool(self.chk_lateral_phonons.isChecked()) if hasattr(self, "chk_lateral_phonons") else False,
             "lateral_ionization": bool(self.chk_lateral_ionization.isChecked()) if hasattr(self, "chk_lateral_ionization") else False,
+            "dist2d_ion_recoil": bool(self.chk_2d_ion_recoil.isChecked()) if hasattr(self, "chk_2d_ion_recoil") else False,
+            "dist2d_phonons": bool(self.chk_2d_phonons.isChecked()) if hasattr(self, "chk_2d_phonons") else False,
+            "dist2d_ionization": bool(self.chk_2d_ionization.isChecked()) if hasattr(self, "chk_2d_ionization") else False,
+            "dist2d_all": bool(self.chk_2d_all.isChecked()) if hasattr(self, "chk_2d_all") else False,
             "backscattered_energy": bool(self.chk_backscattered_energy.isChecked()) if hasattr(self, "chk_backscattered_energy") else False,
             "backscattered_angle": bool(self.chk_backscattered_angle.isChecked()) if hasattr(self, "chk_backscattered_angle") else False,
             "transmitted_energy": bool(self.chk_transmitted_energy.isChecked()) if hasattr(self, "chk_transmitted_energy") else False,
@@ -446,6 +451,10 @@ class MCSetupPage(QWidget):
             ("chk_lateral_ion_recoil", "lateral_ion_recoil"),
             ("chk_lateral_phonons", "lateral_phonons"),
             ("chk_lateral_ionization", "lateral_ionization"),
+            ("chk_2d_ion_recoil", "dist2d_ion_recoil"),
+            ("chk_2d_phonons", "dist2d_phonons"),
+            ("chk_2d_ionization", "dist2d_ionization"),
+            ("chk_2d_all", "dist2d_all"),
             ("chk_backscattered_energy", "backscattered_energy"),
             ("chk_backscattered_angle", "backscattered_angle"),
             ("chk_transmitted_energy", "transmitted_energy"),
@@ -1097,6 +1106,11 @@ class MCSetupPage(QWidget):
         title_lbl.setStyleSheet("font-weight: 600;")
         header_l.addWidget(title_lbl)
         header_l.addWidget(self._hint_btn("output", parent=header))
+        output_settings_btn = QToolButton(header)
+        output_settings_btn.setText("⚙")
+        output_settings_btn.setToolTip("Open histogram limits in Advanced Options")
+        output_settings_btn.clicked.connect(lambda: self.advanced_requested.emit("histogram_settings"))
+        header_l.addWidget(output_settings_btn)
         header_l.addStretch(1)
 
         v.addWidget(header)
@@ -1118,6 +1132,10 @@ class MCSetupPage(QWidget):
         self.chk_lateral_ion_recoil = QCheckBox("Ion/Recoil")
         self.chk_lateral_phonons = QCheckBox("Phonons")
         self.chk_lateral_ionization = QCheckBox("Ionization")
+
+        self.chk_2d_ion_recoil = QCheckBox("Ion/Recoil")
+        self.chk_2d_phonons = QCheckBox("Phonons")
+        self.chk_2d_ionization = QCheckBox("Ionization")
 
         def _make_all_checkbox(children: list[QCheckBox]) -> QCheckBox:
             """Returns an 'All' checkbox that toggles all children, and updates itself when children change."""
@@ -1149,6 +1167,7 @@ class MCSetupPage(QWidget):
 
         self.chk_range_all = _make_all_checkbox([self.chk_range_ion_recoil, self.chk_range_phonons, self.chk_range_ionization])
         self.chk_lateral_all = _make_all_checkbox([self.chk_lateral_ion_recoil, self.chk_lateral_phonons, self.chk_lateral_ionization])
+        self.chk_2d_all = _make_all_checkbox([self.chk_2d_ion_recoil, self.chk_2d_phonons, self.chk_2d_ionization])
 
         # Right block widgets
         self.chk_backscattered_energy = QCheckBox("Energy")
@@ -1197,7 +1216,14 @@ class MCSetupPage(QWidget):
         grid.addWidget(self.chk_transmitted_angle,    2, 8)
         grid.addWidget(self.chk_transmitted_all,      2, 9)
 
-        grid.setRowStretch(3, 1)
+        # Row 3: 2D Distribution (left)
+        grid.addWidget(QLabel("2D-Distribution:"),   3, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        grid.addWidget(self.chk_2d_ion_recoil,        3, 1)
+        grid.addWidget(self.chk_2d_phonons,           3, 2)
+        grid.addWidget(self.chk_2d_ionization,        3, 3)
+        grid.addWidget(self.chk_2d_all,               3, 4)
+
+        grid.setRowStretch(4, 1)
 
         # --- Right side: Simulation controls ---
         _default_nions = 10000
@@ -1464,6 +1490,10 @@ class MCSetupPage(QWidget):
             return value * self._N_A / m_avg * 1e-24
         return value
 
+    def set_histogram_settings(self, settings: dict) -> None:
+        if isinstance(settings, dict):
+            self._histogram_settings = dict(settings)
+
     # -------- TOML generation ----------
     def _build_input_toml(self, results_dir: str) -> str:
         """Build the contents of an OpenTRIM input.toml from the current UI state."""
@@ -1564,6 +1594,40 @@ class MCSetupPage(QWidget):
         # Output section
         energy_kev = ion["energy"]
         half_width = total_width / 2.0 if total_width > 0 else 2000.0
+        hs = self._histogram_settings if isinstance(self._histogram_settings, dict) else {}
+
+        def _get_hs(key: str, default: float) -> float:
+            if not hs.get("enabled"):
+                return float(default)
+            try:
+                return float(hs.get(key, default))
+            except (TypeError, ValueError):
+                return float(default)
+
+        depth_min = _get_hs("depth_min", 0.0)
+        depth_max = _get_hs("depth_max", total_width)
+        lateral_min = _get_hs("lateral_min", -half_width)
+        lateral_max = _get_hs("lateral_max", half_width)
+        energy_min = _get_hs("energy_min", 0.0)
+        energy_max = _get_hs("energy_max", energy_kev)
+        angle_min = _get_hs("angle_min", -90.0)
+        angle_max = _get_hs("angle_max", 90.0)
+
+        if depth_max <= depth_min:
+            depth_min, depth_max = 0.0, total_width
+        if lateral_max <= lateral_min:
+            lateral_min, lateral_max = -half_width, half_width
+        if energy_max <= energy_min:
+            energy_min, energy_max = 0.0, energy_kev
+        if angle_max <= angle_min:
+            angle_min, angle_max = -90.0, 90.0
+
+        try:
+            nbins = int(hs.get("nbins", 120)) if hs.get("enabled") else 120
+        except (TypeError, ValueError):
+            nbins = 120
+        if nbins < 10:
+            nbins = 10
 
         lines += [
             "[output]",
@@ -1576,54 +1640,54 @@ class MCSetupPage(QWidget):
             "transmitted = false",
             "",
             "[output.depth_distribution.ion_recoils]",
-            f"score = {'true' if out.get('range_ion_recoil') else 'true'}",
-            "nbins = 120",
-            f"limits = [0.0, {total_width}]",
+            f"score = {'true' if out.get('range_ion_recoil') else 'false'}",
+            f"nbins = {nbins}",
+            f"limits = [{depth_min}, {depth_max}]",
             "",
             "[output.depth_distribution.nuclear_energy_deposition]",
             f"score = {'true' if out.get('range_phonons') else 'false'}",
-            "nbins = 120",
-            f"limits = [0.0, {total_width}]",
+            f"nbins = {nbins}",
+            f"limits = [{depth_min}, {depth_max}]",
             "",
             "[output.depth_distribution.electronic_energy_deposition]",
             f"score = {'true' if out.get('range_ionization') else 'false'}",
-            "nbins = 120",
-            f"limits = [0.0, {total_width}]",
+            f"nbins = {nbins}",
+            f"limits = [{depth_min}, {depth_max}]",
             "",
             "[output.lateral_distribution.ion_recoils]",
             f"score = {'true' if out.get('lateral_ion_recoil') else 'false'}",
-            "nbins = 120",
-            f"limits = [-{half_width}, {half_width}]",
+            f"nbins = {nbins}",
+            f"limits = [{lateral_min}, {lateral_max}]",
             "",
             "[output.lateral_distribution.nuclear_energy_deposition]",
             f"score = {'true' if out.get('lateral_phonons') else 'false'}",
-            "nbins = 120",
-            f"limits = [-{half_width}, {half_width}]",
+            f"nbins = {nbins}",
+            f"limits = [{lateral_min}, {lateral_max}]",
             "",
             "[output.lateral_distribution.electronic_energy_deposition]",
             f"score = {'true' if out.get('lateral_ionization') else 'false'}",
-            "nbins = 120",
-            f"limits = [-{half_width}, {half_width}]",
+            f"nbins = {nbins}",
+            f"limits = [{lateral_min}, {lateral_max}]",
             "",
             "[output.backscattered_atoms.energy]",
             f"score = {'true' if out.get('backscattered_energy') else 'false'}",
-            "nbins = 120",
-            f"limits = [0.0, {energy_kev}]",
+            f"nbins = {nbins}",
+            f"limits = [{energy_min}, {energy_max}]",
             "",
             "[output.backscattered_atoms.angle]",
             f"score = {'true' if out.get('backscattered_angle') else 'false'}",
-            "nbins = 120",
-            "limits = [-90.0, 90.0]",
+            f"nbins = {nbins}",
+            f"limits = [{angle_min}, {angle_max}]",
             "",
             "[output.transmitted_atoms.energy]",
             f"score = {'true' if out.get('transmitted_energy') else 'false'}",
-            "nbins = 120",
-            f"limits = [0.0, {energy_kev}]",
+            f"nbins = {nbins}",
+            f"limits = [{energy_min}, {energy_max}]",
             "",
             "[output.transmitted_atoms.angle]",
             f"score = {'true' if out.get('transmitted_angle') else 'false'}",
-            "nbins = 120",
-            "limits = [-90.0, 90.0]",
+            f"nbins = {nbins}",
+            f"limits = [{angle_min}, {angle_max}]",
             "",
         ]
 

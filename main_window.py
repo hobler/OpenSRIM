@@ -14,6 +14,8 @@ from PyQt6.QtWidgets import (
     QInputDialog,
     QMessageBox,
     QApplication,
+    QToolButton,
+    QStyle,
 )
 
 # Support BOTH:
@@ -25,6 +27,7 @@ try:
     from ui.pages.mcsetup_page import MCSetupPage
     from ui.pages.mcresults_page import MCResultsPage
     from ui.pages.advanced_options_page import AdvancedOptionsPage
+    from ui.pages.simulation.simulation_page import SinglePlotPage
 except ModuleNotFoundError:
     # Running from inside ./app -> add project root to sys.path and retry
     _project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
@@ -36,6 +39,7 @@ except ModuleNotFoundError:
     from ui.pages.mcsetup_page import MCSetupPage
     from ui.pages.mcresults_page import MCResultsPage
     from ui.pages.advanced_options_page import AdvancedOptionsPage
+    from ui.pages.simulation.simulation_page import SinglePlotPage
 
 try:
     from ui.logging import subscribe as subscribe_logs
@@ -95,12 +99,33 @@ class MainWindow(QMainWindow):
             state=self.state,
             on_log=emit_log,
         )
-        self.mc_results_tab = MCResultsPage()
+        # Track all MC Results pages (multi-tab support).
+        self.mc_results_tabs: list = []
+        # Keep the first one accessible for backwards compatibility.
+        self.mc_results_tab = self._create_mc_results_tab()
+        self.single_plot_page = SinglePlotPage()
         self.advanced_options_tab = AdvancedOptionsPage()
 
         self.tab_widget.addTab(self.koral_tab, "KORAL")
         self.tab_widget.addTab(self.mc_setup_tab, "MC Setup")
-        self.tab_widget.addTab(self.mc_results_tab, "MC Results")
+        # Initial MC Results tab; more can be added via the "+" button or
+        # automatically when a new simulation completes.
+        self._mc_results_first_index = self.tab_widget.addTab(self.mc_results_tab, "MC Results 1")
+        self.tab_widget.addTab(self.single_plot_page, "Single Plot")
+
+        # "+" button on the tab bar to add additional MC Results tabs.
+        self._add_tab_btn = QToolButton(self.tab_widget)
+        self._add_tab_btn.setText("+")
+        self._add_tab_btn.setToolTip("Open another MC Results tab")
+        self._add_tab_btn.setAutoRaise(True)
+        self._add_tab_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._add_tab_btn.clicked.connect(self._on_add_results_tab_clicked)
+        self.tab_widget.setCornerWidget(self._add_tab_btn, Qt.Corner.TopRightCorner)
+
+        # Allow closing additional MC Results tabs (not the first one).
+        self.tab_widget.setTabsClosable(True)
+        self.tab_widget.tabCloseRequested.connect(self._on_tab_close_requested)
+        self._update_tab_close_buttons()
 
         adv_index = self.tab_widget.addTab(self.advanced_options_tab, "Advanced Options")
         # Hide this tab label; it is still navigable programmatically.
@@ -111,6 +136,7 @@ class MainWindow(QMainWindow):
 
         self.mc_setup_tab.advanced_requested.connect(self._open_advanced_options)
         self.mc_results_tab.advanced_requested.connect(self._open_advanced_options)
+        self.koral_tab.advanced_requested.connect(self._open_advanced_options)
         self.mc_setup_tab.save_requested.connect(self._handle_save_configuration)
         self.mc_setup_tab.load_requested.connect(self._handle_load_configuration)
         self.mc_setup_tab.simulation_finished.connect(self._on_simulation_finished)
@@ -122,19 +148,19 @@ class MainWindow(QMainWindow):
         )
         self.advanced_options_tab.mc_ion_angle_changed.connect(self._apply_mc_ion_angle)
 
-        # Display settings (Advanced Options → MC Results plot area)
-        results_widget = self.mc_results_tab.get_results_widget()
-        self.advanced_options_tab.toolbar_visibility_changed.connect(
-            results_widget.set_plot_toolbar_visible
-        )
-        self.advanced_options_tab.columns_changed.connect(
-            results_widget.set_plot_columns
-        )
-        self.advanced_options_tab.borders_visibility_changed.connect(
-            results_widget.set_plot_borders_visible
-        )
+        # Display settings (Advanced Options → MC Results plot area).
+        # Connected for the first tab; new tabs are wired in
+        # _create_mc_results_tab().
+        self._wire_display_settings_for_results_page(self.mc_results_tab)
+        # Single plot tab also reacts to font-size changes.
         self.advanced_options_tab.plot_font_size_changed.connect(
-            results_widget.set_plot_font_size
+            self.single_plot_page.set_font_size
+        )
+        self.advanced_options_tab.koral_solver_changed.connect(
+            self.koral_tab.set_koral_solver_settings
+        )
+        self.advanced_options_tab.histogram_settings_changed.connect(
+            self.mc_setup_tab.set_histogram_settings
         )
 
         # initial sync
@@ -219,6 +245,104 @@ class MainWindow(QMainWindow):
     def _on_tab_changed(self, _index: int):
         pass
 
+    def _create_mc_results_tab(self) -> MCResultsPage:
+        page = MCResultsPage()
+        # Forward double-click on a tile → load into Single Plot tab and switch.
+        page.plot_open_in_single.connect(self._on_plot_open_in_single)
+        # Each new tab also gets the advanced-options wiring.
+        page.advanced_requested.connect(self._open_advanced_options)
+        self.mc_results_tabs.append(page)
+        # Wire display-settings only if advanced_options_tab already exists
+        # (first call happens before it is created — that path handles its
+        # wiring inline in __init__).
+        if hasattr(self, "advanced_options_tab"):
+            self._wire_display_settings_for_results_page(page)
+        return page
+
+    def _wire_display_settings_for_results_page(self, page: MCResultsPage) -> None:
+        widget = page.get_results_widget()
+        self.advanced_options_tab.toolbar_visibility_changed.connect(
+            widget.set_plot_toolbar_visible
+        )
+        self.advanced_options_tab.columns_changed.connect(
+            widget.set_plot_columns
+        )
+        self.advanced_options_tab.borders_visibility_changed.connect(
+            widget.set_plot_borders_visible
+        )
+        self.advanced_options_tab.plot_font_size_changed.connect(
+            widget.set_plot_font_size
+        )
+
+    def _is_mc_results_tab_index(self, index: int) -> bool:
+        widget = self.tab_widget.widget(index)
+        return isinstance(widget, MCResultsPage)
+
+    def _update_tab_close_buttons(self) -> None:
+        """Show close buttons only on extra MC Results tabs (>1) — never on
+        the fixed Koral/MC Setup/first MC Results/Single Plot/Advanced tabs."""
+        bar = self.tab_widget.tabBar()
+        if bar is None:
+            return
+        results_count = 0
+        for i in range(self.tab_widget.count()):
+            widget = self.tab_widget.widget(i)
+            closable = False
+            if isinstance(widget, MCResultsPage):
+                results_count += 1
+                if results_count > 1:
+                    closable = True
+            try:
+                btn_right = bar.tabButton(i, bar.ButtonPosition.RightSide)
+                btn_left = bar.tabButton(i, bar.ButtonPosition.LeftSide)
+                if not closable:
+                    if btn_right is not None:
+                        btn_right.hide()
+                    if btn_left is not None:
+                        btn_left.hide()
+            except Exception:
+                pass
+
+    def _on_add_results_tab_clicked(self) -> None:
+        page = self._create_mc_results_tab()
+        # Insert just after the last MC Results tab.
+        insert_at = self.tab_widget.count()
+        for i in range(self.tab_widget.count() - 1, -1, -1):
+            if isinstance(self.tab_widget.widget(i), MCResultsPage):
+                insert_at = i + 1
+                break
+        title = f"MC Results {len(self.mc_results_tabs)}"
+        self.tab_widget.insertTab(insert_at, page, title)
+        self.tab_widget.setCurrentWidget(page)
+        self._update_tab_close_buttons()
+
+    def _on_tab_close_requested(self, index: int) -> None:
+        widget = self.tab_widget.widget(index)
+        if not isinstance(widget, MCResultsPage):
+            return
+        # Refuse to close the very first MC Results tab.
+        first_index = -1
+        for i in range(self.tab_widget.count()):
+            if isinstance(self.tab_widget.widget(i), MCResultsPage):
+                first_index = i
+                break
+        if index == first_index:
+            return
+        try:
+            self.mc_results_tabs.remove(widget)
+        except ValueError:
+            pass
+        self.tab_widget.removeTab(index)
+        widget.deleteLater()
+        self._update_tab_close_buttons()
+
+    def _on_plot_open_in_single(self, plot_id: str, plot_info: object) -> None:
+        try:
+            self.single_plot_page.set_plot(str(plot_id), dict(plot_info) if isinstance(plot_info, dict) else {})
+        except Exception:
+            return
+        self.tab_widget.setCurrentWidget(self.single_plot_page)
+
     def _open_advanced_options(self, section_id: str):
         self.tab_widget.setCurrentWidget(self.advanced_options_tab)
         # Sync the correct angle when opening the relevant section.
@@ -245,14 +369,40 @@ class MainWindow(QMainWindow):
             pass
 
     def _on_simulation_finished(self, results_dir: str) -> None:
-        """Load results and switch to the MC Results tab."""
-        self.mc_results_tab.load_results_from_directory(results_dir)
-        self.tab_widget.setCurrentWidget(self.mc_results_tab)
+        """Load results into a *new* MC Results tab and switch to it.
+
+        The first MC Results tab is reused only if it has never received
+        results before; otherwise a fresh tab is created so previous
+        simulation outputs remain visible for comparison.
+        """
+        target = self._get_or_create_results_tab_for_new_run()
+        target.load_results_from_directory(results_dir)
+        self._last_live_target = target
+        self.tab_widget.setCurrentWidget(target)
         emit_log(f"Results loaded from {results_dir}")
 
     def _on_results_update(self, results_dir: str) -> None:
-        """Live-refresh the MC Results page during simulation."""
-        self.mc_results_tab.load_results_from_directory(results_dir, silent=True)
+        """Live-refresh the active MC Results page during simulation."""
+        target = getattr(self, "_last_live_target", None)
+        if target is None or target not in self.mc_results_tabs:
+            target = self._get_or_create_results_tab_for_new_run()
+            self._last_live_target = target
+        target.load_results_from_directory(results_dir, silent=True)
+
+    def _get_or_create_results_tab_for_new_run(self) -> MCResultsPage:
+        """Pick the first 'unused' MC Results tab, or create a new one."""
+        for page in self.mc_results_tabs:
+            # An "unused" tab has no loaded results yet (empty plot list).
+            widget = page.get_results_widget()
+            try:
+                used = widget.plot_area._tiles if hasattr(widget, "plot_area") else None
+                if used is None or len(used) == 0:
+                    return page
+            except Exception:
+                continue
+        # All existing tabs have content — spawn a new one.
+        self._on_add_results_tab_clicked()
+        return self.mc_results_tabs[-1]
 
     # --- config save/load ---
     def _handle_save_configuration(self):

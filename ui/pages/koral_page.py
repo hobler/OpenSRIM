@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Callable, Optional
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, pyqtSignal, QObject, QThread
+from PyQt6.QtCore import Qt, pyqtSignal, QObject, QThread, QEvent, QTimer
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox, QLabel,
     QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QTableWidget, QTableWidgetItem,
@@ -81,6 +81,37 @@ def _load_density_table() -> dict[str, float]:
 _DENSITY_TABLE: dict[str, float] = _load_density_table()
 
 
+class _ProportionalColumnFilter(QObject):
+    """Event filter that rescales table columns proportionally on resize."""
+
+    def __init__(self, table: QTableWidget, fixed_cols: dict[int, int],
+                 stretch_weights: dict[int, int]) -> None:
+        super().__init__(table)
+        self._table = table
+        self._fixed = fixed_cols          # col_idx -> fixed px width
+        self._weights = stretch_weights   # col_idx -> relative weight
+        self._total_weight = sum(stretch_weights.values())
+        table.installEventFilter(self)
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # type: ignore[override]
+        if obj is self._table and event.type() == QEvent.Type.Resize:
+            self._resize_columns()
+        return False
+
+    def _resize_columns(self) -> None:
+        vp = self._table.viewport()
+        if vp is None:
+            return
+        available = vp.width() - sum(self._fixed.values())
+        if self._total_weight <= 0 or available <= 0:
+            return
+        for col, weight in self._weights.items():
+            if not self._table.isColumnHidden(col):
+                self._table.setColumnWidth(
+                    col, max(1, int(available * weight / self._total_weight))
+                )
+
+
 class _KoralWorker(QObject):
     finished = pyqtSignal(list)
     error = pyqtSignal(str)
@@ -132,6 +163,12 @@ class KoralPage(QWidget):
         self.state = state
         self._on_log = on_log or emit_log
 
+        # Match MC Setup container appearance.
+        self.setStyleSheet(
+            "QGroupBox { border: 2px solid palette(shadow); border-radius: 4px;"
+            " margin-top: 6px; padding-top: 6px; }"
+        )
+
         self._ion_angle: float = 0.0
         self._selected_models: list[str] = []
         self._available_models: list[str] = []
@@ -173,6 +210,7 @@ class KoralPage(QWidget):
 
         self._last_request: Optional[dict] = None
         self._last_results: Optional[list] = None
+        self._koral_solver_settings: dict = {}
         self._ui_param_base_specs: dict[str, dict] = {}
 
         layout = QVBoxLayout(self)
@@ -204,16 +242,23 @@ class KoralPage(QWidget):
         except Exception:
             pass
 
-        # Main two-column splitter
+        # Main two-column splitter – equal initial widths
         main_splitter = QSplitter(Qt.Orientation.Horizontal)
         main_splitter.addWidget(left_col)
         main_splitter.addWidget(right_col)
         try:
-            main_splitter.setStretchFactor(0, 0)
+            main_splitter.setStretchFactor(0, 1)
             main_splitter.setStretchFactor(1, 1)
         except Exception:
             pass
         layout.addWidget(main_splitter)
+        # Equalize after the layout has resolved real pixel sizes
+        def _equalize_splitter() -> None:
+            total = main_splitter.width()
+            if total > 0:
+                half = total // 2
+                main_splitter.setSizes([half, total - half])
+        QTimer.singleShot(0, _equalize_splitter)
 
         layout.addWidget(self._build_koral_footer())
 
@@ -481,7 +526,7 @@ class KoralPage(QWidget):
         load_btn.clicked.connect(self._handle_load_koral)
 
         save_btn = QPushButton("Save")
-        save_btn.setToolTip("Save KORAL configuration and results")
+        save_btn.setToolTip("Save KORAL configuration")
         save_btn.clicked.connect(self._handle_save_koral)
 
         layout.addWidget(log_container, 2)
@@ -845,18 +890,24 @@ class KoralPage(QWidget):
             "angle_deg": float(self.get_ion_angle()),
         }
 
-        # Energy grid: SRIM-like table energies
+        # Energy grid: always compute from 1 eV (0.001 keV),
+        # but keep the UI minimum as display/export lower bound.
         e0 = float(self.energy_min.value()) if hasattr(self, "energy_min") else 0.0
         e1 = float(self.energy_max.value()) if hasattr(self, "energy_max") else 0.0
         if e1 < e0:
             e0, e1 = e1, e0
-        energies = _srim_like_energy_grid(e0, e1)
-        if not energies and e0 > 0.0:
-            energies = [e0]
+        calc_min_keV = 1.0e-3
+        calc_max_keV = max(e1, calc_min_keV)
+        energies = _srim_like_energy_grid(calc_min_keV, calc_max_keV)
+        if not energies:
+            energies = [calc_min_keV, calc_max_keV] if calc_max_keV > calc_min_keV else [calc_min_keV]
+        if energies and energies[0] > calc_min_keV:
+            energies.insert(0, calc_min_keV)
 
         energy = {
             "min_keV": e0,
             "max_keV": e1,
+            "display_min_keV": e0,
             "energies_keV": energies,
         }
 
@@ -930,8 +981,6 @@ class KoralPage(QWidget):
             requested.append("lat_strag")
         if hasattr(self, "chk_nucl_strag") and self.chk_nucl_strag.isChecked():
             requested.append("nucl_stop")
-        if hasattr(self, "chk_nucl_strag_qn") and self.chk_nucl_strag_qn.isChecked():
-            requested.append("nucl_strag")
         if hasattr(self, "chk_elec_hop") and self.chk_elec_hop.isChecked():
             requested.append("elec_stop")
 
@@ -963,8 +1012,10 @@ class KoralPage(QWidget):
                 "density_kg_m3": density_kg_m3,
                 "avg_mass_amu": avg_mass_amu,
                 "compound_correction": compound_correction,
+                "gas": bool(self.chk_gas.isChecked()) if hasattr(self, "chk_gas") else False,
             },
             "output": output,
+            "solver": self._koral_solver_settings,
         }
 
     def _get_target_density(self) -> float:
@@ -1135,10 +1186,57 @@ class KoralPage(QWidget):
             s = f"{val:.3g} {u}"
         return s.replace(".", ",") if use_comma else s
 
+    def _filter_results_for_display(self, results: list[dict]) -> list[dict]:
+        """Filter energies below the UI minimum for table/plot/export display."""
+        display_min_keV = 0.0
+        if isinstance(self._last_request, dict):
+            try:
+                display_min_keV = float(self._last_request.get("energy", {}).get("display_min_keV", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                display_min_keV = 0.0
+
+        if display_min_keV <= 0.0:
+            return [r for r in results if isinstance(r, dict)]
+
+        filtered: list[dict] = []
+        for res in results:
+            if not isinstance(res, dict):
+                continue
+            energies = res.get("energies_keV")
+            outputs = res.get("outputs")
+            if not isinstance(energies, list) or not isinstance(outputs, dict):
+                continue
+
+            keep_idx: list[int] = []
+            for i, e in enumerate(energies):
+                try:
+                    ee = float(e)
+                except (TypeError, ValueError):
+                    continue
+                if ee >= display_min_keV:
+                    keep_idx.append(i)
+            if not keep_idx:
+                continue
+
+            out_new: dict[str, list[float]] = {}
+            for key, vals in outputs.items():
+                if not isinstance(vals, list):
+                    continue
+                out_new[str(key)] = [vals[i] for i in keep_idx if i < len(vals)]
+
+            filtered.append(
+                {
+                    "model_id": res.get("model_id", "model"),
+                    "energies_keV": [energies[i] for i in keep_idx],
+                    "outputs": out_new,
+                }
+            )
+        return filtered
+
     def _render_calculation_results(self, results: list) -> None:
         """Render returned model results into the plot and list table."""
         # Normalize
-        norm: list[dict] = [r for r in results if isinstance(r, dict)]
+        norm: list[dict] = self._filter_results_for_display([r for r in results if isinstance(r, dict)])
         if not norm:
             raise ValueError("No results returned")
 
@@ -1391,8 +1489,146 @@ class KoralPage(QWidget):
 
         self.add_log_entry(f"Exported results to: {path}")
 
+    def _export_results_csv(self) -> None:
+        if not self._last_results or not isinstance(self._last_results, list):
+            QMessageBox.information(self, "KORAL", "No results to export.\nRun a calculation first.")
+            return
+
+        path, _ = QFileDialog.getSaveFileName(self, "Export KORAL CSV", "koral_results.csv", "CSV Files (*.csv)")
+        if not path:
+            return
+
+        text = self._build_csv_export_text(self._last_results)
+        try:
+            Path(path).write_text(text, encoding="utf-8")
+        except Exception as exc:
+            QMessageBox.warning(self, "KORAL", f"Failed to write file:\n{exc}")
+            return
+
+        self.add_log_entry(f"Exported CSV results to: {path}")
+
+    def _build_csv_export_text(self, results: list) -> str:
+        norm: list[dict] = self._filter_results_for_display([r for r in results if isinstance(r, dict)])
+        if not norm:
+            return ""
+
+        requested = []
+        units: dict = {}
+        if isinstance(self._last_request, dict):
+            req_out = self._last_request.get("output", {}).get("requested")
+            if isinstance(req_out, list):
+                requested = [str(x) for x in req_out]
+            raw_units = self._last_request.get("output", {}).get("units")
+            if isinstance(raw_units, dict):
+                units = raw_units
+
+        range_unit = str(units.get("prange") or "Ång")
+        range_unit_long = str(units.get("long_strag") or "Ång")
+        range_unit_lat = str(units.get("lat_strag") or "Ång")
+        stop_unit_elec = str(units.get("elec_stop") or "eV/Å")
+        stop_unit_nucl = str(units.get("nucl_stop") or "eV/Å")
+
+        number_density_atoms_cm3 = 0.0
+        density_g_cm3 = 0.0
+        if isinstance(self._last_request, dict):
+            try:
+                number_density_atoms_cm3 = float(self._last_request.get("target", {}).get("number_density_atoms_cm3", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                number_density_atoms_cm3 = 0.0
+            try:
+                density_g_cm3 = float(self._last_request.get("target", {}).get("density_g_cm3", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                density_g_cm3 = 0.0
+
+        keys_order = ["elec_stop", "nucl_stop", "prange", "long_strag", "lat_strag", "nucl_strag"]
+        keys_present: list[str] = []
+        for k in keys_order:
+            if requested and k not in requested:
+                continue
+            if any(isinstance(r.get("outputs"), dict) and k in r.get("outputs", {}) for r in norm):
+                keys_present.append(k)
+
+        name_map = {
+            "elec_stop": "dE_dx_elec",
+            "nucl_stop": "dE_dx_nuclear",
+            "prange": "projected_range",
+            "long_strag": "longitudinal_straggling",
+            "lat_strag": "lateral_straggling",
+            "nucl_strag": "nuclear_straggling_qn",
+        }
+        unit_map = {
+            "elec_stop": stop_unit_elec,
+            "nucl_stop": stop_unit_nucl,
+            "prange": range_unit,
+            "long_strag": range_unit_long,
+            "lat_strag": range_unit_lat,
+            "nucl_strag": "eV²/Å",
+        }
+
+        lines: list[str] = []
+        lines.append("# OpenSRIM KORAL export")
+        if isinstance(self._last_request, dict):
+            tgt = self._last_request.get("target", {})
+            if isinstance(tgt, dict):
+                elems = tgt.get("elements")
+                if isinstance(elems, list):
+                    lines.append("# damage_energies_eV: symbol,damage,disp,latt,surf")
+                    for e in elems:
+                        if not isinstance(e, dict):
+                            continue
+                        sym = str(e.get("symbol") or "")
+                        lines.append(
+                            f"# {sym};{e.get('damage_eV', '')};{e.get('disp_eV', '')};{e.get('latt_eV', '')};{e.get('surf_eV', '')}"
+                        )
+
+        lines.append("# units: energy_keV=keV; " + "; ".join(f"{name_map[k]}={unit_map[k]}" for k in keys_present))
+
+        header = ["model_id", "energy_keV"] + [name_map[k] for k in keys_present]
+        lines.append(";".join(header))
+
+        for res in norm:
+            model_id = str(res.get("model_id", "model"))
+            energies = res.get("energies_keV") or []
+            outputs = res.get("outputs") or {}
+            if not isinstance(energies, list) or not isinstance(outputs, dict):
+                continue
+
+            for i, e_keV in enumerate(energies):
+                row = [model_id, f"{float(e_keV):.6g}"]
+                for k in keys_present:
+                    vals = outputs.get(k)
+                    if not isinstance(vals, list) or i >= len(vals):
+                        row.append("")
+                        continue
+                    try:
+                        v = float(vals[i])
+                    except (TypeError, ValueError):
+                        row.append("")
+                        continue
+
+                    if k in {"elec_stop", "nucl_stop"}:
+                        unit_for_stop = stop_unit_elec if k == "elec_stop" else stop_unit_nucl
+                        conv = self._convert_stopping(
+                            v,
+                            unit_for_stop,
+                            number_density_atoms_cm3=number_density_atoms_cm3,
+                            density_g_cm3=density_g_cm3,
+                        )
+                        row.append(f"{conv:.6g}")
+                    elif k == "prange":
+                        row.append(f"{self._length_from_m(v, range_unit):.6g}")
+                    elif k == "long_strag":
+                        row.append(f"{self._length_from_m(v, range_unit_long):.6g}")
+                    elif k == "lat_strag":
+                        row.append(f"{self._length_from_m(v, range_unit_lat):.6g}")
+                    else:
+                        row.append(f"{v:.6g}")
+                lines.append(";".join(row))
+
+        return "\n".join(lines) + "\n"
+
     def _build_srim_export_text(self, results: list, *, export_path: str | None = None) -> str:
-        norm: list[dict] = [r for r in results if isinstance(r, dict)]
+        norm: list[dict] = self._filter_results_for_display([r for r in results if isinstance(r, dict)])
         if not norm:
             return ""
 
@@ -1401,14 +1637,14 @@ class KoralPage(QWidget):
                 s = f"{float(x):.4E}"
             except (TypeError, ValueError):
                 s = f"{0.0:.4E}"
-            return s.replace(".", ",")
+            return s
 
         def _fmt_2(x: float) -> str:
             try:
                 s = f"{float(x):.2f}"
             except (TypeError, ValueError):
                 s = f"{0.0:.2f}"
-            return s.replace(".", ",")
+            return s
 
         def _srim_month_name(m: int) -> str:
             # Match the example's German month spellings.
@@ -1486,8 +1722,7 @@ class KoralPage(QWidget):
                     elements_for_header = [e for e in els if isinstance(e, dict)]
 
         bragg_corr_pct = (compound_corr - 1.0) * 100.0
-        # Column order exactly like SRIM table snippet
-        order = ["elec_stop", "nucl_stop", "prange", "long_strag", "lat_strag"]
+        order = ["elec_stop", "nucl_stop", "prange", "long_strag", "lat_strag", "nucl_strag"]
         keys_present: list[str] = []
         for k in order:
             if requested and k not in requested:
@@ -1499,7 +1734,7 @@ class KoralPage(QWidget):
             if any(_has_key(r) for r in norm):
                 keys_present.append(k)
 
-        def _format_length_no_unit(v_m: float, unit: str, *, use_comma: bool = False) -> str:
+        def _format_length_no_unit(v_m: float, unit: str) -> str:
             """Format length value without the unit suffix."""
             val = self._length_from_m(v_m, unit)
             u = str(unit)
@@ -1507,46 +1742,67 @@ class KoralPage(QWidget):
                 s = f"{int(round(val))}"
             else:
                 s = f"{val:.3g}"
-            return s.replace(".", ",") if use_comma else s
+            return s
 
-        def _format_energy_no_unit(e_keV: float, *, use_comma: bool = False) -> str:
+        def _format_energy_no_unit(e_keV: float) -> str:
             """Format energy in keV without the unit suffix."""
             try:
                 e = float(e_keV)
             except (TypeError, ValueError):
                 e = 0.0
-            s = f"{e:.2f}"
-            return s.replace(".", ",") if use_comma else s
+            return f"{e:.2f}"
+
+        unit_by_key = {
+            "elec_stop": stop_unit_elec,
+            "nucl_stop": stop_unit_nucl,
+            "prange": range_unit,
+            "long_strag": range_unit_long,
+            "lat_strag": range_unit_lat,
+            "nucl_strag": "eV²/Å",
+        }
+        title_by_key = {
+            "elec_stop": ("dE/dx", "Elec."),
+            "nucl_stop": ("dE/dx", "Nuclear"),
+            "prange": ("Projected", "Range"),
+            "long_strag": ("Longitudinal", "Straggling"),
+            "lat_strag": ("Lateral", "Straggling"),
+            "nucl_strag": ("Nuclear", "Straggling (Qn)"),
+        }
+
+        columns: list[tuple[str, int]] = [("energy", 12)]
+        for k in keys_present:
+            columns.append((k, 12))
 
         def line_for_point(e_keV: float, outs: dict, i: int) -> str:
-            energy = _format_energy_no_unit(e_keV, use_comma=True).rjust(12)
+            energy = _format_energy_no_unit(e_keV).rjust(12)
             vals: list[str] = []
             for k in keys_present:
                 series = outs.get(k)
                 if not isinstance(series, list) or i >= len(series):
-                    vals.append("".rjust(10))
+                    vals.append("".rjust(12))
                     continue
                 try:
                     v = float(series[i])
                 except (TypeError, ValueError):
                     v = 0.0
                 if k in {"elec_stop", "nucl_stop"}:
-                    # Always export stopping in eV/Å (SRIM default)
-                    unit_for_stop = "eV/Å"
+                    unit_for_stop = stop_unit_elec if k == "elec_stop" else stop_unit_nucl
                     conv = self._convert_stopping(
                         v,
                         unit_for_stop,
                         number_density_atoms_cm3=number_density_atoms_cm3,
                         density_g_cm3=density_g_cm3,
                     )
-                    vals.append(self._format_sci(conv, use_comma=True).rjust(10))
+                    vals.append(self._format_sci(conv).rjust(12))
+                elif k == "nucl_strag":
+                    vals.append(self._format_sci(v).rjust(12))
                 else:
                     unit_for_k = range_unit
                     if k == "long_strag":
                         unit_for_k = range_unit_long
                     elif k == "lat_strag":
                         unit_for_k = range_unit_lat
-                    vals.append(_format_length_no_unit(v, unit_for_k, use_comma=True).rjust(10))
+                    vals.append(_format_length_no_unit(v, unit_for_k).rjust(12))
             return f"  {energy}  " + " ".join(vals)
 
         now_dt = datetime.now()
@@ -1618,18 +1874,34 @@ class KoralPage(QWidget):
             out_lines.append(f"{sym:>6} {z:>6} {_fmt_2(ap):>9} {_fmt_2(mp):>9}")
 
         out_lines.append(" ====================================")
-        out_lines.append(f" Bragg Correction = {bragg_corr_pct:.2f}%".replace(".", ","))
-        out_lines.append(" Stopping Units =   eV / Angstrom ")
-        out_lines.append(" See bottom of Table for other Stopping units ")
+        out_lines.append(f" Bragg Correction = {bragg_corr_pct:.2f}%")
+        out_lines.append(" Unit Definitions (used in table below):")
+        out_lines.append("   energy: keV")
+        for k in keys_present:
+            t1, t2 = title_by_key.get(k, (k, ""))
+            out_lines.append(f"   {t1} {t2}: {unit_by_key.get(k, '')}")
         out_lines.append("")
-        out_lines.append("        Ion        dE/dx      dE/dx     Projected  Longitudinal   Lateral")
-        out_lines.append("       Energy      Elec.      Nuclear     Range     Straggling   Straggling")
-        # Unit abbreviations for range columns
-        _ru = "A" if range_unit == "Ång" else range_unit
-        _rlu = "A" if range_unit_long == "Ång" else range_unit_long
-        _rla = "A" if range_unit_lat == "Ång" else range_unit_lat
-        out_lines.append(f"       [keV]     [eV/Ang]   [eV/Ang]     [{_ru}]        [{_rlu}]        [{_rla}]")
-        out_lines.append("  --------------  ---------- ---------- ----------  ----------  ----------")
+
+        header_l1 = ["Ion"]
+        header_l2 = ["Energy"]
+        header_l3 = ["[keV]"]
+        for k in keys_present:
+            t1, t2 = title_by_key.get(k, (k, ""))
+            header_l1.append(t1)
+            header_l2.append(t2)
+            header_l3.append(f"[{unit_by_key.get(k, '')}]")
+
+        def _fmt_header(parts: list[str]) -> str:
+            cells = []
+            for idx, (_, width) in enumerate(columns):
+                txt = parts[idx] if idx < len(parts) else ""
+                cells.append(f"{txt:^{width}}")
+            return "  " + "  ".join(cells)
+
+        out_lines.append(_fmt_header(header_l1))
+        out_lines.append(_fmt_header(header_l2))
+        out_lines.append(_fmt_header(header_l3))
+        out_lines.append("  " + "  ".join("-" * width for _, width in columns))
 
         multi = len(norm) > 1
         for res in norm:
@@ -1648,44 +1920,6 @@ class KoralPage(QWidget):
                     ee = 0.0
                 out_lines.append(line_for_point(ee, outputs, i))
 
-        out_lines.append("-----------------------------------------------------------")
-        out_lines.append(" Multiply Stopping by        for Stopping Units")
-        out_lines.append(" -------------------        ------------------")
-        # Multipliers relative to 1 eV/Å
-        conv_table: list[tuple[float, str]] = []
-        conv_table.append((1.0, "eV / Angstrom"))
-        conv_table.append((10.0, "keV / micron"))
-        conv_table.append((10.0, "MeV / mm"))
-
-        # Density-dependent conversions (only meaningful if density is known)
-        if density_g_cm3 > 0:
-            # See _convert_stopping: keV/(ug/cm2) and MeV/(mg/cm2) are /1e9 after eV/(g/cm2)
-            factor = (1.0e8 / density_g_cm3) / 1.0e9
-            conv_table.append((factor, "keV / (ug/cm2)"))
-            conv_table.append((factor, "MeV / (mg/cm2)"))
-            conv_table.append(((1.0e8 / density_g_cm3) / 1.0e6, "keV / (mg/cm2)"))
-        if number_density_atoms_cm3 > 0:
-            cs_factor = 1.0 / (number_density_atoms_cm3 * 1.0e-23)
-            conv_table.append((cs_factor, "eV / (1E15 atoms/cm2)"))
-
-            # LSS reduced units (SRIM-style): divide the stopping cross section by
-            # the ZBL nuclear prefactor so the result is on the universal Sn(ε) scale.
-            Z2_eff = 0.0
-            M2_eff = 0.0
-            for _sym, _z, af, mass in atomic_fracs:
-                Z2_eff += af * float(_z)
-                M2_eff += af * float(mass)
-            if ion_Z > 0 and ion_mass_amu > 0 and Z2_eff > 0 and M2_eff > 0:
-                denom = (ion_mass_amu + M2_eff) * (ion_Z ** 0.23 + Z2_eff ** 0.23)
-                if denom > 0:
-                    pref = 8.462 * (ion_Z * Z2_eff * ion_mass_amu) / denom
-                    if pref > 0:
-                        conv_table.append((cs_factor / pref, "L.S.S. reduced units"))
-
-        for mult, name in conv_table:
-            out_lines.append(f" {mult: .4E}                {name}".replace(".", ","))
-
-        out_lines.append("")
         out_lines.append("  Program name: OpenSrim")
         return "\n".join(out_lines) + "\n"
 
@@ -1731,8 +1965,13 @@ class KoralPage(QWidget):
         self.selected_models_label = QLabel("Selected Model:\nNone")
         self.selected_models_label.setWordWrap(True)
 
+        solver_settings_btn = QPushButton("⚙ Solver Settings")
+        solver_settings_btn.setToolTip("Open KORAL solver settings in Advanced Options")
+        solver_settings_btn.clicked.connect(lambda: self.advanced_requested.emit("koral_solver"))
+
         layout.addWidget(self.model_button)
         layout.addWidget(self.selected_models_label)
+        layout.addWidget(solver_settings_btn)
         layout.addStretch(1)
 
         return box
@@ -1885,6 +2124,10 @@ class KoralPage(QWidget):
                     if isinstance(w, QCheckBox):
                         w.setChecked(False)
 
+    def set_koral_solver_settings(self, settings: dict) -> None:
+        if isinstance(settings, dict):
+            self._koral_solver_settings = settings
+
     # -------- configuration persistence ----------
     def collect_config(self) -> dict:
         ion = {
@@ -1924,7 +2167,6 @@ class KoralPage(QWidget):
             "chk_long_strag",
             "chk_lat_strag",
             "chk_nucl_strag",
-            "chk_nucl_strag_qn",
             "chk_elec_hop",
         ):
             if hasattr(self, name):
@@ -1940,6 +2182,8 @@ class KoralPage(QWidget):
             output["compound_corr"] = float(self.spin_compound_corr.value())
         if hasattr(self, "spin_target_density"):
             output["target_density"] = self._get_target_density()
+        if hasattr(self, "chk_gas"):
+            output["gas"] = bool(self.chk_gas.isChecked())
         if hasattr(self, "sw_koral_mode"):
             output["sw_koral_mode"] = bool(self.sw_koral_mode.isChecked())
 
@@ -2041,7 +2285,6 @@ class KoralPage(QWidget):
                 "chk_long_strag",
                 "chk_lat_strag",
                 "chk_nucl_strag",
-                "chk_nucl_strag_qn",
                 "chk_elec_hop",
             ):
                 if hasattr(self, name) and name in output:
@@ -2090,6 +2333,9 @@ class KoralPage(QWidget):
                 except (TypeError, ValueError):
                     pass
 
+            if hasattr(self, "chk_gas") and "gas" in output:
+                self.chk_gas.setChecked(bool(output.get("gas")))
+
             if hasattr(self, "sw_koral_mode") and "sw_koral_mode" in output:
                 self.sw_koral_mode.setChecked(bool(output.get("sw_koral_mode")))
 
@@ -2114,8 +2360,8 @@ class KoralPage(QWidget):
     def build_ion_data(self) -> QGroupBox:
         box = QGroupBox("")
         layout = QVBoxLayout(box)
-        # Keep header close to the top edge (like "Target Data").
-        layout.setContentsMargins(0, 0, 0, 0)
+        # Keep consistent inner spacing from the frame on all sides.
+        layout.setContentsMargins(8, 6, 8, 8)
         layout.setSpacing(6)
 
         # Header (title + hint button)
@@ -2227,8 +2473,8 @@ class KoralPage(QWidget):
     def build_input_elements(self) -> QGroupBox:
         box = QGroupBox("")
         v = QVBoxLayout(box)
-        # Keep header close to the top edge (like Ion Selection).
-        v.setContentsMargins(0, 0, 0, 0)
+        # Keep consistent inner spacing from the frame on all sides.
+        v.setContentsMargins(8, 6, 8, 8)
         v.setSpacing(6)
 
         # Header row: title + hint + (Add Element | Compound Dictionary)
@@ -2252,18 +2498,45 @@ class KoralPage(QWidget):
         self.elem_table = QTableWidget(0, 11)
         self.elem_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.elem_table.setHorizontalHeaderLabels([
-            "", "Symbol", "Name", "Atomic No.", "Weight (amu)",
-            "Atom Stoich", "Atom Stoich %", "Damage (eV)", "Disp (eV)", "Latt (eV)", "Surf (eV)"
+            "", "Symbol", "Name", "Atomic\nNo.", "Weight\n(amu)",
+            "Atom\nStoich", "Atom Stoich\n(%)", "Damage\n(eV)", "Disp\n(eV)", "Latt\n(eV)", "Surf\n(eV)"
         ])
         hdr = self.elem_table.horizontalHeader()
         if hdr is not None:
-            hdr.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-            # keep delete column compact
+            # Keep columns readable and prevent header overflow beyond column bounds.
+            hdr.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+            hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+            # cols 1-6 remain Interactive so setColumnWidth() from the resize filter takes effect
+            hdr.setSectionResizeMode(7, QHeaderView.ResizeMode.Fixed)
+            hdr.setSectionResizeMode(8, QHeaderView.ResizeMode.Fixed)
+            hdr.setSectionResizeMode(9, QHeaderView.ResizeMode.Fixed)
+            hdr.setSectionResizeMode(10, QHeaderView.ResizeMode.Fixed)
+            self.elem_table.setColumnWidth(0, 28)
+            self.elem_table.setColumnWidth(1, 72)
+            self.elem_table.setColumnWidth(2, 100)
+            self.elem_table.setColumnWidth(3, 76)
+            self.elem_table.setColumnWidth(4, 86)
+            self.elem_table.setColumnWidth(5, 88)
+            self.elem_table.setColumnWidth(6, 92)
+            self.elem_table.setColumnWidth(7, 78)
+            self.elem_table.setColumnWidth(8, 72)
+            self.elem_table.setColumnWidth(9, 72)
+            self.elem_table.setColumnWidth(10, 72)
+            # Install proportional-resize filter: col 0 stays fixed, cols 1-6 scale
+            _ProportionalColumnFilter(
+                self.elem_table,
+                fixed_cols={0: 28},
+                stretch_weights={1: 72, 2: 100, 3: 76, 4: 86, 5: 88, 6: 92},
+            )
             try:
-                hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+                max_lines = max(1, max(h.count("\n") + 1 for h in [
+                    "", "Symbol", "Name", "Atomic\nNo.", "Weight\n(amu)",
+                    "Atom\nStoich", "Atom Stoich\n(%)", "Damage\n(eV)",
+                    "Disp\n(eV)", "Latt\n(eV)", "Surf\n(eV)"
+                ]))
+                hdr.setMinimumHeight(hdr.fontMetrics().height() * max_lines + 12)
             except Exception:
                 pass
-            self.elem_table.setColumnWidth(0, 28)
             f = hdr.font()
             f.setBold(True)
             hdr.setFont(f)
@@ -2295,12 +2568,33 @@ class KoralPage(QWidget):
         self.elem_table.itemChanged.connect(self._handle_element_item_changed)
         self.elem_table.cellDoubleClicked.connect(self._handle_element_cell_double_clicked)
 
-        # Density row below the table
-        density_row = QWidget(box)
-        density_layout = QHBoxLayout(density_row)
-        density_layout.setContentsMargins(0, 0, 0, 0)
-        density_layout.setSpacing(6)
-        density_layout.addWidget(QLabel("Target Density (atoms/cm³)"))
+        # Compound correction + target density on one row (50% each); gas below.
+        params_box = QWidget(box)
+        params_v = QVBoxLayout(params_box)
+        params_v.setContentsMargins(0, 0, 0, 0)
+        params_v.setSpacing(4)
+
+        inputs_row = QHBoxLayout()
+        inputs_row.setContentsMargins(0, 0, 0, 0)
+        inputs_row.setSpacing(12)
+
+        # --- compound correction (left half) ---
+        self.spin_compound_corr = QDoubleSpinBox()
+        self.spin_compound_corr.setRange(0.0, 10.0)
+        self.spin_compound_corr.setDecimals(4)
+        self.spin_compound_corr.setSingleStep(0.01)
+        self.spin_compound_corr.setValue(1.0)
+        self.spin_compound_corr.setToolTip(
+            "Compound stopping-power correction factor applied to the target."
+        )
+        cc_holder = QWidget()
+        cc_l = QHBoxLayout(cc_holder)
+        cc_l.setContentsMargins(0, 0, 0, 0)
+        cc_l.setSpacing(4)
+        cc_l.addWidget(QLabel("Compound correction"))
+        cc_l.addWidget(self.spin_compound_corr, 1)
+
+        # --- target density (right half) ---
         self.spin_target_density = QLineEdit()
         self.spin_target_density.setText("0.0")
         self.spin_target_density.textEdited.connect(lambda: setattr(self, "_density_user_override", True))
@@ -2310,9 +2604,22 @@ class KoralPage(QWidget):
             "You can override this value manually.\n"
             "Supports scientific notation, e.g. 5.0e22."
         )
-        density_layout.addWidget(self.spin_target_density, 1)
-        density_layout.addStretch(1)
-        v.addWidget(density_row)
+        td_holder = QWidget()
+        td_l = QHBoxLayout(td_holder)
+        td_l.setContentsMargins(0, 0, 0, 0)
+        td_l.setSpacing(4)
+        td_l.addWidget(QLabel("Target Density (atoms/cm³)"))
+        td_l.addWidget(self.spin_target_density, 1)
+
+        inputs_row.addWidget(cc_holder, 1)
+        inputs_row.addWidget(td_holder, 1)
+        params_v.addLayout(inputs_row)
+
+        self.chk_gas = QCheckBox("Gas")
+        self.chk_gas.setToolTip("Treat the target material as a gas.")
+        params_v.addWidget(self.chk_gas)
+
+        v.addWidget(params_box)
 
         # Ensure the action row is visible even when empty.
         self._refresh_element_table()
@@ -2589,130 +2896,100 @@ class KoralPage(QWidget):
         # Header (title + hint button)
         v.addWidget(self._groupbox_header("Output Options", hint_id="output", parent=box))
 
-        row_prange = QHBoxLayout()
+        # Grid: left column = projectile range + straggling options,
+        #        right column = nuclear / electron stopping (own column).
+        #        col 6 = Plot/List switch (row 0 only, right-aligned).
+        _CMB_W = 120  # uniform combo width
+        opt_grid = QGridLayout()
+        opt_grid.setHorizontalSpacing(8)
+        opt_grid.setVerticalSpacing(4)
+        opt_grid.setColumnStretch(0, 0)        # left checkbox
+        opt_grid.setColumnStretch(1, 0)        # left combo
+        opt_grid.setColumnMinimumWidth(2, 24)  # gap between the two columns
+        opt_grid.setColumnStretch(2, 0)
+        opt_grid.setColumnStretch(3, 0)        # right checkbox
+        opt_grid.setColumnStretch(4, 0)        # right combo
+        opt_grid.setColumnStretch(5, 1)        # takes all extra space
+        opt_grid.setColumnStretch(6, 0)        # switch (row 0)
+
+        # --- left column: projectile range + straggling ---
         self.chk_prange = QCheckBox("Projectile Range")
         self.cmb_prange = QComboBox()
-        self.cmb_prange.clear()
+        self.cmb_prange.setFixedWidth(_CMB_W)
         self.cmb_prange.addItems(self.state.unit_options)
-        row_prange.addWidget(self.chk_prange)
-        row_prange.addStretch(1)
-        row_prange.addWidget(self.cmb_prange)
-        v.addLayout(row_prange)
+        opt_grid.addWidget(self.chk_prange, 0, 0)
+        opt_grid.addWidget(self.cmb_prange, 0, 1)
         self._output_option_widgets["prange"] = [self.chk_prange, self.cmb_prange]
 
-        row_long = QHBoxLayout()
-        self.chk_long_strag = QCheckBox("Long. Straggling (σ_x)")
-        self.cmb_long_strag = QComboBox()
-        self.cmb_long_strag.clear()
-        self.cmb_long_strag.addItems(self.state.unit_options)
-        row_long.addWidget(self.chk_long_strag)
-        row_long.addStretch(1)
-        row_long.addWidget(self.cmb_long_strag)
-        v.addLayout(row_long)
-        self._output_option_widgets["long_strag"] = [self.chk_long_strag, self.cmb_long_strag]
-
-        row_lat = QHBoxLayout()
-        self.chk_lat_strag = QCheckBox("Lat. Straggling (σ_z)")
-        self.cmb_lat_strag = QComboBox()
-        self.cmb_lat_strag.clear()
-        self.cmb_lat_strag.addItems(self.state.unit_options)
-        row_lat.addWidget(self.chk_lat_strag)
-        row_lat.addStretch(1)
-        row_lat.addWidget(self.cmb_lat_strag)
-        v.addLayout(row_lat)
-        self._output_option_widgets["lat_strag"] = [self.chk_lat_strag, self.cmb_lat_strag]
-
-        row_nucl_strag = QHBoxLayout()
-        self.chk_nucl_strag_qn = QCheckBox("Nuclear Straggling (Qn)")
-        row_nucl_strag.addWidget(self.chk_nucl_strag_qn)
-        row_nucl_strag.addStretch(1)
-        v.addLayout(row_nucl_strag)
-        self._output_option_widgets["nucl_strag"] = [self.chk_nucl_strag_qn]
-
-        row_nucl = QHBoxLayout()
-        self.chk_nucl_strag = QCheckBox("Nuclear Stopping")
-        row_nucl.addWidget(self.chk_nucl_strag)
-        row_nucl.addStretch(1)
-        self.cmb_nucl_stop_unit = QComboBox()
-        self.cmb_nucl_stop_unit.addItems(
-            [
-                "eV/Å",
-                "keV/µm",
-                "MeV/mm",
-                "keV/(µg/cm²)",
-                "MeV/(mg/cm²)",
-                "keV/(mg/cm²)",
-                "eV/(10¹⁵ atoms/cm²)",
-                "L.S.S. reduced units",
-            ]
-        )
-        row_nucl.addWidget(self.cmb_nucl_stop_unit)
-        v.addLayout(row_nucl)
-        self._output_option_widgets["nucl_stop"] = [self.chk_nucl_strag, self.cmb_nucl_stop_unit]
-
-        row_nucl_strag = QHBoxLayout()
-        self.chk_nucl_strag_qn = QCheckBox("Nuclear Straggling (Qn)")
-        row_nucl_strag.addWidget(self.chk_nucl_strag_qn)
-        row_nucl_strag.addStretch(1)
-        v.addLayout(row_nucl_strag)
-        self._output_option_widgets["nucl_strag"] = [self.chk_nucl_strag_qn]
-
-        row_elect = QHBoxLayout()
-        self.chk_elec_hop = QCheckBox("Electron Stopping")
-        row_elect.addWidget(self.chk_elec_hop)
-        row_elect.addStretch(1)
-        self.cmb_elec_stop_unit = QComboBox()
-        self.cmb_elec_stop_unit.addItems(
-            [
-                "eV/Å",
-                "keV/µm",
-                "MeV/mm",
-                "keV/(µg/cm²)",
-                "MeV/(mg/cm²)",
-                "keV/(mg/cm²)",
-                "eV/(10¹⁵ atoms/cm²)",
-                "L.S.S. reduced units",
-            ]
-        )
-        row_elect.addWidget(self.cmb_elec_stop_unit)
-        v.addLayout(row_elect)
-        self._output_option_widgets["elec_stop"] = [self.chk_elec_hop, self.cmb_elec_stop_unit]
-
-        # Compound correction input
-        row_corr = QHBoxLayout()
-        row_corr.addWidget(QLabel("Compound correction"))
-        self.spin_compound_corr = QDoubleSpinBox()
-        self.spin_compound_corr.setRange(0.0, 10.0)
-        self.spin_compound_corr.setDecimals(4)
-        self.spin_compound_corr.setSingleStep(0.01)
-        self.spin_compound_corr.setValue(1.0)
-        row_corr.addStretch(1)
-        row_corr.addWidget(self.spin_compound_corr)
-        v.addLayout(row_corr)
-
-        # --- "All" checkbox ---
-        v.addStretch(1)
-        all_row = QHBoxLayout()
-        all_row.addSpacing(10)
-        self.all_none_chk = QCheckBox("All")
-        self.all_none_chk.setTristate(False)
-        self.all_none_chk.setFixedWidth(50)
-        self.all_none_chk.setChecked(False)
-        self.all_none_chk.stateChanged.connect(self._toggle_all_options)
-        all_row.addWidget(self.all_none_chk)
-        all_row.addStretch(1)
-        v.addLayout(all_row)
-
-        row_switch = QHBoxLayout()
-        row_switch.addWidget(QLabel("Plot"))
+        # Plot / List switch – top-right, right-aligned
         self.sw_koral_mode = ToggleSwitch()
         self.sw_koral_mode.setChecked(False)  # False = Plot, True = List
-        row_switch.addWidget(self.sw_koral_mode)
-        row_switch.addWidget(QLabel("List"))
-        row_switch.addStretch(1)
-        v.addLayout(row_switch)
-
+        sw_container = QWidget()
+        sw_layout = QHBoxLayout(sw_container)
+        sw_layout.setContentsMargins(0, 0, 8, 0)
+        sw_layout.setSpacing(4)
+        sw_layout.addWidget(QLabel("Plot"))
+        sw_layout.addWidget(self.sw_koral_mode)
+        sw_layout.addWidget(QLabel("List"))
+        opt_grid.addWidget(sw_container, 0, 6, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.sw_koral_mode.toggled.connect(self._update_koral_plot_view)
+
+        # "All" toggle, directly under the Plot/List switch
+        self.all_none_chk = QCheckBox("All")
+        self.all_none_chk.setTristate(False)
+        self.all_none_chk.setChecked(False)
+        self.all_none_chk.stateChanged.connect(self._toggle_all_options)
+        opt_grid.addWidget(
+            self.all_none_chk, 1, 6,
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+        )
+
+        self.chk_long_strag = QCheckBox("Long. Straggling (σ_x)")
+        self.cmb_long_strag = QComboBox()
+        self.cmb_long_strag.setFixedWidth(_CMB_W)
+        self.cmb_long_strag.addItems(self.state.unit_options)
+        opt_grid.addWidget(self.chk_long_strag, 1, 0)
+        opt_grid.addWidget(self.cmb_long_strag, 1, 1)
+        self._output_option_widgets["long_strag"] = [self.chk_long_strag, self.cmb_long_strag]
+
+        self.chk_lat_strag = QCheckBox("Lat. Straggling (σ_z)")
+        self.cmb_lat_strag = QComboBox()
+        self.cmb_lat_strag.setFixedWidth(_CMB_W)
+        self.cmb_lat_strag.addItems(self.state.unit_options)
+        opt_grid.addWidget(self.chk_lat_strag, 2, 0)
+        opt_grid.addWidget(self.cmb_lat_strag, 2, 1)
+        self._output_option_widgets["lat_strag"] = [self.chk_lat_strag, self.cmb_lat_strag]
+
+        # --- right column: nuclear / electron stopping ---
+        _STOP_UNITS = [
+            "eV/Å",
+            "keV/µm",
+            "MeV/mm",
+            "keV/(µg/cm²)",
+            "MeV/(mg/cm²)",
+            "keV/(mg/cm²)",
+            "eV/(10¹⁵ atoms/cm²)",
+            "L.S.S. reduced units",
+        ]
+
+        self.chk_nucl_strag = QCheckBox("Nuclear Stopping")
+        self.cmb_nucl_stop_unit = QComboBox()
+        self.cmb_nucl_stop_unit.setFixedWidth(_CMB_W)
+        self.cmb_nucl_stop_unit.addItems(_STOP_UNITS)
+        opt_grid.addWidget(self.chk_nucl_strag, 0, 3)
+        opt_grid.addWidget(self.cmb_nucl_stop_unit, 0, 4)
+        self._output_option_widgets["nucl_stop"] = [self.chk_nucl_strag, self.cmb_nucl_stop_unit]
+
+        self.chk_elec_hop = QCheckBox("Electron Stopping")
+        self.cmb_elec_stop_unit = QComboBox()
+        self.cmb_elec_stop_unit.setFixedWidth(_CMB_W)
+        self.cmb_elec_stop_unit.addItems(_STOP_UNITS)
+        opt_grid.addWidget(self.chk_elec_hop, 1, 3)
+        opt_grid.addWidget(self.cmb_elec_stop_unit, 1, 4)
+        self._output_option_widgets["elec_stop"] = [self.chk_elec_hop, self.cmb_elec_stop_unit]
+
+        v.addLayout(opt_grid)
+        v.addStretch(1)
 
         return box
 
@@ -2720,7 +2997,7 @@ class KoralPage(QWidget):
         # Toggle all checkboxes between checked and unchecked based on all_none_chk
         new_state = self.all_none_chk.isChecked()
         for checkbox in [self.chk_prange, self.chk_long_strag, self.chk_lat_strag,
-                         self.chk_nucl_strag, self.chk_nucl_strag_qn, self.chk_elec_hop]:
+                         self.chk_nucl_strag, self.chk_elec_hop]:
             if checkbox.isEnabled() and checkbox.isVisible():
                 checkbox.setChecked(new_state)
 
@@ -2777,12 +3054,15 @@ class KoralPage(QWidget):
 
         export_row = QHBoxLayout()
         export_row.addStretch(1)
+        btn_export_csv = QPushButton("Export CSV")
+        btn_export_csv.clicked.connect(self._export_results_csv)
+        export_row.addWidget(btn_export_csv)
         btn_export = QPushButton("Export TXT")
         btn_export.clicked.connect(self._export_results_txt)
         export_row.addWidget(btn_export)
         lv.addLayout(export_row)
 
-        self.koral_result_table = QTableWidget(3, 3)
+        self.koral_result_table = QTableWidget(0, 3)
         self.koral_result_table.setHorizontalHeaderLabels(["Energy\n(keV)", "Range\n(µm)", "Straggling\n(µm)"])
         hh = self.koral_result_table.horizontalHeader()
         if hh is not None:
@@ -2795,11 +3075,6 @@ class KoralPage(QWidget):
         if vh is not None:
             vh.setVisible(False)
         self.koral_result_table.setAlternatingRowColors(True)
-
-        for row, (e, r, s) in enumerate([("10", "0.5", "0.1"), ("20", "1.0", "0.2"), ("30", "1.5", "0.3")]):
-            self.koral_result_table.setItem(row, 0, QTableWidgetItem(e))
-            self.koral_result_table.setItem(row, 1, QTableWidgetItem(r))
-            self.koral_result_table.setItem(row, 2, QTableWidgetItem(s))
 
         lv.addWidget(self.koral_result_table)
         self._table_layout = lv

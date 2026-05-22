@@ -364,10 +364,25 @@ class _KoralStoppingModel:
         # atoms/Å³; per-element weighting is done via c_target fractions.
         d_targets = [nd_A3] * len(z_targets)
 
-        # energies in eV for KORAL
-        start_eV = energies_keV[0] * 1e3
-        stop_eV = energies_keV[-1] * 1e3
+        # KORAL should always compute from 1 eV upwards, independent of UI min.
+        start_eV = 1.0
+        stop_eV = max(energies_keV[-1] * 1e3, start_eV)
         nr_values = len(energies_keV)
+
+        solver = request.get("solver") or {}
+        try:
+            nr_iterations = int(solver.get("nr_iterations", 1))
+        except (TypeError, ValueError):
+            nr_iterations = 1
+        integration_method = str(solver.get("integration_method", "LSODA")) or "LSODA"
+        try:
+            rtol = float(solver.get("rtol", 1e-6))
+        except (TypeError, ValueError):
+            rtol = 1e-6
+        try:
+            atol = float(solver.get("atol", 1e-6))
+        except (TypeError, ValueError):
+            atol = 1e-6
 
         toml_text = _build_koral_input_toml(
             method=self._method,
@@ -380,6 +395,10 @@ class _KoralStoppingModel:
             start_eV=start_eV,
             stop_eV=stop_eV,
             nr_values=nr_values,
+            nr_iterations=nr_iterations,
+            integration_method=integration_method,
+            rtol=rtol,
+            atol=atol,
         )
 
         # Create a dedicated temp dir per run for KORAL's file-based I/O.
@@ -476,6 +495,10 @@ def _build_koral_input_toml(
     start_eV: float,
     stop_eV: float,
     nr_values: int,
+    nr_iterations: int = 1,
+    integration_method: str = "LSODA",
+    rtol: float = 1e-6,
+    atol: float = 1e-6,
 ) -> str:
     """Build the TOML input file expected by simulators/koral/__main__.py.
 
@@ -494,10 +517,10 @@ def _build_koral_input_toml(
 
     lines = [
         "[settings]",
-        "nr_iterations = 1",
-        'integration_method = "LSODA"',
-        "rtol = 1e-6",
-        "atol = 1e-6",
+        f"nr_iterations = {int(nr_iterations)}",
+        f'integration_method = "{str(integration_method)}"',
+        f"rtol = {float(rtol):g}",
+        f"atol = {float(atol):g}",
         "",
         "[params]",
         f'method = "{str(method).upper()}"',

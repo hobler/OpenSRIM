@@ -79,24 +79,26 @@ def _write_histogram(path, val, x_vals, header_indexes, header_elems):
         np.savetxt(f, data, delimiter=", ", fmt="%d", header=header + "\n" + column_row)
 
 def _write_histogram_binary_2d(path, val, species_labels):
-    counts = np.asarray(val["counts"], dtype="<f8")
+    counts = np.asarray(val["counts"][:, 1:-1, 1:-1], dtype="<f8")
     n_species, _, _ = counts.shape
     nx = int(val["x_nbins"])
     ny = int(val["y_nbins"])
     x_values = np.linspace(val["x_limits"][0], val["x_limits"][1], nx, dtype="<f8")
     y_values = np.linspace(val["y_limits"][0], val["y_limits"][1], ny, dtype="<f8")
     labels = np.asarray(species_labels, dtype="S32")
+    tables = np.zeros((n_species, nx + 1, ny + 1), dtype="<f8")
+    tables[:, 1:, 0] = x_values
+    tables[:, 0, 1:] = y_values
+    tables[:, 1:, 1:] = counts
     header = [
         np.array([0x00fa], dtype="<u2"),
         np.array([n_species, nx, ny], dtype="<u4"),
         labels,
-        x_values,
-        y_values,
     ]
     with open(path, "wb") as f:
         for item in header:
             item.tofile(f)
-        counts.tofile(f)
+        tables.tofile(f)
 
 
 def _write_moments(path, val, species_labels, species_indexes):

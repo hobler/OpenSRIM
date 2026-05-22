@@ -1,0 +1,210 @@
+% Nuclear Stopping Cross Section and Straggling
+
+\subsubsection{Nuclear stopping cross section}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+When a projectile travels a distance $\mathrm{d} r$ in a target with randomly arranged atoms of atomic density $N$ (units: atoms/\AA$^3$), it passes by $2 \pi p \, \mathrm{d} p \, \mathrm{d} r N$ atoms at distances between $p$ and $p + \mathrm{d} p$. According to \cref{eq:sn_physics_dE}, in a collision with impact parameter $p$, the projectile transfers the energy
+%
+\begin{equation}
+    \label{eq:sn_sn_dE}
+    T_\mathrm{n} = \gamma \, E \, \sin^2 \frac{\theta}{2} ~, \quad
+    \gamma = \frac{ 4 M_1 M_2 }{ (M_1 + M_2)^2 }
+\end{equation}
+%
+to the target atom, where $\theta = \theta(E, p)$ can be calculated as described in \cref{s:cmangle}. The average total energy loss $- \overline{\mathrm{d} E}$ of the projectile to target nuclei while traveling a distance $\mathrm{d} r$ therefore is
+%
+\begin{equation}
+    - \overline{\mathrm{d} E} = \int_0^\infty T_\mathrm{n}(E,p) \,
+        2 \pi p \, \mathrm{d} p \, \mathrm{d} r N
+\end{equation}
+%
+The average energy loss to nuclei per path length (also called ``stopping force'') therefore is
+%
+\begin{equation}
+    \label{eq:sn_sndef}
+    - \overline{\left( \frac{ \mathrm{d} E }{ \mathrm{d} r } \right)}_\mathrm{n} =
+        N \, S_\mathrm{n}(E)
+\end{equation}
+%
+where the stopping cross section (also called ``stopping power'') is given by
+%
+\begin{equation}
+    S_\mathrm{n}(E) = \pi \int_0^\infty T_\mathrm{n}(E,p) \, 2p \, \mathrm{d} p =
+        \pi \gamma E \int_0^\infty \sin^2 \frac{\theta}{2} \, 2p \, \mathrm{d} p ~.
+\end{equation}
+%
+In terms of the reduced quantities Eqs.~(\ref{eq:sn_reduced_lengths}) and (\ref{eq:sn_reduced_energy}) the stopping cross section may be written
+%
+\begin{equation}
+    \label{eq:sn_sn1}
+    S_\mathrm{n}(E) = \pi \gamma (E/\varepsilon) a_\mathrm{I}^2 \, s_\mathrm{n}(\varepsilon)
+\end{equation}
+%
+with the reduced nuclear stopping cross section
+%
+\begin{equation}
+    s_\mathrm{n}(\varepsilon) = \varepsilon \int_0^\infty \sin^2 \frac{\theta(\varepsilon,P)}{2} \, 2 P \, \mathrm{d} P
+\end{equation}
+%
+With Eqs.~(\ref{eq:sn_reduced_energy}) and (\ref{eq:sn_coulomb}), \cref{eq:sn_sn1} can be rewritten
+%
+\begin{equation}
+    \label{eq:sn_sn}
+    S_\mathrm{n}(E) =  \pi \frac{ 4 M_1 }{ M_1 + M_2 } Z_1 Z_2 (14.4 \,\mathrm{eV\mathAA}) \, a_\mathrm{I} \, s_\mathrm{n}(\varepsilon)
+\end{equation}
+
+\begin{figure}
+    \centering
+    \includegraphics[scale=0.5]{sn_p0.23_p1_homo.pdf} ~~
+    \includegraphics[scale=0.5]{sn_p0.23_p1_homo_e0.01.pdf} ~~ \\[\baselineskip]
+    \includegraphics[scale=0.5]{sn_p0.5_p0.67_homo.pdf} ~~
+    \includegraphics[scale=0.5]{sn_p0.5_p0.67_homo_e0.01.pdf}
+    \caption{Reduced nuclear stopping cross section for the NLHlin potential (colored lines) of homonuclear atom pairs ($Z_1=Z_2$) as a function of reduced energy $\varepsilon$ (left) and for $\varepsilon = 0.01$ as a function of atomic number (right).
+        Two different screening lengths have been used.
+        Upper row: ZBL screening length \cref{eq:sn_aZBL}; lower row: Firsov screening length \cref{eq:sn_aF}
+        For comparison, the stopping cross sections of the ZBL potential (upper row) and the KrC potential (lower row) are depicted by black dashed lines.
+        Note that these two potentials yield universal reduced stopping cross sections with the respective screening lengths.
+        In the left panels the atomic numbers are color-coded.
+        The dotted parts of the lines correspond to energies $< 10$~eV.
+    }
+    \label{fig:sn_sn}
+\end{figure}
+%
+The reduced nuclear stopping cross sections $S_\mathrm{n}$ for the NLHlin potentials are shown as a function of reduced energy $\varepsilon$ in \cref{fig:sn_sn} for homo-nuclear pairs.
+Considerable variation is observed, in particular at low energies, which cannot be described by universal interatomic potentials like ZBL and KrC.
+Comparing the results for the universal and the NLHlin potentials at $\varepsilon < 1$, the ZBL potential lies at the upper limit of the NLHlin potentials, while the KrC potential better approximates the average of the heavier elements ($Z \gtrsim 40$).
+On the other hand, KrC does even worse than ZBL for the lighter elements ($Z \lesssim 20$), which is mainly due to the Firsov screening length (check!).
+
+\begin{figure}
+    \centering
+    \includegraphics[scale=0.5]{sn_ratio_homo_zbl_at_e.pdf} ~~
+    \includegraphics[scale=0.5]{sn_ratio_homo_krc_at_e.pdf}
+    \caption{Ratio of the stopping cross section calculated using the NLHlin potential and the ZBL potential (left) or KrC potential (right) as a function of atomic number for four different energies. The data has been obtain for the homonuclear case ($Z_1 = Z_2$).}
+    \label{fig:sn_sn_ratio}
+\end{figure}
+%
+For the light ions the low values of the reduced energy are of no relevance since they correspond to energies where the BCA breaks down.
+It is therefore more instructive to plot the nuclear stopping cross section as a function of the actual energy.
+\cref{fig:sn_sn_ratio} shows the ratios of the stopping cross sections calculated using the NLHlin potential and the ZBL potential or KrC potential as a function of atomic number for four different energies for the homonuclear case ($Z_1 = Z_2$).
+Compared to when the stopping cross section is plotted for constant reduced energies (\cref{fig:sn_sn}), the deviations from 1 appear more evenly distributed between light and heavy ions.
+
+It is noted that in BCA simulations, impact parameters must be limited by some maximum value $p_\mathrm{max}$.
+This value is often chosen relatively small, so that considerable energy loss is neglected at low energies (check!).
+Thus, the effective stopping cross section is lowered in the simulation, possibly towards the values for the NLHlin potential, however, in an unsystematic way.
+
+\begin{figure}
+    \centering
+    \includegraphics[scale=0.5]{sn_zbl_all_e0.01.pdf} ~~
+    \includegraphics[scale=0.5]{sn_krc_all_e0.01.pdf}
+    \caption{Reduced nuclear stopping cross section for the NLHlin potential of all atom pairs as a function of atomic number $Z_1$ at a reduced energy of $\varepsilon = 0.01$.
+    Two different screening lengths have been used.
+    Left: ZBL screening length \cref{eq:sn_aZBL}; right: Firsov screening length \cref{eq:sn_aF}
+    For comparison, the stopping cross sections of the ZBL potential (left) and the KrC potential (right) are depicted by black dashed lines.
+    Note that these two potentials yield universal reduced stopping cross sections with the respective screening lengths.
+    The atomic numbers $Z_2$ are color-coded.
+    }
+    \label{fig:sn_sn_all}
+\end{figure}
+%
+The stopping cross sections for all atom pairs at $\varepsilon = 0.02$ are depicted in \cref{fig:sn_sn_all}.
+The results are in line with those for the homo-nuclear pairs (\cref{fig:sn_sn}).
+
+
+\subsubsection{Nuclear straggling}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+It may be shown \cite{Bohr1948} that the variance of the energy loss due to nuclear collisions over a path length $\mathrm{d} r$ in a target with randomly positioned atoms is given by
+%
+\begin{equation}
+    \label{eq:sn_sn_Estraggle}
+    \overline{ \left( \mathrm{d} E - \overline{\mathrm{d} E} \right)^2 } =
+        \int_0^\infty T_\mathrm{n}^2(E,p) \,
+        2 \pi p \, \mathrm{d} p \, \mathrm{d} r N =
+    N \mathrm{d} r \, Q_\mathrm{n}(E)
+\end{equation}
+%
+with
+%
+\begin{equation}
+    Q_\mathrm{n}(E) = \int_0^\infty T_\mathrm{n}^2(E,p) \, 2 \pi p \, \mathrm{d} p ~,
+\end{equation}
+%
+which is usually called ``nuclear straggling''. Using \cref{eq:sn_sn_dE}, we obtain
+%
+\begin{equation}
+    Q_\mathrm{n}(E) = \pi \gamma^2 E^2 \int_0^\infty \sin ^4 \frac{\theta}{2} \, 2 p \, \mathrm{d} p ~.
+\end{equation}
+%
+In terms of the reduced quantities Eqs.~(\ref{eq:sn_reduced_lengths}) and (\ref{eq:sn_reduced_energy}) the nuclear straggling may also be written
+%
+\begin{equation}
+    \label{eq:sn_qn1}
+    Q_\mathrm{n}(E) = \pi \gamma^2 (E/\varepsilon)^2 a_\mathrm{I}^2 \, q_\mathrm{n}(\varepsilon)
+\end{equation}
+%
+with
+%
+\begin{equation}
+    q_\mathrm{n}(\varepsilon) = \varepsilon^2 \int_0^\infty \sin^4 \frac{\theta(\varepsilon,P)}{2} \, 2 P \, \mathrm{d} P ~.
+\end{equation}
+%
+With Eqs.~(\ref{eq:sn_reduced_energy}) and (\ref{eq:sn_coulomb}), \cref{eq:sn_qn1} can be rewritten
+%
+\begin{equation}
+    \label{eq:sn_qn}
+    Q_\mathrm{n}(E) =  \pi \left[ \frac{ 4 M_1 }{ M_1 + M_2 }
+        Z_1 Z_2 (14.4 \,\mathrm{eV\mathAA}) \right]^2 \, q_\mathrm{n}(\varepsilon) ~.
+\end{equation}
+
+The results for the nuclear straggling for the NLHlin potentials are shown in \cref{fig:sn_qn}.
+They compare similarly to the ZBL and KrC potential as the nuclear stopping cross sections.
+%
+\begin{figure}
+    \centering
+    \includegraphics[scale=0.5]{qn_p0.23_p1_homo.pdf} ~~
+    \includegraphics[scale=0.5]{qn_p0.23_p1_homo_e0.01.pdf} \\[\baselineskip]
+    \includegraphics[scale=0.5]{qn_p0.5_p0.67_homo.pdf} ~~
+    \includegraphics[scale=0.5]{qn_p0.5_p0.67_homo_e0.01.pdf}
+    \caption{Reduced nuclear straggling for the NLHlin potential (colored lines) of homonuclear atom pairs ($Z_1=Z_2$) as a function of reduced energy $\varepsilon$ (left) and for $\varepsilon = 0.01$ as a function of atomic number (right).
+    Two different screening lengths have been used.
+    Upper row: ZBL screening length \cref{eq:sn_aZBL}; lower row: Firsov screening length \cref{eq:sn_aF}
+    For comparison, the stopping cross sections of the ZBL potential (upper row) and the KrC potential (lower row) are depicted by black dashed lines.
+    Note that these two potentials yield universal reduced stragglings with the respective screening lengths.
+    In the left panels the atomic numbers are color-coded.
+    The dotted parts of the lines correspond to energies $< 10$~eV.
+    }
+    \label{fig:sn_qn}
+\end{figure}
+
+\subsubsection{Analytic expressions}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+The results for the nuclear stopping cross section and straggling can be fitted by analytical expressions within a few percent as proposed in \cite{ZBL85}. For the stopping cross section we use
+%
+\begin{equation}
+    \label{eq:sn_sn_fit}
+    s_\mathrm{n}(\varepsilon) = \frac{ \ln(1 + a \, \varepsilon) }{
+                          2 ( \varepsilon + b \, \varepsilon^c + d \, \varepsilon^{0.5})}
+\end{equation}
+%
+In \cite{ZBL85} it is suggested to use $s_\mathrm{n} = \ln \varepsilon / 2 \varepsilon$ for $\varepsilon > 30$, which is referred to as ``unscreened nuclear stopping'' without further explanation.
+We did not find it necessary to apply this special treatment for high energies, and found actually better fitting of the data using the expression \cref{eq:sn_sn_fit} over the whole energy range (at least) up to $\varepsilon = 10^4$.
+
+For the nuclear straggling we use \cite{ZBL85}
+%
+\begin{equation}
+    \label{eq:sn_qn_fit}
+    q_\mathrm{n}(\varepsilon) = \frac{ 1 }{ 4 + a \, \varepsilon^b + c \, \varepsilon^d }
+\end{equation}
+%
+The values $a$, $b$, $c$, and $d$ have been fitted to energies between $\varepsilon = 3 \times 10^{-5}$ and $10^4$ for both nuclear stopping cross section and nuclear straggling for all atom pairs.
+
+\begin{figure}
+    \centering
+    \includegraphics[scale=0.5]{sn_fit_nlhlin_B_Si.pdf} ~~
+    \includegraphics[scale=0.5]{qn_fit_nlhlin_B_Si.pdf}
+    \caption{Data and fits for $Z_1 = 5$, $Z_2 = 14$.}
+    \label{fig:sn_fit_Z5_14}
+\end{figure}
+%
+\Cref{fig:sn_fit_Z5_14} shows, as an example the data and fits for $Z_1 = 5$, $Z_2 = 14$.

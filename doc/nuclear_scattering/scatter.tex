@@ -1,0 +1,51 @@
+% Scattering Quantities for Screened Coulomb Potentials
+
+For a screened Coulomb potential, the scattering angle in the CM system $\theta$, \cref{eq:sn_physics_theta}, and the time integral $\tau$, \cref{eq:sn_tau}, can be written in terms of the screening function $\Phi$:
+%
+\begin{equation}
+    \label{eq:sn_reduced_theta}
+    \theta(\varepsilon,P) = \pi - 2 \, P \int_{R_0}^\infty
+        \frac{ \mathrm{d}R }{ R^2 \, g(R) }
+\end{equation}
+%
+and
+%
+\begin{equation}
+\label{eq:sn_reduced_tau}
+    T(\varepsilon,P) = R_0 - \int_{R_0}^\infty \left[
+        \frac{ 1 }{ g(R) } - 1 \right] \mathrm{d}R.
+\end{equation}
+%
+with
+%
+\begin{equation}
+    \label{eq:sn_reduced_g}
+    g(R) = \sqrt{ 1 - \frac{ 1 }{ \varepsilon R } \Phi(R)
+        - \frac{ P^2 }{ R^2 } } .
+\end{equation}
+%
+Here, reduced lengths
+%
+\begin{equation}
+    \label{eq:sn_reduced_lengths}
+    P = p/a_\mathrm{I}, \quad R = r/a_\mathrm{I}, \quad R_0 = r_0/a_\mathrm{I}, \quad T = \tau/a_\mathrm{I}
+\end{equation}
+%
+and the reduced energy
+%
+\begin{equation}
+    \label{eq:sn_reduced_energy}
+    \varepsilon = E \left/ \left( \frac{ M_1 + M_2 }{ M_2 }
+        \frac{ Z_1 Z_2 e^2 }{ a_\mathrm{I} } \right) \right.
+\end{equation}
+%
+have been introduced. The reduced distance of closest approach $R_0$ is given by $g(R_0) = 0$ or
+%
+\begin{equation}
+    \label{eq:sn_apsis}
+    1 - \frac{ 1 }{ \varepsilon R_0 } \Phi(R_0) - \frac{ P^2 }{ R_0^2 } = 0
+\end{equation}
+
+The advantage of introducing reduced parameters lies in the fact that given a universal screening function $\Phi(R)$, \crefrange{eq:sn_reduced_theta}{eq:sn_reduced_g} dependent on the atom species only via \cref{eq:sn_reduced_lengths,eq:sn_reduced_energy}.
+This may be used in the development and testing of numerical algorithms, and to draw general conclusions in terms of the reduced impact parameter $P$ and energy $\varepsilon$.
+We therefore use \crefrange{eq:sn_reduced_theta}{eq:sn_reduced_energy} in the following, although formulations in terms of actual lengths (in \AA) can simply be obtained by setting $a_\mathrm{I} = 1 \mathAA$ and adjusting the coefficients of $\Phi$.

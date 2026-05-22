@@ -7,12 +7,12 @@ Available functions:
     eloss: calculate the electronic energy loss.
 """
 from math import sqrt
-from collections import namedtuple
 import numpy as np
 from numba import jit
+from . import config
 
 
-@jit
+@jit(debug=config.DEBUG)
 def estop_lindhard(e, fac_lindhard):
     """Calculate the Lindhard electronic stopping power for a given energy.
 
@@ -26,7 +26,7 @@ def estop_lindhard(e, fac_lindhard):
     return fac_lindhard * sqrt(e)
 
 
-@jit(inline = "always")
+@jit(inline = "always", debug=config.DEBUG)
 def eloss(proj, free_path, estop_params, materials_params):
     """Calculate the electronic energy loss over a given free path length.
 

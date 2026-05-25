@@ -148,6 +148,7 @@ class AdvancedOptionsPage(QWidget):
     columns_changed = pyqtSignal(int)        # 0=auto, 1, 2, 3
     borders_visibility_changed = pyqtSignal(bool)
     plot_font_size_changed = pyqtSignal(float)
+    bin_combine_changed = pyqtSignal(int)    # 1..6 adjacent bins summed per tile
     koral_solver_changed = pyqtSignal(dict)
     histogram_settings_changed = pyqtSignal(dict)
 
@@ -362,6 +363,19 @@ class AdvancedOptionsPage(QWidget):
         self.col_combo.currentIndexChanged.connect(self.columns_changed)
         col_row.addWidget(self.col_combo)
         display_l.addLayout(col_row)
+
+        bin_row = QHBoxLayout()
+        bin_row.addWidget(QLabel("Combine Bins:"))
+        self.spin_bin_combine = QSpinBox()
+        self.spin_bin_combine.setRange(1, 6)
+        self.spin_bin_combine.setValue(1)
+        self.spin_bin_combine.setToolTip(
+            "Sum N adjacent histogram bins per tile (1 = no combining, up to 6)."
+        )
+        self.spin_bin_combine.valueChanged.connect(self.bin_combine_changed)
+        bin_row.addWidget(self.spin_bin_combine)
+        bin_row.addStretch(1)
+        display_l.addLayout(bin_row)
         display_l.addStretch(1)
 
         self._acc_ion = AccordionItem("Ion selection", ion, expanded=False, parent=content)

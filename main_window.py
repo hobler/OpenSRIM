@@ -273,6 +273,9 @@ class MainWindow(QMainWindow):
         self.advanced_options_tab.plot_font_size_changed.connect(
             widget.set_plot_font_size
         )
+        self.advanced_options_tab.bin_combine_changed.connect(
+            widget.set_plot_bin_combine
+        )
 
     def _is_mc_results_tab_index(self, index: int) -> bool:
         widget = self.tab_widget.widget(index)

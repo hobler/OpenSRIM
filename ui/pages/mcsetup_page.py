@@ -1691,6 +1691,31 @@ class MCSetupPage(QWidget):
             "",
         ]
 
+        # 2D distributions: enable scoring when either the depth or lateral
+        # 1D variant of the same physical quantity is enabled. The simulator
+        # requires these sections to exist; missing them raises KeyError in
+        # init_stats. Limits combine the 1D depth/lateral limits.
+        score_2d_ir   = bool(out.get('range_ion_recoil')  or out.get('lateral_ion_recoil'))
+        score_2d_ned  = bool(out.get('range_phonons')     or out.get('lateral_phonons'))
+        score_2d_eed  = bool(out.get('range_ionization')  or out.get('lateral_ionization'))
+        lines += [
+            "[output.distribution_2d.ion_recoils]",
+            f"score = {'true' if score_2d_ir else 'false'}",
+            f"nbins = [{nbins}, {nbins}]",
+            f"limits = [[{depth_min}, {depth_max}], [{lateral_min}, {lateral_max}]]",
+            "",
+            "[output.distribution_2d.nuclear_energy_deposition]",
+            f"score = {'true' if score_2d_ned else 'false'}",
+            f"nbins = [{nbins}, {nbins}]",
+            f"limits = [[{depth_min}, {depth_max}], [{lateral_min}, {lateral_max}]]",
+            "",
+            "[output.distribution_2d.electronic_energy_deposition]",
+            f"score = {'true' if score_2d_eed else 'false'}",
+            f"nbins = [{nbins}, {nbins}]",
+            f"limits = [[{depth_min}, {depth_max}], [{lateral_min}, {lateral_max}]]",
+            "",
+        ]
+
         return "\n".join(lines)
 
     # -------- simulation execution ----------

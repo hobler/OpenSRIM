@@ -836,13 +836,15 @@ class PlotTile(QFrame):
     zoom_requested = pyqtSignal(str)  # emits plot_id
     tile_reorder_requested = pyqtSignal(str, str, bool)  # source, target, before
 
-    def __init__(self, plot_id: str, plot_info: dict, parent=None, font_size: float = 10.0):
+    def __init__(self, plot_id: str, plot_info: dict, parent=None, font_size: float = 10.0,
+                 bin_factor: int = 1):
         super().__init__(parent)
         self.plot_id = plot_id
         self.plot_info = plot_info
         self._is_3d = plot_info.get("projection") == "3d"
         self._has_border = True
         self._font_size = float(font_size)
+        self._bin_factor = max(1, int(bin_factor))
         self.setAcceptDrops(True)
 
         self.setFrameStyle(QFrame.Shape.Box | QFrame.Shadow.Plain)
@@ -874,7 +876,7 @@ class PlotTile(QFrame):
         layout.addWidget(self.canvas)
 
         # Draw the plot
-        plot_info["plot_func"](self.ax)
+        self._call_plot_func(self.ax)
         _apply_axes_font_size(self.ax, self._font_size)
         self.figure.tight_layout()
         self.canvas.draw()
@@ -1013,8 +1015,13 @@ class PlotTile(QFrame):
 
     def redraw(self):
         """Redraw the plot (e.g. after data update)."""
-        self.ax.clear()
-        self.plot_info["plot_func"](self.ax)
+        # The figure can hold extra artists (colorbars, twin axes) added by a
+        # previous plot_func call — clear at the figure level so they vanish too.
+        self.figure.clf()
+        self.ax = self.figure.add_subplot(
+            111, projection=self.plot_info.get("projection")
+        )
+        self._call_plot_func(self.ax)
         _apply_axes_font_size(self.ax, self._font_size)
         self.figure.tight_layout()
         self.canvas.draw_idle()
@@ -1022,6 +1029,21 @@ class PlotTile(QFrame):
     def set_font_size(self, font_size: float):
         self._font_size = float(font_size)
         self.redraw()
+
+    def set_bin_factor(self, factor: int) -> None:
+        new = max(1, int(factor))
+        if new == self._bin_factor:
+            return
+        self._bin_factor = new
+        self.redraw()
+
+    def _call_plot_func(self, ax) -> None:
+        """Invoke the plot_func, passing bin_factor when the function accepts it."""
+        fn = self.plot_info["plot_func"]
+        try:
+            fn(ax, bin_factor=self._bin_factor)
+        except TypeError:
+            fn(ax)
 
 
 # =====================================================================
@@ -1050,6 +1072,7 @@ class PlotArea(QWidget):
         self._toolbar_visible: bool = True
         self._borders_visible: bool = True
         self._font_size: float = 10.0
+        self._bin_factor: int = 1     # 1 = no combining; up to 6
 
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
@@ -1095,6 +1118,13 @@ class PlotArea(QWidget):
         for tile in self._tiles.values():
             tile.set_font_size(self._font_size)
 
+    def set_bin_factor(self, factor: int) -> None:
+        """Combine *factor* adjacent histogram bins on every tile (1–6)."""
+        new = max(1, min(6, int(factor)))
+        self._bin_factor = new
+        for tile in self._tiles.values():
+            tile.set_bin_factor(new)
+
     # --- internal rebuild ---------------------------------------------
 
     def _rebuild(self):
@@ -1123,7 +1153,8 @@ class PlotArea(QWidget):
                 info = AVAILABLE_PLOTS.get(pid)
                 if info is None:
                     continue
-                tile = PlotTile(pid, info, font_size=self._font_size)
+                tile = PlotTile(pid, info, font_size=self._font_size,
+                                bin_factor=self._bin_factor)
                 tile.zoom_requested.connect(self._open_zoomed)
                 tile.tile_reorder_requested.connect(self._handle_tile_reorder)
                 tile.setMinimumSize(250, 200)
@@ -1895,6 +1926,15 @@ class SinglePlotPage(QWidget):
         self._axis_x_cmb.currentIndexChanged.connect(self._on_axis_x_changed)
         style_form.addRow("X axis:", self._axis_x_cmb)
 
+        self._bin_combine_spin = QSpinBox()
+        self._bin_combine_spin.setRange(1, 6)
+        self._bin_combine_spin.setValue(1)
+        self._bin_combine_spin.setToolTip(
+            "Sum N adjacent histogram bins for this curve (1 = no combining)."
+        )
+        self._bin_combine_spin.valueChanged.connect(self._on_bin_combine_changed)
+        style_form.addRow("Combine bins:", self._bin_combine_spin)
+
         side_layout.addWidget(self._style_group)
         self._style_group.setEnabled(False)
 
@@ -2123,6 +2163,68 @@ class SinglePlotPage(QWidget):
         """Append every visible series of *plot_info* as a new curve."""
         if not isinstance(plot_info, dict):
             return 0
+
+        # 2D plots can't overlay with line curves — replace the curve list
+        # with the single heatmap entry. The actual drawing is delegated to
+        # the plot_func supplied by the results builder.
+        if plot_info.get("is_2d") and callable(plot_info.get("plot_func")):
+            source_name = str(plot_info.get("name", plot_id))
+            x_label = str(plot_info.get("x_label", "") or "")
+            y_label = str(plot_info.get("y_label", "") or "")
+            self._curves = []
+            curve = {
+                "id":          self._next_curve_id,
+                "source_id":   plot_id,
+                "source_name": source_name,
+                "series_idx":  0,
+                "label":       source_name,
+                "visible":     True,
+                "is_2d":       True,
+                "plot_func":   plot_info["plot_func"],
+                "stats_func":  plot_info.get("stats_func"),
+                "x_label":     x_label,
+                "y_label":     y_label,
+                # Placeholders so the curve-list/style panel code paths don't
+                # blow up when they read these fields.
+                "color":       "#444444",
+                "drawstyle":   "default",
+                "linestyle":   "-",
+                "linewidth":   1.0,
+                "marker":      "None",
+                "markersize":  4.0,
+                "alpha":       1.0,
+                "zorder":      1,
+                "conv_enabled": False,
+                "conv_sigma":   0.0,
+                "scan_area":    [0.0, 0.0],
+                "bin_factor":   1,
+                "is_depth_profile": False,
+                "axis_x":       "bottom",
+                "axis_y":       "left",
+            }
+            self._next_curve_id += 1
+            self._curves.append(curve)
+            # Take title/labels from the 2D plot unless the user already
+            # customized them.
+            if "title" not in self._axes_user_overrides:
+                self._axes_state["title"] = source_name
+                self._title_edit.blockSignals(True)
+                self._title_edit.setText(source_name)
+                self._title_edit.blockSignals(False)
+            if "xlabel" not in self._axes_user_overrides:
+                self._axes_state["xlabel"] = x_label
+                self._xlabel_edit.blockSignals(True)
+                self._xlabel_edit.setText(x_label)
+                self._xlabel_edit.blockSignals(False)
+            if "ylabel" not in self._axes_user_overrides:
+                self._axes_state["ylabel"] = y_label
+                self._ylabel_edit.blockSignals(True)
+                self._ylabel_edit.setText(y_label)
+                self._ylabel_edit.blockSignals(False)
+            self._refresh_curve_list(select_last=True)
+            self._render_plot()
+            return 1
+
         x_vals = plot_info.get("x_values")
         cols = plot_info.get("columns")
         if x_vals is None or cols is None:
@@ -2187,6 +2289,7 @@ class SinglePlotPage(QWidget):
                 "conv_enabled": False,
                 "conv_sigma":   0.0,
                 "scan_area":    [0.0, 0.0],
+                "bin_factor":   1,
                 "stats_func":   plot_stats_func,
                 "axis_x":       "bottom",
                 "axis_y":       "left",
@@ -2455,6 +2558,19 @@ class SinglePlotPage(QWidget):
             self._stats_table.setRowCount(0)
             return
 
+        # 2D curves: line-style and convolution controls don't apply.
+        if curve.get("is_2d"):
+            self._style_group.setEnabled(False)
+            self._conv_group.setVisible(False)
+            self._bin_combine_spin.blockSignals(True)
+            self._bin_combine_spin.setValue(1)
+            self._bin_combine_spin.blockSignals(False)
+            self._label_edit.blockSignals(True)
+            self._label_edit.setText(str(curve["label"]))
+            self._label_edit.blockSignals(False)
+            self._populate_stats_for(curve)
+            return
+
         self._label_edit.blockSignals(True)
         self._label_edit.setText(str(curve["label"]))
         self._label_edit.blockSignals(False)
@@ -2484,19 +2600,23 @@ class SinglePlotPage(QWidget):
         self._set_combo_data(self._axis_y_cmb, curve.get("axis_y", "left"))
         self._set_combo_data(self._axis_x_cmb, curve.get("axis_x", "bottom"))
 
-        # Convolution panel for depth profiles, scan-area panel for 2-D curves.
+        self._bin_combine_spin.blockSignals(True)
+        self._bin_combine_spin.setValue(int(curve.get("bin_factor", 1)))
+        self._bin_combine_spin.blockSignals(False)
+
+        # Convolution panel: σ + checkbox always available; the scan-area row
+        # only makes sense for lateral / 2-D curves (per prof's note).
         is_depth = bool(curve.get("is_depth_profile", False))
         self._conv_group.setVisible(True)
-        self._conv_depth_widget.setVisible(is_depth)
+        self._conv_depth_widget.setVisible(True)
         self._scan_area_widget.setVisible(not is_depth)
-        if is_depth:
-            self._conv_check.blockSignals(True)
-            self._conv_check.setChecked(bool(curve.get("conv_enabled", False)))
-            self._conv_check.blockSignals(False)
-            self._sigma_spin.blockSignals(True)
-            self._sigma_spin.setValue(float(curve.get("conv_sigma", 0.0)))
-            self._sigma_spin.blockSignals(False)
-        else:
+        self._conv_check.blockSignals(True)
+        self._conv_check.setChecked(bool(curve.get("conv_enabled", False)))
+        self._conv_check.blockSignals(False)
+        self._sigma_spin.blockSignals(True)
+        self._sigma_spin.setValue(float(curve.get("conv_sigma", 0.0)))
+        self._sigma_spin.blockSignals(False)
+        if not is_depth:
             sa = curve.get("scan_area") or [0.0, 0.0]
             self._scan_area_min.blockSignals(True)
             self._scan_area_max.blockSignals(True)
@@ -2669,6 +2789,19 @@ class SinglePlotPage(QWidget):
             float(self._scan_area_min.value()),
             float(self._scan_area_max.value()),
         ]
+        if curve.get("conv_enabled"):
+            self._render_plot()
+
+    def _on_bin_combine_changed(self, value: int) -> None:
+        curve = self._selected_curve()
+        if curve is None:
+            return
+        new = max(1, min(6, int(value)))
+        if int(curve.get("bin_factor", 1)) == new:
+            return
+        curve["bin_factor"] = new
+        self._render_plot()
+        self._populate_stats_for(curve)
 
     # =====================================================================
     # Reference-image slots
@@ -2746,10 +2879,33 @@ class SinglePlotPage(QWidget):
     # =====================================================================
 
     def _populate_stats_for(self, curve: Dict[str, Any]) -> None:
+        # 2D plots: defer to the stats_func provided by the results builder.
+        if curve.get("is_2d"):
+            rows: List[tuple] = [("Source", str(curve.get("source_name", "")))]
+            stats_func = curve.get("stats_func")
+            if callable(stats_func):
+                try:
+                    rows.extend((str(n), str(v)) for n, v in stats_func())
+                except Exception:
+                    pass
+            self._stats_table.setRowCount(len(rows))
+            for r, (name, value) in enumerate(rows):
+                ni = QTableWidgetItem(str(name))
+                ni.setFlags(ni.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                vi = QTableWidgetItem(str(value))
+                vi.setFlags(vi.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                self._stats_table.setItem(r, 0, ni)
+                self._stats_table.setItem(r, 1, vi)
+            return
+
         x = np.asarray(curve["x"], dtype=float)
         y = np.asarray(curve["y_original"], dtype=float)
+        bf = int(curve.get("bin_factor", 1) or 1)
+        if bf > 1:
+            x, y = self._rebin_curve(x, y, bf)
         if curve.get("conv_enabled"):
-            y = self._gauss_convolve(x, y, float(curve.get("conv_sigma", 0.0)))
+            y = self._gauss_convolve(x, y, float(curve.get("conv_sigma", 0.0)),
+                                     scan_area=curve.get("scan_area"))
 
         rows: List[tuple] = []
         if y.size:
@@ -2783,19 +2939,72 @@ class SinglePlotPage(QWidget):
     # =====================================================================
 
     @staticmethod
-    def _gauss_convolve(x: np.ndarray, y: np.ndarray, sigma: float) -> np.ndarray:
+    def _rebin_curve(x: np.ndarray, y: np.ndarray, factor: int) -> tuple:
+        """Combine adjacent bins by *factor* (sum y, average x). Trailing
+        partial groups are dropped. ``factor <= 1`` returns the inputs."""
+        f = int(factor)
+        if f <= 1 or x.size < 2 or y.size != x.size:
+            return x, y
+        n = (x.size // f) * f
+        if n == 0:
+            return x, y
+        x_new = x[:n].reshape(-1, f).mean(axis=1)
+        y_new = y[:n].reshape(-1, f).sum(axis=1)
+        return x_new, y_new
+
+    @staticmethod
+    def _gauss_convolve(x: np.ndarray, y: np.ndarray, sigma: float,
+                        scan_area: Optional[List[float]] = None) -> np.ndarray:
+        """Convolve y(x) with a Gaussian, optionally smeared over a scan area.
+
+        For the depth-profile case (or any call without a scan area) this is
+        the classical Gaussian smearing: kernel ∝ exp(−x²/2σ²), normalized so
+        the kernel sum is 1 (i.e. total counts are preserved).
+
+        For lateral / 2-D profiles with a scan area [a, b], it uses the
+        bin-integral form from the prof's slides:
+
+            G(d) = ½ · [erf((d − a)/(√2 σ)) − erf((d − b)/(√2 σ))]
+            h(x_i) = Σⱼ f(x_j) · G(x_i − x_j) · Δx
+
+        i.e. the Gaussian convolved with the rectangular scan-area indicator,
+        evaluated on the bin grid.
+        """
         if sigma <= 0 or x.size < 2 or y.size != x.size:
             return y
         dx = float(np.mean(np.diff(x))) if x.size > 1 else 1.0
         if dx <= 0:
             return y
-        half = max(3, int(np.ceil(4.0 * sigma / dx)))
-        k = np.arange(-half, half + 1, dtype=float) * dx
-        kernel = np.exp(-0.5 * (k / sigma) ** 2)
-        s = float(kernel.sum())
-        if s <= 0:
-            return y
-        kernel /= s
+
+        a = float(scan_area[0]) if scan_area and len(scan_area) > 0 else 0.0
+        b = float(scan_area[1]) if scan_area and len(scan_area) > 1 else 0.0
+        sqrt2sigma = float(np.sqrt(2.0) * sigma)
+        # Kernel extends ±5σ beyond the scan area on either side. Cap the
+        # kernel size below the data length — np.convolve(mode="same") would
+        # otherwise return an array in kernel length, not in data length.
+        reach = 5.0 * sigma + max(abs(a), abs(b))
+        max_half = max(3, (x.size - 1) // 2)
+        half = min(max(3, int(np.ceil(reach / dx))), max_half)
+        d = np.arange(-half, half + 1, dtype=float) * dx
+
+        if abs(b - a) < 1e-12:
+            # No (or degenerate) scan area: plain Gaussian smearing, normalized.
+            kernel = np.exp(-0.5 * (d / sigma) ** 2)
+            s = float(kernel.sum())
+            if s <= 0:
+                return y
+            kernel /= s
+        else:
+            try:
+                from scipy.special import erf
+            except ImportError:
+                # NumPy ≥ 2.0 ships an erf in numpy.polynomial; fall back to
+                # math.erf vectorized via numpy.vectorize as a last resort.
+                import math
+                _vec_erf = np.vectorize(math.erf, otypes=[float])
+                erf = _vec_erf  # type: ignore[assignment]
+            kernel = 0.5 * (erf((d - a) / sqrt2sigma) - erf((d - b) / sqrt2sigma)) * dx
+
         return np.convolve(y, kernel, mode="same")
 
     def _render_plot(self) -> None:
@@ -2820,6 +3029,43 @@ class SinglePlotPage(QWidget):
             return
         self.ax.set_axis_on()
 
+        # 2D plot: a single heatmap drives the whole figure. Delegate to the
+        # plot_func provided by the results builder and skip the curve loop.
+        twod_curve = next(
+            (c for c in self._curves if c.get("is_2d") and c.get("visible", True)),
+            None,
+        )
+        if twod_curve is not None:
+            try:
+                twod_curve["plot_func"](self.ax)
+            except Exception as exc:
+                self.ax.text(
+                    0.5, 0.5,
+                    f"Failed to render 2D plot:\n{exc}",
+                    ha="center", va="center", transform=self.ax.transAxes,
+                    color="#a33",
+                )
+                self.ax.set_axis_off()
+                self.canvas.draw_idle()
+                return
+            # Override the title/labels with the page's editable axes state.
+            if self._axes_state.get("title"):
+                self.ax.set_title(str(self._axes_state["title"]))
+            if self._axes_state.get("xlabel"):
+                self.ax.set_xlabel(str(self._axes_state["xlabel"]))
+            if self._axes_state.get("ylabel"):
+                self.ax.set_ylabel(str(self._axes_state["ylabel"]))
+            _apply_axes_font_size(self.ax, self._font_size)
+            try:
+                self.figure.tight_layout()
+            except Exception:
+                pass
+            self.canvas.draw_idle()
+            sel = self._selected_curve()
+            if sel is not None:
+                self._populate_stats_for(sel)
+            return
+
         any_plotted = False
         # Collect (axis, line) for a combined legend across all axes
         legend_lines: list = []
@@ -2827,10 +3073,16 @@ class SinglePlotPage(QWidget):
         for curve in self._curves:
             if not curve.get("visible", True):
                 continue
+            if curve.get("is_2d"):
+                continue
             x = np.asarray(curve["x"], dtype=float)
             y = np.asarray(curve["y_original"], dtype=float)
+            bf = int(curve.get("bin_factor", 1) or 1)
+            if bf > 1:
+                x, y = self._rebin_curve(x, y, bf)
             if curve.get("conv_enabled"):
-                y = self._gauss_convolve(x, y, float(curve.get("conv_sigma", 0.0)))
+                y = self._gauss_convolve(x, y, float(curve.get("conv_sigma", 0.0)),
+                                     scan_area=curve.get("scan_area"))
 
             axis_x = curve.get("axis_x", "bottom")
             axis_y = curve.get("axis_y", "left")
@@ -3639,6 +3891,9 @@ class MCResultsWidget(QWidget):
     def set_plot_font_size(self, size: float) -> None:
         self.plot_area.set_font_size(float(size))
         self.single_plot_area.set_font_size(float(size))
+
+    def set_plot_bin_combine(self, factor: int) -> None:
+        self.plot_area.set_bin_factor(int(factor))
 
     # --- public API for future real-data integration ------------------
 

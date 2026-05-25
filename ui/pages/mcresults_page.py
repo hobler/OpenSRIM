@@ -43,6 +43,39 @@ def _read_histogram_file(path: Path) -> tuple:
     return labels, x, cols
 
 
+def _read_histogram_binary_2d(path: Path) -> tuple:
+    """Read a 2D binary histogram (.hisb) file written by OpenTRIM.
+
+    Returns
+    -------
+    counts : np.ndarray of shape (n_species, nx, ny)
+    x_values : np.ndarray of shape (nx,)  – bin centers along the x-axis
+    y_values : np.ndarray of shape (ny,)  – bin centers along the y-axis
+    species : list[str]                   – per-species labels (length n_species)
+    """
+    with open(path, "rb") as f:
+        version = np.fromfile(f, dtype="<u2", count=1)
+        if version.size != 1 or int(version[0]) != 0x00fa:
+            raise ValueError(f"Unsupported 2D histogram version in {path}")
+        shape = np.fromfile(f, dtype="<u4", count=3)
+        if shape.size != 3:
+            raise ValueError(f"Invalid 2D histogram shape in {path}")
+        n_species, nx, ny = (int(v) for v in shape)
+        x_values = np.fromfile(f, dtype="<f8", count=nx)
+        y_values = np.fromfile(f, dtype="<f8", count=ny)
+        species_raw = np.fromfile(f, dtype="S32", count=n_species)
+        counts = np.fromfile(f, dtype="<f8", count=n_species * nx * ny)
+
+    if (x_values.size, y_values.size, species_raw.size) != (nx, ny, n_species):
+        raise ValueError(f"Truncated 2D histogram metadata in {path}")
+    if counts.size != n_species * nx * ny:
+        raise ValueError(f"Truncated 2D histogram payload in {path}")
+
+    counts = counts.reshape(n_species, nx, ny)
+    species = [b.rstrip(b"\x00").decode("utf-8", errors="replace") for b in species_raw]
+    return counts, x_values, y_values, species
+
+
 def _read_moments_file(path: Path) -> dict:
     """Read a .mom file and return moments with uncertainties per species."""
     labels: list[str] = []
@@ -92,10 +125,37 @@ _MEASURE_META = {
     "ta":  ("Transmitted: Angle",                       "Angle (deg)",          "Counts"),
 }
 
+# 2D distribution metadata: (display_prefix, x_label, y_label, colorbar_label)
+_MEASURE_2D_META = {
+    "xy":  ("2D Distribution: Ion/Recoil",            "Depth (Å)", "Lateral (Å)", "Counts"),
+    "xyn": ("2D Distribution: Nuclear Energy Dep.",   "Depth (Å)", "Lateral (Å)", "Energy (eV)"),
+    "xye": ("2D Distribution: Electronic Energy Dep.", "Depth (Å)", "Lateral (Å)", "Energy (eV)"),
+}
+
 _COLORS = [
     "#3274A1", "#E1812C", "#3A923A", "#C03D3E", "#9372B2",
     "#8E6C8A", "#D97706", "#2E86AB", "#4C956C", "#B85C38",
 ]
+
+
+def _rebin_step(x: np.ndarray, cols, factor: int):
+    """Combine adjacent bins by *factor* (counts are summed, x is averaged).
+
+    Trailing bins that don't fill a full group are dropped. Returns
+    ``(x_new, [col_new, ...])`` even if no change was made (``factor <= 1``).
+    """
+    if factor is None or factor <= 1:
+        return x, list(cols)
+    n = (len(x) // factor) * factor
+    if n == 0:
+        return x, list(cols)
+    x_arr = np.asarray(x[:n], dtype=float)
+    x_new = x_arr.reshape(-1, factor).mean(axis=1)
+    cols_new = [
+        np.asarray(c[:n], dtype=float).reshape(-1, factor).sum(axis=1)
+        for c in cols
+    ]
+    return x_new, cols_new
 
 
 def _parse_species(label: str) -> tuple:
@@ -261,16 +321,17 @@ def _build_plots_from_directory(results_dir: str):
 
         # Build plot function (closure)
         def _make_plot_func(_x, _cols, _labels, _xlabel, _ylabel, _title):
-            def plot_func(ax):
-                for i, col_data in enumerate(_cols):
+            def plot_func(ax, bin_factor: int = 1):
+                x_p, cols_p = _rebin_step(_x, _cols, int(bin_factor or 1))
+                for i, col_data in enumerate(cols_p):
                     label = _labels[i + 1] if (i + 1) < len(_labels) else f"Series {i}"
                     color = _COLORS[i % len(_COLORS)]
-                    ax.step(_x, col_data, where="mid", color=color,
+                    ax.step(x_p, col_data, where="mid", color=color,
                             linewidth=1.2, label=label)
                 ax.set_xlabel(_xlabel)
                 ax.set_ylabel(_ylabel)
                 ax.set_title(_title)
-                if len(_cols) > 1:
+                if len(cols_p) > 1:
                     ax.legend(fontsize=8)
             return plot_func
 
@@ -316,6 +377,71 @@ def _build_plots_from_directory(results_dir: str):
             "is_depth_profile": key in ("x", "xn", "xe"),
             "colors": [_COLORS[i % len(_COLORS)] for i in range(len(cols))],
         }
+
+    # Discover all 2D binary histograms (.hisb)
+    for hisb_path in sorted(base.glob("*.hisb")):
+        key = hisb_path.stem  # "xy", "xyn", "xye"
+        meta = _MEASURE_2D_META.get(key)
+        if meta is None:
+            continue
+        plot_prefix, xlabel, ylabel, cbar_label = meta
+
+        try:
+            counts2d, x_edges, y_edges, species = _read_histogram_binary_2d(hisb_path)
+        except Exception:
+            continue
+
+        for ispec, spec_label in enumerate(species):
+            data = counts2d[ispec]
+            if not np.any(data):
+                continue
+
+            plot_id = f"{key}__{ispec}"
+            plot_name = f"{plot_prefix} ({spec_label})"
+
+            def _make_2d_plot_func(_x, _y, _data, _xlabel, _ylabel, _title, _cbar):
+                def plot_func(ax, bin_factor: int = 1):  # bin_factor unused for 2D
+                    # x_edges/y_edges from the binary file are bin centers
+                    # (linspace over limits with `nbins` points). pcolormesh
+                    # treats them as cell-edge coordinates with shading="auto",
+                    # which is acceptable for visual inspection.
+                    mesh = ax.pcolormesh(
+                        _x, _y, _data.T,
+                        shading="auto", cmap="viridis",
+                    )
+                    ax.set_xlabel(_xlabel)
+                    ax.set_ylabel(_ylabel)
+                    ax.set_title(_title)
+                    cbar = ax.figure.colorbar(mesh, ax=ax)
+                    cbar.set_label(_cbar)
+                return plot_func
+
+            def _make_2d_stats_func(_data, _spec_label):
+                def stats_func():
+                    total = float(_data.sum())
+                    peak = float(_data.max())
+                    if total <= 0.0:
+                        return [(f"{_spec_label} total", "0")]
+                    return [
+                        (f"{_spec_label} total", f"{total:.0f}"),
+                        (f"{_spec_label} peak bin", f"{peak:.3g}"),
+                    ]
+                return stats_func
+
+            plots[plot_id] = {
+                "name": plot_name,
+                "plot_func": _make_2d_plot_func(
+                    x_edges, y_edges, data, xlabel, ylabel, plot_name, cbar_label,
+                ),
+                "projection": None,
+                "stats_func": _make_2d_stats_func(data, spec_label),
+                # Marker: indicates a 2D plot. Used by callers (e.g. the single
+                # plot tab) to decide whether the dataset is overlayable.
+                "is_2d": True,
+                "x_label": xlabel,
+                "y_label": ylabel,
+                "colors": [],
+            }
 
     # Build numerical values from moments.
     summary_rows: List[Dict[str, str]] = []
@@ -413,3 +539,11 @@ class MCResultsPage(QWidget):
             return
 
         self._results_widget.set_results(plots, numerical)
+
+        # If only a single histogram is present, skip straight to the single
+        # plot tab — there's nothing to compare or arrange. Only on real
+        # loads (not the silent live updates during a running simulation),
+        # otherwise the view would keep jumping mid-run.
+        if not silent and len(plots) == 1:
+            only_id, only_info = next(iter(plots.items()))
+            self.plot_open_in_single.emit(only_id, only_info)

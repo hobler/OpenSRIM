@@ -44,7 +44,7 @@ def _build_measure_configs(input_params, include_unscored=False):
 
     configs = {}
     for name, group in input_params["output"].items():
-        if name == "trajectories":
+        if name in ["trajectories", "distribution_2d"]:
             continue
         for subname, cfg in group.items():
             key = f"{short_names[name]}{short_names[subname]}"
@@ -54,6 +54,7 @@ def _build_measure_configs(input_params, include_unscored=False):
             configs[key] = {
                 "score": score,
                 "nbins": int(cfg["nbins"]),
+                "limits": tuple(cfg["limits"]),
                 "nvar": int(nvar[key]),
             }
     return configs
@@ -102,6 +103,127 @@ def _read_column_labels(path):
     return labels
 
 
+def _build_2d_measure_configs(input_params):
+    names = {
+        "ion_recoils": "xy",
+        "nuclear_energy_deposition": "xyn",
+        "electronic_energy_deposition": "xye",
+    }
+    _, nelem_target = _get_element_names_from_input(input_params)
+    nelem = 1 + nelem_target
+    follow_recoils = input_params["simulation"]["follow_recoils"]
+    nvar = {
+        "xy": nelem + nelem_target if follow_recoils else nelem,
+        "xyn": nelem,
+        "xye": nelem,
+    }
+    configs = {}
+    distribution_2d = input_params["output"]["distribution_2d"]
+    for name, key in names.items():
+        cfg = distribution_2d[name]
+        configs[key] = {
+            "score": bool(cfg["score"]),
+            "x_nbins": int(cfg["nbins"][0]),
+            "y_nbins": int(cfg["nbins"][1]),
+            "x_limits": tuple(cfg["limits"][0]),
+            "y_limits": tuple(cfg["limits"][1]),
+            "nvar": int(nvar[key]),
+        }
+    return configs
+
+
+def _read_histogram_binary_2d(path, expected_nvar=None, expected_nx=None, expected_ny=None):
+    with open(path, "rb") as f:
+        version = np.fromfile(f, dtype="<u2", count=1)
+        if version.size != 1:
+            raise ValueError(f"Invalid binary histogram header in {path}")
+        shape = np.fromfile(f, dtype="<u4", count=3)
+        if shape.size != 3:
+            raise ValueError(f"Invalid binary histogram shape header in {path}")
+        n_species, nx, ny = [int(value) for value in shape]
+        x_values = np.fromfile(f, dtype="<f8", count=nx)
+        y_values = np.fromfile(f, dtype="<f8", count=ny)
+        species_labels = np.fromfile(f, dtype="S32", count=n_species)
+        counts = np.fromfile(f, dtype="<f8")
+
+    if int(version[0]) != 0x00fa:
+        raise ValueError(f"Unsupported binary histogram version in {path}: {int(version[0])}")
+    if expected_nvar is not None and n_species != expected_nvar:
+        raise ValueError(
+            f"Invalid species count in {path}: expected {expected_nvar}, got {n_species}"
+        )
+    if expected_nx is not None and expected_ny is not None and (nx, ny) != (expected_nx, expected_ny):
+        raise ValueError(
+            f"Invalid binary histogram shape in {path}: expected {(expected_nx, expected_ny)}, got {(nx, ny)}"
+        )
+    if species_labels.size != n_species or x_values.size != nx or y_values.size != ny:
+        raise ValueError(f"Invalid binary histogram metadata in {path}")
+    expected_size = n_species * nx * ny
+    if counts.size != expected_size:
+        raise ValueError(
+            f"Invalid binary histogram payload size in {path}: expected {expected_size}, got {counts.size}"
+        )
+    counts = counts.reshape(n_species, nx, ny)
+    labels = [label.rstrip(b"\x00").decode("utf-8") for label in species_labels]
+    return counts, x_values, y_values, labels
+
+
+def _build_stats_2d_dtype(configs_2d):
+    fields = []
+    for key, cfg in configs_2d.items():
+        if not cfg["score"]:
+            continue
+        measure_dtype = np.dtype(
+            [
+                ("x_values", np.float64, (cfg["x_nbins"],)),
+                ("y_values", np.float64, (cfg["y_nbins"],)),
+                ("hist", np.float64, (cfg["nvar"], cfg["x_nbins"], cfg["y_nbins"])),
+            ],
+            align=True,
+        )
+        fields.append((key, measure_dtype))
+    return np.dtype(fields, align=True)
+
+
+def _measure_label_2d(measure_key):
+    labels = {
+        "xy": "Depth-lateral ion/recoil distribution",
+        "xyn": "Depth-lateral nuclear energy deposition",
+        "xye": "Depth-lateral electronic energy deposition",
+    }
+    return labels.get(measure_key, measure_key)
+
+
+def _read_stats_2d(base_path, configs_2d):
+    stats_2d = np.zeros(1, dtype=_build_stats_2d_dtype(configs_2d))
+    labels_2d = {
+        "metrics": {},
+    }
+
+    for key, cfg in configs_2d.items():
+        if not cfg["score"]:
+            continue
+        path = base_path / f"{key}.hisb"
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Missing binary histogram file for active 2D metric '{key}': {path}"
+            )
+        counts, x_values, y_values, species = _read_histogram_binary_2d(
+            path, cfg["nvar"], cfg["x_nbins"], cfg["y_nbins"]
+        )
+        stats_2d[0][key]["x_values"] = x_values
+        stats_2d[0][key]["y_values"] = y_values
+        stats_2d[0][key]["hist"] = counts
+        labels_2d["metrics"][_measure_label_2d(key)] = {
+            "hist": {
+                "shape": list(counts.shape),
+                "species": species,
+            }
+        }
+
+    return stats_2d, labels_2d
+
+
 def _build_helper_labels(configs, base_path):
     helper = []
     for key in configs:
@@ -134,7 +256,8 @@ def read_stats(input_params, include_unscored=False):
     configs = _build_measure_configs(
         input_params, include_unscored=include_unscored
     )
-    stats = np.zeros(1, dtype=_build_stats_dtype(configs))
+    configs_2d = _build_2d_measure_configs(input_params)
+    stats_1d = np.zeros(1, dtype=_build_stats_dtype(configs))
     nmom = max_order + 1
 
     for key, cfg in configs.items():
@@ -143,15 +266,15 @@ def read_stats(input_params, include_unscored=False):
 
         hist_path = base_path / f"{key}.his"
         mom_path = base_path / f"{key}.mom"
-        if not hist_path.exists():
-            raise FileNotFoundError(
-                f"Missing histogram file for active metric '{key}': {hist_path}"
-            )
         if not mom_path.exists():
             raise FileNotFoundError(
                 f"Missing moments file for active metric '{key}': {mom_path}"
             )
 
+        if not hist_path.exists():
+            raise FileNotFoundError(
+                f"Missing histogram file for active metric '{key}': {hist_path}"
+            )
         hist_data = np.loadtxt(hist_path, delimiter=",")
         if hist_data.ndim == 1:
             hist_data = hist_data.reshape(1, -1)
@@ -161,7 +284,7 @@ def read_stats(input_params, include_unscored=False):
                 f"Invalid histogram data shape for '{key}' in {hist_path}: "
                 f"expected {expected_hist_shape}, got {hist_data.shape}"
             )
-        stats[0][key]["hist"] = hist_data
+        stats_1d[0][key]["hist"] = hist_data
 
         mom_data = np.loadtxt(mom_path, delimiter=",")
         if mom_data.ndim == 1:
@@ -172,13 +295,17 @@ def read_stats(input_params, include_unscored=False):
                 f"Invalid moments data shape for '{key}' in {mom_path}: "
                 f"expected {expected_mom_shape}, got {mom_data.shape}"
             )
-        stats[0][key]["mom"] = mom_data
+        stats_1d[0][key]["mom"] = mom_data
 
-    return stats, _build_helper_labels(configs, base_path)
+    labels_1d = _build_helper_labels(configs, base_path)
+    stats_2d, labels_2d = _read_stats_2d(base_path, configs_2d)
+    return stats_1d, labels_1d, stats_2d, labels_2d
 
 if __name__ == "__main__":
-    input_params = read_params("input.toml")
-    stats, helper_labels = read_stats(input_params)
+    input_params = read_params("defaults.toml")
+    stats_1d, labels_1d, stats_2d, labels_2d = read_stats(input_params, include_unscored=True)
     import pprint
-    pprint.pprint(stats.dtype.descr)
-    pprint.pprint(helper_labels)
+    pprint.pprint(stats_1d.dtype.descr)
+    pprint.pprint(labels_1d)
+    pprint.pprint(stats_2d.dtype.descr)
+    pprint.pprint(labels_2d)

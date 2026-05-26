@@ -57,43 +57,40 @@ if __name__ == "__main__":
     
     print("Startup time:", time.time() - start)
     iter_cnt = 2
-    counts = [input_params["simulation"]["nions"]]
+    counts = input_params["simulation"]["nions"]
     chunk_size = input_params["simulation"]["nions_update"]
     # avg_chunk_time = 0.1    # seconds
     
-    proj_counts = [[] for _ in range(len(counts))]
-    times = [[] for _ in range(len(counts))]
+    proj_counts = []
+    times = []
     
     for _ in range(iter_cnt):
-        for i, c in enumerate(counts):
-            
-            zero_stats(stats)
+        zero_stats(stats)
 
-            start_time = time.time()
-            # simulate_adaptive(avg_chunk_time, c, params, stats)
-            simulate_chunked(chunk_size, c, params, stats, input_params)
-            # simulate(c, params, stats, sim_idx=0)
-            times[i].append(time.time() - start_time)
-            
-            proj_count = stats[0]['x']['power_sums'][1,0]  # this is only approximate
-            proj_counts[i].append(proj_count)
+        start_time = time.time()
+        # simulate_adaptive(avg_chunk_time, c, params, stats)
+        simulate_chunked(chunk_size, counts, params, stats, input_params)
+        # simulate(c, params, stats, sim_idx=0)
+        times.append(time.time() - start_time)
+        
+        proj_count = stats[0]['x']['power_sums'][1,0]  # this is only approximate
+        proj_counts.append(proj_count)
 
     # Output the results
     start = time.time()
     print_moments(stats[0])
     end = time.time() - start
     print("--------------------")
-    for in_count, times_per_count, out_counts in zip(counts, times, proj_counts):
-        print(f"Statistics for {in_count} initial projectiles:")
-        if iter_cnt > 1:    # Exclude 1st longer run
-            avg_time = sum(times_per_count[1:]) / (iter_cnt - 1)
-            avg_iter = iter_cnt - 1
-        else:
-            avg_time = sum(times_per_count) / iter_cnt
-            avg_iter = iter_cnt
-        print(f"- Average time ({avg_iter} iterations) [s]:", avg_time)
-        print(f"- All simulation times ({iter_cnt} iterations) [s]:", [round(t, 3) for t in times_per_count])
-        print("- Average interactions (output projectiles):", sum(out_counts) / iter_cnt)
+    print(f"Statistics for {counts} initial projectiles:")
+    if iter_cnt > 1:    # Exclude 1st longer run
+        avg_time = sum(times[1:]) / (iter_cnt - 1)
+        avg_iter = iter_cnt - 1
+    else:
+        avg_time = sum(times) / iter_cnt
+        avg_iter = iter_cnt
+    print(f"- Average time ({avg_iter} iterations) [s]:", avg_time)
+    print(f"- All simulation times ({iter_cnt} iterations) [s]:", [round(t, 3) for t in times])
+    print("- Average interactions (output projectiles):", sum(proj_counts) / iter_cnt)
     print("Stats calculation time [s]:", end)
     print("--------------------")
     plot_histograms(stats[0], log=True)    

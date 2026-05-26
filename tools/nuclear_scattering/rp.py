@@ -375,16 +375,21 @@ def plot_rp(Z1, Z2, coarse=False):
 
 
 
-def plot_rp_ratio_homo(krc=False):
+def plot_rp_ratio(Z2=None, zbl=True, krc=False):
     """Plot the ratio of projected ranges between NLHlin and ZBL or KrC.
 
     Parameters:
+        Z2 (int): atomic number of second atom, None for Z1=Z2
+        zbl (bool): whether to use ZBL potential for comparison
         krc (bool): whether to use KrC potential for comparison instead of ZBL
     """
     import matplotlib.pyplot as plt
     import matplotlib as mpl
     from matplotlib.ticker import MaxNLocator
 
+    if zbl == krc:
+        raise ValueError("plot_rp_ratio: exactly one of zbl and krc must "
+                         "be True")
     cmap = plt.get_cmap('viridis', 92)
     plt.rcParams.update({'font.size': 14})
     fig = plt.figure()
@@ -394,6 +399,11 @@ def plot_rp_ratio_homo(krc=False):
     else:
         potname = "zbl"
 
+    if Z2 is None:
+        Z2_text = "homo"
+    else:
+        Z2_text = f"{atom[Z2]}"
+
     Z1_vals = range(1, 93)
     rp_ratios = []
 
@@ -401,13 +411,16 @@ def plot_rp_ratio_homo(krc=False):
                             f"../../data/nuclear_scattering")
 
     for Z1 in Z1_vals:
-        Z2 = Z1
-        fname = f'nlhlin/rp_tables/rp_table_nlhlin_{Z1:02d}_{Z2:02d}.txt'
+        if Z2 is None:
+            Z2_ = Z1
+        else:
+            Z2_ = Z2
+        fname = f'nlhlin/rp_tables/rp_table_nlhlin_{Z1:02d}_{Z2_:02d}.txt'
         fname = os.path.join(directory, fname)
         data_nlhlin = np.loadtxt(fname)
         energies_nlhlin = data_nlhlin[:, 0]
         rp_nlhlin = data_nlhlin[:, 1]
-        fname = f'{potname}/rp_tables/rp_table_{potname}_{Z1:02d}_{Z2:02d}.txt'
+        fname = f'{potname}/rp_tables/rp_table_{potname}_{Z1:02d}_{Z2_:02d}.txt'
         fname = os.path.join(directory, fname)
         data_ref = np.loadtxt(fname)
         energies_ref = data_ref[:, 0]
@@ -429,8 +442,11 @@ def plot_rp_ratio_homo(krc=False):
     norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
     plt.colorbar(mpl.cm.ScalarMappable(norm=norm, cmap=cmap),
                  ax=plt.gca(), 
-                 label=r'atomic number Z$_1$=Z$_2$', 
+                 label=r'atomic number Z$_1$', 
                  ticks=ticks)
+    plt.text(0.95, 0.95, r'Z$_2$=' f'{Z2 if Z2 is not None else "Z$_1$"}', 
+             horizontalalignment='right', verticalalignment='top',
+             transform=plt.gca().transAxes, fontsize='medium')
     plt.xlim(10, 1e7)
     plt.xticks([1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7])
     plt.ylim(0, 5)
@@ -443,7 +459,7 @@ def plot_rp_ratio_homo(krc=False):
     plt.show()
 
     fname = os.path.join(os.path.dirname(__file__), 
-                         f"figs/rp_ratio_homo_{potname}.pdf")
+                         f"figs/rp_ratio_{Z2_text}_{potname}.pdf")
     fname = ask_if_save(fname)
     if fname is not None:
         fig.savefig(os.path.join(os.path.dirname(__file__), fname))
@@ -462,7 +478,10 @@ def plot_rp_ratio_homo(krc=False):
     #         transform=plt.gca().transAxes, fontsize='medium')
     plt.xlim(0, 93)
     plt.ylim(0, 6)
-    plt.xlabel('Atomic number Z$_1$=Z$_2$')
+    plt.xlabel('Atomic number Z$_1$')
+    plt.text(0.95, 0.05, fr'Z$_2$={Z2 if Z2 is not None else "Z$_1$"}', 
+             horizontalalignment='right', verticalalignment='bottom',
+             transform=plt.gca().transAxes, fontsize='medium')
     if krc:
         plt.ylabel(r'R$_p$(NLHlin)/R$_p$(KrC) at E')
     else:
@@ -475,22 +494,28 @@ def plot_rp_ratio_homo(krc=False):
     plt.show()
 
     fname = os.path.join(os.path.dirname(__file__), 
-                         f"figs/rp_ratio_homo_{potname}_at_e.pdf")
+                         f"figs/rp_ratio_{Z2_text}_{potname}_at_e.pdf")
     fname = ask_if_save(fname)
     if fname is not None:
         fig.savefig(os.path.join(os.path.dirname(__file__), fname))
         print(f"Saved figure to {fname}")
 
 
-def plot_rp_ratio_at_e(e, krc=False):
+def plot_rp_ratio_at_e(e_vals, Z2=None, zbl=True, krc=False):
     """Plot R_p(NLHlin)/R_p(ZBL or KrC) for all atom pairs.
 
     Parameters:
-        e (float): Energy (eV)
-        krc (bool): Whether to use KrC or ZBL potential
+        e_vals (list): List of energies (eV)
+        Z2 (int): Atomic number of second atom
+        zbl (bool): Whether to use ZBL potential
+        krc (bool): Whether to use KrC potential
     """
     import matplotlib.pyplot as plt
     import matplotlib as mpl
+
+    if zbl == krc:
+        raise ValueError("plot_rp_ratio_at_e: exactly one of zbl and krc must "
+                         "be True")
 
     cmap = plt.get_cmap('viridis', 92)
     plt.rcParams.update({'font.size': 14})
@@ -511,28 +536,35 @@ def plot_rp_ratio_at_e(e, krc=False):
                  ticks=ticks)
 
     Z1_vals = range(1, 93)
+    if Z2 is None:
+        Z2_vals = range(1, 93)
+    else:
+        Z2_vals = [Z2]
 
     directory = os.path.join(os.path.dirname(__file__), 
                              f"../../data/nuclear_scattering")
 
-    for Z1 in Z1_vals:
-        for Z2 in Z1_vals:
-            fname = f'nlhlin/rp_tables/rp_table_nlhlin_{Z1:02d}_{Z2:02d}.txt'
-            fname = os.path.join(directory, fname)
-            data = np.loadtxt(fname, comments='#')
-            e_vals = data[:, 0]
-            rp_vals = data[:, 1]
-            idx = np.argmin(np.abs(e_vals - e))
-            rp = rp_vals[idx]
-            fname = f'{potname}/rp_tables/rp_table_{potname}_{Z1:02d}_{Z2:02d}.txt'
-            fname = os.path.join(directory, fname)
-            data_ref = np.loadtxt(fname)
-            e_vals_ref = data_ref[:, 0]
-            rp_vals_ref = data_ref[:, 1]
-            idx_ref = np.argmin(np.abs(e_vals_ref - e))
-            rp_ref = rp_vals_ref[idx_ref]
-            rp_ratio = rp / rp_ref
-            plt.plot(Z1, rp_ratio, '.', color=cmap((Z2-1)/92), zorder=Z2)
+    for e in e_vals:
+        for Z1 in Z1_vals:
+            for Z2 in Z2_vals:
+                fname = f'nlhlin/rp_tables/rp_table_nlhlin_{Z1:02d}_{Z2:02d}.txt'
+                fname = os.path.join(directory, fname)
+                data = np.loadtxt(fname, comments='#')
+                e_vals = data[:, 0]
+                rp_vals = data[:, 1]
+                idx = np.argmin(np.abs(e_vals - e))
+                rp = rp_vals[idx]
+                fname = f'{potname}/rp_tables/rp_table_{potname}_{Z1:02d}_{Z2:02d}.txt'
+                fname = os.path.join(directory, fname)
+                data_ref = np.loadtxt(fname)
+                e_vals_ref = data_ref[:, 0]
+                rp_vals_ref = data_ref[:, 1]
+                idx_ref = np.argmin(np.abs(e_vals_ref - e))
+                rp_ref = rp_vals_ref[idx_ref]
+                rp_ratio = rp / rp_ref
+                plt.plot(Z1, rp_ratio, '.', color=cmap((Z2-1)/92), zorder=Z2)
+                if rp_ratio > 2:
+                    print(f"Large ratio for Z1={Z1}, Z2={Z2}: {rp_ratio:.2f}")
 
     plt.axhline(1, color='k', linestyle='--', zorder=100)
     plt.xlim(0, 93)
@@ -581,7 +613,9 @@ if __name__ == '__main__':
     #tab_all_rp(zbl=True)
     #tab_all_rp(krc=True)
 
-    #plot_rp_ratio_homo()
-    #plot_rp_ratio_homo(krc=True)
+    plot_rp_ratio(zbl=True)
+    #plot_rp_ratio(Z2=14, zbl=True)
+    #plot_rp_ratio(krc=True)
     #plot_rp_ratio_at_e(100, krc=False)
-    plot_rp_ratio_at_e(100, krc=True)
+    #plot_rp_ratio_at_e([100], Z2=6, krc=False)
+    #plot_rp_ratio_at_e(100, krc=True)

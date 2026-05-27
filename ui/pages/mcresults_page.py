@@ -400,13 +400,43 @@ def _build_plots_from_directory(results_dir: str):
             plot_name = f"{plot_prefix} ({spec_label})"
 
             def _make_2d_plot_func(_x, _y, _data, _xlabel, _ylabel, _title, _cbar):
-                def plot_func(ax, bin_factor: int = 1):  # bin_factor unused for 2D
+                def plot_func(ax, bin_factor: int = 1, conv=None):
                     # x_edges/y_edges from the binary file are bin centers
                     # (linspace over limits with `nbins` points). pcolormesh
-                    # treats them as cell-edge coordinates with shading="auto",
-                    # which is acceptable for visual inspection.
+                    # treats them as cell-edge coordinates with shading="auto".
+                    data = _data
+                    if conv:
+                        sigma = float(conv.get("sigma", 0.0) or 0.0)
+                        sa = conv.get("scan_area") or [0.0, 0.0]
+                        a = float(sa[0]) if len(sa) > 0 else 0.0
+                        b = float(sa[1]) if len(sa) > 1 else 0.0
+                        if sigma > 0 and _x.size > 1 and _y.size > 1:
+                            from scipy.ndimage import gaussian_filter1d, convolve1d
+                            from scipy.special import erf
+                            dx = (_x[-1] - _x[0]) / (_x.size - 1)
+                            dy = (_y[-1] - _y[0]) / (_y.size - 1)
+                            # x (depth) direction: plain Gaussian smear.
+                            data = gaussian_filter1d(
+                                _data, sigma=sigma / dx, axis=0, mode="constant"
+                            )
+                            # y (lateral) direction: erf-rectangle if a scan
+                            # area is set (prof's formula), otherwise Gauss.
+                            if abs(b - a) < 1e-12:
+                                data = gaussian_filter1d(
+                                    data, sigma=sigma / dy, axis=1, mode="constant"
+                                )
+                            else:
+                                sqrt2s = np.sqrt(2.0) * sigma
+                                reach = 5.0 * sigma + max(abs(a), abs(b))
+                                max_half = max(3, (_y.size - 1) // 2)
+                                half = min(max(3, int(np.ceil(reach / dy))), max_half)
+                                d = np.arange(-half, half + 1, dtype=float) * dy
+                                kernel = 0.5 * (
+                                    erf((d - a) / sqrt2s) - erf((d - b) / sqrt2s)
+                                ) * dy
+                                data = convolve1d(data, kernel, axis=1, mode="constant")
                     mesh = ax.pcolormesh(
-                        _x, _y, _data.T,
+                        _x, _y, data.T,
                         shading="auto", cmap="viridis",
                     )
                     ax.set_xlabel(_xlabel)
@@ -438,6 +468,9 @@ def _build_plots_from_directory(results_dir: str):
                 # Marker: indicates a 2D plot. Used by callers (e.g. the single
                 # plot tab) to decide whether the dataset is overlayable.
                 "is_2d": True,
+                # Raw 2-D axes for downstream convolution / σ-default heuristics.
+                "x_values_2d": x_edges,
+                "y_values_2d": y_edges,
                 "x_label": xlabel,
                 "y_label": ylabel,
                 "colors": [],

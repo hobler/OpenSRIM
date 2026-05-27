@@ -2002,9 +2002,9 @@ class SinglePlotPage(QWidget):
         # Place the convolution panel high in the side bar (right after
         # "Curves") so it doesn't get lost below the larger style form.
         side_layout.insertWidget(1, self._conv_group)
-        # Always visible — but disable the controls until a curve is picked,
-        # otherwise the prof can't even find the σ field.
-        self._conv_group.setEnabled(False)
+        # Always interactive — even without a selected curve. The handlers
+        # auto-pick the first 1-D curve as soon as the user touches anything,
+        # so the panel never sits "broken-looking" in a greyed-out state.
 
         # ---- Axes & legend ----
         axes_group = QGroupBox("Axes & Legend")
@@ -2558,15 +2558,19 @@ class SinglePlotPage(QWidget):
         has = curve is not None
         self._style_group.setEnabled(has)
         self._stats_group.setVisible(has)
+        # Convolution panel stays interactive even without a selection — the
+        # prof reported it looking "broken" when greyed out. The individual
+        # handlers (_on_conv_toggled, _on_sigma_changed, ...) silently no-op
+        # or auto-select the first curve when the user interacts.
+        self._conv_group.setEnabled(True)
         if not has:
-            self._conv_group.setEnabled(False)
             self._stats_table.setRowCount(0)
             return
 
-        # 2D curves: line-style and convolution controls don't apply.
+        # 2D curves: line-style controls don't apply; convolution stays
+        # interactive but its handlers won't act on a 2D curve.
         if curve.get("is_2d"):
             self._style_group.setEnabled(False)
-            self._conv_group.setEnabled(False)
             self._bin_combine_spin.blockSignals(True)
             self._bin_combine_spin.setValue(1)
             self._bin_combine_spin.blockSignals(False)
@@ -2771,9 +2775,30 @@ class SinglePlotPage(QWidget):
         self._update_secondary_axes_visibility()
         self._render_plot()
 
-    def _on_conv_toggled(self, checked: bool) -> None:
+    def _ensure_curve_selected(self) -> Optional[Dict[str, Any]]:
+        """Return the selected curve, auto-selecting the first 1-D curve if
+        the user has not picked one yet. Returns ``None`` only when *no*
+        curve has been loaded at all."""
         curve = self._selected_curve()
+        if curve is not None:
+            return curve
+        for idx, c in enumerate(self._curves):
+            if not c.get("is_2d"):
+                self._curve_list.setCurrentRow(idx)
+                return self._selected_curve()
+        return None
+
+    def _on_conv_toggled(self, checked: bool) -> None:
+        curve = self._ensure_curve_selected()
         if curve is None:
+            # No curves loaded yet — undo the toggle so the UI doesn't lie
+            # about the state, and nudge the user via the status hint.
+            self._conv_check.blockSignals(True)
+            self._conv_check.setChecked(False)
+            self._conv_check.blockSignals(False)
+            self._hint_label.setText(
+                "Load a curve first: double-click a plot tile on the MC Results tab."
+            )
             return
         curve["conv_enabled"] = bool(checked)
         # When the user first turns convolution on with σ still at zero, pick
@@ -2791,7 +2816,7 @@ class SinglePlotPage(QWidget):
         self._render_plot()
 
     def _on_sigma_changed(self, v: float) -> None:
-        curve = self._selected_curve()
+        curve = self._ensure_curve_selected()
         if curve is None:
             return
         curve["conv_sigma"] = float(v)
@@ -2799,7 +2824,7 @@ class SinglePlotPage(QWidget):
             self._render_plot()
 
     def _on_scan_area_changed(self, _v: float) -> None:
-        curve = self._selected_curve()
+        curve = self._ensure_curve_selected()
         if curve is None:
             return
         curve["scan_area"] = [

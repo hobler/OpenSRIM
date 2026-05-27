@@ -435,35 +435,38 @@ def plot_rp_ratio(Z2=None, zbl=True, krc=False):
 
     rp_ratios = np.array(rp_ratios)
 
-    plt.axhline(1, color='k', ls='--', zorder=100)
     ticks = range(0, 100, 10)
-    bounds = np.linspace(1, 92, 92)
-    cmap = mpl.cm.viridis
-    norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
-    plt.colorbar(mpl.cm.ScalarMappable(norm=norm, cmap=cmap),
-                 ax=plt.gca(), 
-                 label=r'atomic number Z$_1$', 
-                 ticks=ticks)
-    plt.text(0.95, 0.95, r'Z$_2$=' f'{Z2 if Z2 is not None else "Z$_1$"}', 
-             horizontalalignment='right', verticalalignment='top',
-             transform=plt.gca().transAxes, fontsize='medium')
-    plt.xlim(10, 1e7)
-    plt.xticks([1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7])
-    plt.ylim(0, 5)
-    plt.xlabel('Energy E (eV)')
-    if krc:
-        plt.ylabel(r'R$_p$(NLHlin)/R$_p$(KrC)')
-    else:
-        plt.ylabel(r'R$_p$(NLHlin)/R$_p$(ZBL)')
-    plt.tight_layout()
-    plt.show()
+    if False:
+        plt.axhline(1, color='k', ls='--', zorder=100)
+        bounds = np.linspace(1, 92, 92)
+        cmap = mpl.cm.viridis
+        norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
+        plt.colorbar(mpl.cm.ScalarMappable(norm=norm, cmap=cmap),
+                    ax=plt.gca(), 
+                    label=r'atomic number Z$_1$', 
+                    ticks=ticks)
+        plt.text(0.95, 0.95, r'Z$_2$=' f'{Z2 if Z2 is not None else "Z$_1$"}', 
+                horizontalalignment='right', verticalalignment='top',
+                transform=plt.gca().transAxes, fontsize='medium')
+        plt.xlim(10, 1e7)
+        plt.xticks([1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7])
+        plt.ylim(0, 5)
+        plt.xlabel('Energy E (eV)')
+        if krc:
+            plt.ylabel(r'R$_p$(NLHlin)/R$_p$(KrC)')
+        else:
+            plt.ylabel(r'R$_p$(NLHlin)/R$_p$(ZBL)')
+        plt.tight_layout()
+        plt.show()
 
-    fname = os.path.join(os.path.dirname(__file__), 
-                         f"figs/rp_ratio_{Z2_text}_{potname}.pdf")
-    fname = ask_if_save(fname)
-    if fname is not None:
-        fig.savefig(os.path.join(os.path.dirname(__file__), fname))
-        print(f"Saved figure to {fname}")
+        fname = os.path.join(os.path.dirname(__file__), 
+                            f"figs/rp_ratio_{Z2_text}_{potname}.pdf")
+        fname = ask_if_save(fname)
+        if fname is not None:
+            fig.savefig(os.path.join(os.path.dirname(__file__), fname))
+            print(f"Saved figure to {fname}")
+    else:
+        plt.clf()
 
     fig = plt.figure()
 
@@ -614,7 +617,7 @@ if __name__ == '__main__':
     #tab_all_rp(krc=True)
 
     plot_rp_ratio(zbl=True)
-    #plot_rp_ratio(Z2=14, zbl=True)
+    #plot_rp_ratio(Z2=74, zbl=True)
     #plot_rp_ratio(krc=True)
     #plot_rp_ratio_at_e(100, krc=False)
     #plot_rp_ratio_at_e([100], Z2=6, krc=False)

@@ -2187,6 +2187,14 @@ class SinglePlotPage(QWidget):
                 "is_2d":       True,
                 "plot_func":   plot_info["plot_func"],
                 "stats_func":  plot_info.get("stats_func"),
+                "x_values_2d": np.asarray(
+                    plot_info["x_values_2d"] if plot_info.get("x_values_2d") is not None else [],
+                    dtype=float,
+                ),
+                "y_values_2d": np.asarray(
+                    plot_info["y_values_2d"] if plot_info.get("y_values_2d") is not None else [],
+                    dtype=float,
+                ),
                 "x_label":     x_label,
                 "y_label":     y_label,
                 # Placeholders so the curve-list/style panel code paths don't
@@ -2567,10 +2575,26 @@ class SinglePlotPage(QWidget):
             self._stats_table.setRowCount(0)
             return
 
-        # 2D curves: line-style controls don't apply; convolution stays
-        # interactive but its handlers won't act on a 2D curve.
+        # 2D curves: line-style controls don't apply, but the Gauss filter
+        # (and the erf scan-area along the lateral axis) does — populate the
+        # convolution fields from the curve.
         if curve.get("is_2d"):
             self._style_group.setEnabled(False)
+            self._conv_depth_widget.setVisible(True)
+            self._scan_area_widget.setVisible(True)
+            self._conv_check.blockSignals(True)
+            self._conv_check.setChecked(bool(curve.get("conv_enabled", False)))
+            self._conv_check.blockSignals(False)
+            self._sigma_spin.blockSignals(True)
+            self._sigma_spin.setValue(float(curve.get("conv_sigma", 0.0)))
+            self._sigma_spin.blockSignals(False)
+            sa = curve.get("scan_area") or [0.0, 0.0]
+            self._scan_area_min.blockSignals(True)
+            self._scan_area_max.blockSignals(True)
+            self._scan_area_min.setValue(float(sa[0]) if len(sa) > 0 else 0.0)
+            self._scan_area_max.setValue(float(sa[1]) if len(sa) > 1 else 0.0)
+            self._scan_area_min.blockSignals(False)
+            self._scan_area_max.blockSignals(False)
             self._bin_combine_spin.blockSignals(True)
             self._bin_combine_spin.setValue(1)
             self._bin_combine_spin.blockSignals(False)
@@ -2803,9 +2827,12 @@ class SinglePlotPage(QWidget):
         curve["conv_enabled"] = bool(checked)
         # When the user first turns convolution on with σ still at zero, pick
         # a sensible non-zero default so the effect is immediately visible.
-        # Heuristic: ~3 % of the curve's x-range, rounded to a clean number.
+        # Heuristic: ~3 % of the curve's x-range.
         if checked and float(curve.get("conv_sigma", 0.0)) <= 0.0:
-            x = np.asarray(curve.get("x", []), dtype=float)
+            if curve.get("is_2d"):
+                x = np.asarray(curve.get("x_values_2d", []), dtype=float)
+            else:
+                x = np.asarray(curve.get("x", []), dtype=float)
             if x.size >= 2:
                 span = float(x[-1] - x[0])
                 sigma_default = max(span * 0.03, 0.0)
@@ -3078,8 +3105,18 @@ class SinglePlotPage(QWidget):
             None,
         )
         if twod_curve is not None:
+            conv_kwargs = {}
+            if twod_curve.get("conv_enabled"):
+                conv_kwargs["conv"] = {
+                    "sigma": float(twod_curve.get("conv_sigma", 0.0) or 0.0),
+                    "scan_area": twod_curve.get("scan_area"),
+                }
             try:
-                twod_curve["plot_func"](self.ax)
+                try:
+                    twod_curve["plot_func"](self.ax, **conv_kwargs)
+                except TypeError:
+                    # Older plot_func without conv kwarg.
+                    twod_curve["plot_func"](self.ax)
             except Exception as exc:
                 self.ax.text(
                     0.5, 0.5,

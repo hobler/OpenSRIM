@@ -1737,8 +1737,9 @@ class SinglePlotPage(QWidget):
         plot_layout.setSpacing(0)
 
         self._hint_label = QLabel(
-            "Double-click any plot tile in an MC Results tab to add its curves here. "
-            "Curves stack — use the right panel to style or remove them."
+            "Double-click a plot tile on the MC Results tab to load its curves here. "
+            "Then pick a curve in the right-hand list and enable Gaussian Convolution "
+            "to smooth it (σ in plot units, scan area for lateral curves)."
         )
         self._hint_label.setStyleSheet(
             "color: #555; padding: 4px 6px; background: #f5f5f5; "
@@ -1939,7 +1940,7 @@ class SinglePlotPage(QWidget):
         self._style_group.setEnabled(False)
 
         # ---- Convolution / scan area (per-curve) ----
-        self._conv_group = QGroupBox("Gaussian Convolution (Selected)")
+        self._conv_group = QGroupBox("Gaussian Convolution")
         conv_layout = QVBoxLayout(self._conv_group)
         conv_layout.setContentsMargins(6, 6, 6, 6)
         conv_layout.setSpacing(4)
@@ -1998,8 +1999,12 @@ class SinglePlotPage(QWidget):
         scan_layout.addWidget(sh)
         conv_layout.addWidget(self._scan_area_widget)
 
-        side_layout.addWidget(self._conv_group)
-        self._conv_group.setVisible(False)
+        # Place the convolution panel high in the side bar (right after
+        # "Curves") so it doesn't get lost below the larger style form.
+        side_layout.insertWidget(1, self._conv_group)
+        # Always visible — but disable the controls until a curve is picked,
+        # otherwise the prof can't even find the σ field.
+        self._conv_group.setEnabled(False)
 
         # ---- Axes & legend ----
         axes_group = QGroupBox("Axes & Legend")
@@ -2554,14 +2559,14 @@ class SinglePlotPage(QWidget):
         self._style_group.setEnabled(has)
         self._stats_group.setVisible(has)
         if not has:
-            self._conv_group.setVisible(False)
+            self._conv_group.setEnabled(False)
             self._stats_table.setRowCount(0)
             return
 
         # 2D curves: line-style and convolution controls don't apply.
         if curve.get("is_2d"):
             self._style_group.setEnabled(False)
-            self._conv_group.setVisible(False)
+            self._conv_group.setEnabled(False)
             self._bin_combine_spin.blockSignals(True)
             self._bin_combine_spin.setValue(1)
             self._bin_combine_spin.blockSignals(False)
@@ -2607,7 +2612,7 @@ class SinglePlotPage(QWidget):
         # Convolution panel: σ + checkbox always available; the scan-area row
         # only makes sense for lateral / 2-D curves (per prof's note).
         is_depth = bool(curve.get("is_depth_profile", False))
-        self._conv_group.setVisible(True)
+        self._conv_group.setEnabled(True)
         self._conv_depth_widget.setVisible(True)
         self._scan_area_widget.setVisible(not is_depth)
         self._conv_check.blockSignals(True)
@@ -2771,6 +2776,18 @@ class SinglePlotPage(QWidget):
         if curve is None:
             return
         curve["conv_enabled"] = bool(checked)
+        # When the user first turns convolution on with σ still at zero, pick
+        # a sensible non-zero default so the effect is immediately visible.
+        # Heuristic: ~3 % of the curve's x-range, rounded to a clean number.
+        if checked and float(curve.get("conv_sigma", 0.0)) <= 0.0:
+            x = np.asarray(curve.get("x", []), dtype=float)
+            if x.size >= 2:
+                span = float(x[-1] - x[0])
+                sigma_default = max(span * 0.03, 0.0)
+                curve["conv_sigma"] = sigma_default
+                self._sigma_spin.blockSignals(True)
+                self._sigma_spin.setValue(sigma_default)
+                self._sigma_spin.blockSignals(False)
         self._render_plot()
 
     def _on_sigma_changed(self, v: float) -> None:

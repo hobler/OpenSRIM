@@ -1983,7 +1983,7 @@ class SinglePlotPage(QWidget):
         self._scan_area_min = QDoubleSpinBox()
         self._scan_area_max = QDoubleSpinBox()
         for _sp in (self._scan_area_min, self._scan_area_max):
-            _sp.setRange(0.0, 1_000_000.0)
+            _sp.setRange(-1_000_000.0, 1_000_000.0)
             _sp.setDecimals(2)
             _sp.setValue(0.0)
             _sp.setSingleStep(5.0)

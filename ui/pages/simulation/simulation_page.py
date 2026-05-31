@@ -3,6 +3,7 @@ import json
 import os
 import sys
 import numpy as np
+from pathlib import Path
 from typing import List, Dict, Any, Callable, Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QMimeData, QPoint, QSize
@@ -14,17 +15,23 @@ from PyQt6.QtWidgets import (
     QHeaderView, QSizePolicy, QPushButton, QGroupBox, QAbstractItemView,
     QToolButton, QStyle, QFileDialog, QStackedWidget, QComboBox,
     QLineEdit, QMessageBox, QCheckBox, QDoubleSpinBox, QSpinBox,
-    QColorDialog, QFormLayout,
+    QColorDialog, QFormLayout, QToolTip,
 )
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
 import matplotlib.image as mpimg
+from state import get_last_used_directory, remember_last_used_path
 
 try:
     from ui.widgets.toggle_switch import ToggleSwitch
 except ModuleNotFoundError:  # pragma: no cover
     from OpenSRIM.ui.widgets.toggle_switch import ToggleSwitch  # type: ignore
+
+try:
+    from ui.widgets.hints_popup import HintSystem
+except ModuleNotFoundError:  # pragma: no cover
+    from OpenSRIM.ui.widgets.hints_popup import HintSystem  # type: ignore
 
 
 # =====================================================================
@@ -845,6 +852,7 @@ class PlotTile(QFrame):
         self._has_border = True
         self._font_size = float(font_size)
         self._bin_factor = max(1, int(bin_factor))
+        self._beam_from_top = True
         self.setAcceptDrops(True)
 
         self.setFrameStyle(QFrame.Shape.Box | QFrame.Shadow.Plain)
@@ -1037,13 +1045,23 @@ class PlotTile(QFrame):
         self._bin_factor = new
         self.redraw()
 
+    def set_beam_from_top(self, enabled: bool) -> None:
+        enabled = bool(enabled)
+        if self._beam_from_top == enabled:
+            return
+        self._beam_from_top = enabled
+        self.redraw()
+
     def _call_plot_func(self, ax) -> None:
         """Invoke the plot_func, passing bin_factor when the function accepts it."""
         fn = self.plot_info["plot_func"]
         try:
-            fn(ax, bin_factor=self._bin_factor)
+            fn(ax, bin_factor=self._bin_factor, beam_from_top=self._beam_from_top)
         except TypeError:
-            fn(ax)
+            try:
+                fn(ax, bin_factor=self._bin_factor)
+            except TypeError:
+                fn(ax)
 
 
 # =====================================================================
@@ -1073,6 +1091,8 @@ class PlotArea(QWidget):
         self._borders_visible: bool = True
         self._font_size: float = 10.0
         self._bin_factor: int = 1     # 1 = no combining; up to 6
+        self._per_plot_bin_factor: Dict[str, int] = {}
+        self._beam_from_top: bool = True
 
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
@@ -1125,6 +1145,19 @@ class PlotArea(QWidget):
         for tile in self._tiles.values():
             tile.set_bin_factor(new)
 
+    def set_plot_bin_factor(self, plot_id: str, factor: int) -> None:
+        """Set per-plot bin factor for one tile (1–6)."""
+        new = max(1, min(6, int(factor)))
+        self._per_plot_bin_factor[str(plot_id)] = new
+        tile = self._tiles.get(str(plot_id))
+        if tile is not None:
+            tile.set_bin_factor(new)
+
+    def set_beam_from_top(self, enabled: bool) -> None:
+        self._beam_from_top = bool(enabled)
+        for tile in self._tiles.values():
+            tile.set_beam_from_top(self._beam_from_top)
+
     # --- internal rebuild ---------------------------------------------
 
     def _rebuild(self):
@@ -1154,13 +1187,14 @@ class PlotArea(QWidget):
                 if info is None:
                     continue
                 tile = PlotTile(pid, info, font_size=self._font_size,
-                                bin_factor=self._bin_factor)
+                                bin_factor=self._per_plot_bin_factor.get(pid, self._bin_factor))
                 tile.zoom_requested.connect(self._open_zoomed)
                 tile.tile_reorder_requested.connect(self._handle_tile_reorder)
                 tile.setMinimumSize(250, 200)
                 # Apply current display settings
                 tile.toolbar.setVisible(self._toolbar_visible)
                 tile.set_border_visible(self._borders_visible)
+                tile.set_beam_from_top(self._beam_from_top)
                 self._tiles[pid] = tile
                 row_sp.addWidget(tile)
             self._row_splitters.append(row_sp)
@@ -1674,6 +1708,64 @@ def _color_icon(color: str, size: int = 14) -> QIcon:
     return QIcon(pix)
 
 
+class CollapsibleBox(QGroupBox):
+    """A bordered box whose body collapses/expands via a clickable header.
+
+    The title and an optional hint button live in the header row. ``setEnabled``
+    is overridden to grey out only the body, so the header arrow stays usable
+    even when the section's controls are disabled.
+    """
+
+    def __init__(self, title: str, *, hint_btn: Optional[QWidget] = None,
+                 expanded: bool = False, parent: Optional[QWidget] = None):
+        super().__init__("", parent)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(6, 6, 6, 6)
+        outer.setSpacing(4)
+
+        self._toggle = QToolButton(self)
+        self._toggle.setText(title)
+        self._toggle.setCheckable(True)
+        self._toggle.setChecked(expanded)
+        self._toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self._toggle.setArrowType(
+            Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow
+        )
+        self._toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._toggle.setStyleSheet("QToolButton { border: none; font-weight: 600; }")
+        self._toggle.toggled.connect(self._on_toggled)
+
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(6)
+        header.addWidget(self._toggle)
+        if hint_btn is not None:
+            header.addWidget(hint_btn)
+        header.addStretch(1)
+        outer.addLayout(header)
+
+        self._content = QWidget(self)
+        self._content.setVisible(expanded)
+        outer.addWidget(self._content)
+
+    @property
+    def content(self) -> QWidget:
+        return self._content
+
+    def set_expanded(self, expanded: bool) -> None:
+        self._toggle.setChecked(expanded)
+
+    def _on_toggled(self, checked: bool) -> None:
+        self._toggle.setArrowType(
+            Qt.ArrowType.DownArrow if checked else Qt.ArrowType.RightArrow
+        )
+        self._content.setVisible(checked)
+
+    def setEnabled(self, enabled: bool) -> None:  # type: ignore[override]
+        # Only the body greys out; the header toggle stays clickable.
+        self._content.setEnabled(enabled)
+
+
 class SinglePlotPage(QWidget):
     """Multi-curve overlay plot with full per-curve matplotlib styling.
 
@@ -1687,6 +1779,49 @@ class SinglePlotPage(QWidget):
         editable.
     """
 
+    def _init_hints(self) -> None:
+        """Initialize hint system and lock it to this page."""
+        try:
+            hints_path = Path(__file__).resolve().parents[2] / "widgets" / "hints.json"
+            self._hint_system = HintSystem(repo_path=hints_path, parent=self)
+            self._hint_system.set_current_page("Single Plot")
+        except Exception:
+            self._hint_system = None
+
+    def _hint_btn(self, hint_id: str, parent: Optional[QWidget] = None) -> QPushButton:
+        """Create a '?' button for this page; disabled if hint unavailable."""
+        if self._hint_system is None:
+            btn = QPushButton("?", parent)
+            btn.setEnabled(False)
+            btn.setFixedSize(22, 22)
+            btn.setToolTip("Hints not available")
+            return btn
+        try:
+            return self._hint_system.make_hint_button(
+                page_id="Single Plot", hint_id=hint_id, parent=parent
+            )
+        except Exception:
+            btn = QPushButton("?", parent)
+            btn.setEnabled(False)
+            btn.setFixedSize(22, 22)
+            btn.setToolTip(f"Hint '{hint_id}' not available")
+            return btn
+
+    def _groupbox_header(self, title: str, hint_id: Optional[str] = None,
+                         parent: Optional[QWidget] = None) -> QWidget:
+        """Header row: bold title label + optional '?' hint button."""
+        w = QWidget(parent)
+        h = QHBoxLayout(w)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.setSpacing(6)
+        lbl = QLabel(title, w)
+        lbl.setStyleSheet("font-weight: 600;")
+        h.addWidget(lbl)
+        if hint_id:
+            h.addWidget(self._hint_btn(hint_id, parent=w))
+        h.addStretch(1)
+        return w
+
     def __init__(self, parent=None, font_size: float = 10.0):
         super().__init__(parent)
         # Match the darker / thicker group-box borders used on the MC Setup
@@ -1695,6 +1830,8 @@ class SinglePlotPage(QWidget):
             "QGroupBox { border: 2px solid palette(shadow); border-radius: 4px;"
             " margin-top: 6px; padding-top: 6px; }"
         )
+        self._hint_system: Optional[HintSystem] = None
+        self._init_hints()
         self._curves: List[Dict[str, Any]] = []
         self._next_curve_id = 1
         self._font_size = float(font_size)
@@ -1736,24 +1873,31 @@ class SinglePlotPage(QWidget):
         plot_layout.setContentsMargins(0, 0, 0, 0)
         plot_layout.setSpacing(0)
 
-        self._hint_label = QLabel(
-            "Double-click a plot tile on the MC Results tab to load its curves here. "
-            "Then pick a curve in the right-hand list and enable Gaussian Convolution "
-            "to smooth it (σ in plot units, scan area for lateral curves)."
-        )
-        self._hint_label.setStyleSheet(
-            "color: #555; padding: 4px 6px; background: #f5f5f5; "
-            "border-bottom: 1px solid #ddd;"
-        )
-        self._hint_label.setWordWrap(True)
-        plot_layout.addWidget(self._hint_label)
-
         self.figure = Figure(figsize=(8, 5), dpi=100)
         self.ax = self.figure.add_subplot(111)
         self.canvas = FigureCanvas(self.figure)
-        self.toolbar = NavigationToolbar(self.canvas, self)
+        self.toolbar = NavigationToolbar(self.canvas, self, coordinates=False)
+        if hasattr(self.toolbar, "locLabel"):
+            try:
+                self.toolbar.locLabel.setVisible(False)
+            except Exception:
+                pass
+        self._toolbar_spacer = QWidget()
+        self._toolbar_spacer.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
+        self.toolbar.addWidget(self._toolbar_spacer)
+        self._cursor_status = QLabel("x: -, y: -")
+        self._cursor_status.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        self._cursor_status.setStyleSheet("color: #000; font-size: 20px; padding: 0 6px;")
+        self.toolbar.addWidget(self._cursor_status)
         plot_layout.addWidget(self.toolbar)
         plot_layout.addWidget(self.canvas, 1)
+        self.canvas.mpl_connect("motion_notify_event", self._on_canvas_motion)
+        self.canvas.mpl_connect("figure_leave_event", self._on_canvas_leave)
 
         splitter.addWidget(plot_box)
 
@@ -1762,17 +1906,18 @@ class SinglePlotPage(QWidget):
         side_scroll.setWidgetResizable(True)
         side_scroll.setFrameShape(QFrame.Shape.NoFrame)
         side = QWidget()
-        side.setMinimumWidth(300)
+        side.setMinimumWidth(360)
         side_layout = QVBoxLayout(side)
         side_layout.setContentsMargins(6, 6, 6, 6)
         side_layout.setSpacing(8)
         side_scroll.setWidget(side)
 
         # ---- Curves group ----
-        curves_group = QGroupBox("Curves")
+        curves_group = QGroupBox("")
         cg_layout = QVBoxLayout(curves_group)
         cg_layout.setContentsMargins(6, 6, 6, 6)
         cg_layout.setSpacing(4)
+        cg_layout.addWidget(self._groupbox_header("Curves", hint_id="curves", parent=curves_group))
 
         self._curve_list = QListWidget()
         self._curve_list.setAlternatingRowColors(True)
@@ -1794,9 +1939,10 @@ class SinglePlotPage(QWidget):
         side_layout.addWidget(curves_group)
 
         # ---- Load previous simulation output ----
-        load_group = QGroupBox("Load Output Directory")
-        load_layout = QVBoxLayout(load_group)
-        load_layout.setContentsMargins(6, 6, 6, 6)
+        load_group = CollapsibleBox("Load Output Directory",
+                                    hint_btn=self._hint_btn("load_directory"))
+        load_layout = QVBoxLayout(load_group.content)
+        load_layout.setContentsMargins(0, 0, 0, 0)
         load_layout.setSpacing(4)
 
         self._btn_load_dir = QPushButton("Load Output Directory…")
@@ -1842,9 +1988,10 @@ class SinglePlotPage(QWidget):
         self._loaded_data_path: Optional[str] = None
 
         # ---- Selected curve style ----
-        self._style_group = QGroupBox("Selected Curve")
-        style_form = QFormLayout(self._style_group)
-        style_form.setContentsMargins(6, 6, 6, 6)
+        self._style_group = CollapsibleBox("Curve Properties",
+                                           hint_btn=self._hint_btn("selected_curve"))
+        style_form = QFormLayout(self._style_group.content)
+        style_form.setContentsMargins(0, 0, 0, 0)
         style_form.setHorizontalSpacing(6)
         style_form.setVerticalSpacing(4)
         style_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
@@ -1936,13 +2083,43 @@ class SinglePlotPage(QWidget):
         self._bin_combine_spin.valueChanged.connect(self._on_bin_combine_changed)
         style_form.addRow("Combine bins:", self._bin_combine_spin)
 
+        self._twod_render_label = QLabel("2D render:")
+        self._twod_mode_cmb = QComboBox()
+        self._twod_mode_cmb.addItem("Color Mesh", "mesh")
+        self._twod_mode_cmb.addItem("Contours", "contour")
+        self._twod_mode_cmb.currentIndexChanged.connect(self._on_twod_render_mode_changed)
+        style_form.addRow(self._twod_render_label, self._twod_mode_cmb)
+
+        self._twod_contour_label = QLabel("Contours:")
+        contour_row = QHBoxLayout()
+        contour_row.setContentsMargins(0, 0, 0, 0)
+        contour_row.setSpacing(4)
+        contour_row.addWidget(QLabel("Levels"))
+        self._twod_levels_spin = QSpinBox()
+        self._twod_levels_spin.setRange(2, 40)
+        self._twod_levels_spin.setValue(8)
+        self._twod_levels_spin.valueChanged.connect(self._on_twod_levels_changed)
+        contour_row.addWidget(self._twod_levels_spin)
+        self._twod_label_contours_check = QCheckBox("Label contours")
+        self._twod_label_contours_check.toggled.connect(self._on_twod_contour_labels_toggled)
+        contour_row.addWidget(self._twod_label_contours_check)
+        contour_row.addStretch(1)
+        self._twod_contour_holder = QWidget()
+        self._twod_contour_holder.setLayout(contour_row)
+        style_form.addRow(self._twod_contour_label, self._twod_contour_holder)
+
         side_layout.addWidget(self._style_group)
         self._style_group.setEnabled(False)
+        self._twod_render_label.setVisible(False)
+        self._twod_mode_cmb.setVisible(False)
+        self._twod_contour_label.setVisible(False)
+        self._twod_contour_holder.setVisible(False)
 
         # ---- Convolution / scan area (per-curve) ----
-        self._conv_group = QGroupBox("Gaussian Convolution")
-        conv_layout = QVBoxLayout(self._conv_group)
-        conv_layout.setContentsMargins(6, 6, 6, 6)
+        self._conv_group = CollapsibleBox("Gaussian Convolution",
+                                          hint_btn=self._hint_btn("convolution"))
+        conv_layout = QVBoxLayout(self._conv_group.content)
+        conv_layout.setContentsMargins(0, 0, 0, 0)
         conv_layout.setSpacing(4)
 
         # Depth-profile convolution controls
@@ -1953,10 +2130,19 @@ class SinglePlotPage(QWidget):
 
         self._conv_check = QCheckBox("Apply convolution")
         self._conv_check.toggled.connect(self._on_conv_toggled)
-        conv_depth_layout.addWidget(self._conv_check)
 
-        sigma_row = QHBoxLayout()
-        sigma_row.addWidget(QLabel("Beam σ (Å):"))
+        self._conv_info = QLabel(
+            "Lateral resolution corresponds physically to the former beam sigma. "
+            "Use depth resolution for projected/depth broadening."
+        )
+        self._conv_info.setWordWrap(True)
+        self._conv_info.setStyleSheet("color: #666; font-size: 10px;")
+        conv_depth_layout.addWidget(self._conv_info)
+
+        self._sigma_row_widget = QWidget()
+        sigma_row = QHBoxLayout(self._sigma_row_widget)
+        sigma_row.setContentsMargins(0, 0, 0, 0)
+        sigma_row.addWidget(QLabel("Lateral resolution (Å):"))
         self._sigma_spin = QDoubleSpinBox()
         self._sigma_spin.setRange(0.0, 1_000_000.0)
         self._sigma_spin.setDecimals(2)
@@ -1964,12 +2150,20 @@ class SinglePlotPage(QWidget):
         self._sigma_spin.setSingleStep(5.0)
         self._sigma_spin.valueChanged.connect(self._on_sigma_changed)
         sigma_row.addWidget(self._sigma_spin, 1)
-        conv_depth_layout.addLayout(sigma_row)
+        conv_depth_layout.addWidget(self._sigma_row_widget)
 
-        ch = QLabel("Folds the selected depth-profile curve with a Gaussian of width σ.")
-        ch.setWordWrap(True)
-        ch.setStyleSheet("color: #888; font-size: 10px;")
-        conv_depth_layout.addWidget(ch)
+        self._depth_sigma_row_widget = QWidget()
+        depth_sigma_row = QHBoxLayout(self._depth_sigma_row_widget)
+        depth_sigma_row.setContentsMargins(0, 0, 0, 0)
+        depth_sigma_row.addWidget(QLabel("Depth resolution (Å):"))
+        self._depth_sigma_spin = QDoubleSpinBox()
+        self._depth_sigma_spin.setRange(0.0, 1_000_000.0)
+        self._depth_sigma_spin.setDecimals(2)
+        self._depth_sigma_spin.setValue(0.0)
+        self._depth_sigma_spin.setSingleStep(5.0)
+        self._depth_sigma_spin.valueChanged.connect(self._on_depth_sigma_changed)
+        depth_sigma_row.addWidget(self._depth_sigma_spin, 1)
+        conv_depth_layout.addWidget(self._depth_sigma_row_widget)
         conv_layout.addWidget(self._conv_depth_widget)
 
         # Scan-area controls (2-D / lateral curves only)
@@ -1979,7 +2173,7 @@ class SinglePlotPage(QWidget):
         scan_layout.setSpacing(4)
 
         scan_row = QHBoxLayout()
-        scan_row.addWidget(QLabel("Scan area:"))
+        scan_row.addWidget(QLabel("Lateral mask / scan area:"))
         self._scan_area_min = QDoubleSpinBox()
         self._scan_area_max = QDoubleSpinBox()
         for _sp in (self._scan_area_min, self._scan_area_max):
@@ -1993,23 +2187,50 @@ class SinglePlotPage(QWidget):
         scan_row.addWidget(self._scan_area_max, 1)
         scan_layout.addLayout(scan_row)
 
-        sh = QLabel("Lateral scan area applied to the selected 2-D curve.")
-        sh.setWordWrap(True)
-        sh.setStyleSheet("color: #888; font-size: 10px;")
-        scan_layout.addWidget(sh)
-        conv_layout.addWidget(self._scan_area_widget)
+        self._sigma_2d_x_widget = QWidget()
+        sigma_2d_x_row = QHBoxLayout(self._sigma_2d_x_widget)
+        sigma_2d_x_row.setContentsMargins(0, 0, 0, 0)
+        sigma_2d_x_row.addWidget(QLabel("2D depth resolution X (Å):"))
+        self._sigma_2d_x_spin = QDoubleSpinBox()
+        self._sigma_2d_x_spin.setRange(0.0, 1_000_000.0)
+        self._sigma_2d_x_spin.setDecimals(2)
+        self._sigma_2d_x_spin.setValue(0.0)
+        self._sigma_2d_x_spin.setSingleStep(5.0)
+        self._sigma_2d_x_spin.valueChanged.connect(self._on_sigma_2d_changed)
+        sigma_2d_x_row.addWidget(self._sigma_2d_x_spin, 1)
+        scan_layout.addWidget(self._sigma_2d_x_widget)
 
-        # Place the convolution panel high in the side bar (right after
-        # "Curves") so it doesn't get lost below the larger style form.
-        side_layout.insertWidget(1, self._conv_group)
-        # Always interactive — even without a selected curve. The handlers
-        # auto-pick the first 1-D curve as soon as the user touches anything,
-        # so the panel never sits "broken-looking" in a greyed-out state.
+        self._sigma_2d_y_widget = QWidget()
+        sigma_2d_y_row = QHBoxLayout(self._sigma_2d_y_widget)
+        sigma_2d_y_row.setContentsMargins(0, 0, 0, 0)
+        sigma_2d_y_row.addWidget(QLabel("2D lateral resolution Y (Å):"))
+        self._sigma_2d_y_spin = QDoubleSpinBox()
+        self._sigma_2d_y_spin.setRange(0.0, 1_000_000.0)
+        self._sigma_2d_y_spin.setDecimals(2)
+        self._sigma_2d_y_spin.setValue(0.0)
+        self._sigma_2d_y_spin.setSingleStep(5.0)
+        self._sigma_2d_y_spin.valueChanged.connect(self._on_sigma_2d_changed)
+        sigma_2d_y_row.addWidget(self._sigma_2d_y_spin, 1)
+        scan_layout.addWidget(self._sigma_2d_y_widget)
+        conv_layout.addWidget(self._scan_area_widget)
+        self._sigma_2d_x_widget.setVisible(False)
+        self._sigma_2d_y_widget.setVisible(False)
+
+        self._btn_add_convolution_curve = QPushButton("Add convolution as dataset")
+        self._btn_add_convolution_curve.clicked.connect(self._add_convolution_as_dataset)
+        conv_layout.addWidget(self._btn_add_convolution_curve)
+
+        # "Apply convolution" toggle sits at the bottom of the panel, after the
+        # σ and scan-area inputs, so the user sets parameters first and enables
+        # the effect last.
+        conv_layout.addWidget(self._conv_check)
+
+        # Keep convolution below the style/axes panels; curves and loading stay highest-priority.
 
         # ---- Axes & legend ----
-        axes_group = QGroupBox("Axes & Legend")
-        axes_form = QFormLayout(axes_group)
-        axes_form.setContentsMargins(6, 6, 6, 6)
+        axes_group = CollapsibleBox("Axes & Legend", hint_btn=self._hint_btn("axes"))
+        axes_form = QFormLayout(axes_group.content)
+        axes_form.setContentsMargins(0, 0, 0, 0)
         axes_form.setHorizontalSpacing(6)
         axes_form.setVerticalSpacing(4)
         axes_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
@@ -2086,11 +2307,12 @@ class SinglePlotPage(QWidget):
         axes_form.addRow("Legend at:", self._legend_loc_cmb)
 
         side_layout.addWidget(axes_group)
+        side_layout.addWidget(self._conv_group)
 
         # ---- Reference image overlay ----
-        ref_group = QGroupBox("Reference Image")
-        ref_layout = QVBoxLayout(ref_group)
-        ref_layout.setContentsMargins(6, 6, 6, 6)
+        ref_group = CollapsibleBox("Reference Image", hint_btn=self._hint_btn("reference"))
+        ref_layout = QVBoxLayout(ref_group.content)
+        ref_layout.setContentsMargins(0, 0, 0, 0)
         ref_layout.setSpacing(4)
 
         self._ref_load_btn = QPushButton("Load Image…")
@@ -2124,9 +2346,9 @@ class SinglePlotPage(QWidget):
         side_layout.addWidget(ref_group)
 
         # ---- Stats for selected curve ----
-        self._stats_group = QGroupBox("Stats (Selected)")
-        stats_layout = QVBoxLayout(self._stats_group)
-        stats_layout.setContentsMargins(6, 6, 6, 6)
+        self._stats_group = CollapsibleBox("Stats (Selected)")
+        stats_layout = QVBoxLayout(self._stats_group.content)
+        stats_layout.setContentsMargins(0, 0, 0, 0)
         self._stats_table = QTableWidget(0, 2)
         self._stats_table.setHorizontalHeaderLabels(["Parameter", "Value"])
         self._stats_table.horizontalHeader().setSectionResizeMode(
@@ -2139,15 +2361,15 @@ class SinglePlotPage(QWidget):
         self._stats_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._stats_table.setAlternatingRowColors(True)
         stats_layout.addWidget(self._stats_table)
-        side_layout.addWidget(self._stats_group, 1)
+        side_layout.addWidget(self._stats_group)
         self._stats_group.setVisible(False)
 
-        side_layout.addStretch(0)
+        side_layout.addStretch(1)
 
         splitter.addWidget(side_scroll)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 0)
-        splitter.setSizes([800, 320])
+        splitter.setSizes([760, 400])
 
         self._update_secondary_axes_visibility()
         self._render_plot()
@@ -2160,8 +2382,17 @@ class SinglePlotPage(QWidget):
         self._font_size = float(size)
         self._render_plot()
 
+    def set_beam_from_top(self, enabled: bool) -> None:
+        enabled = bool(enabled)
+        if getattr(self, "_beam_from_top", True) == enabled:
+            return
+        self._beam_from_top = enabled
+        self._render_plot()
+
     # Backwards-compat shim — callers that used set_plot now add instead.
     def set_plot(self, plot_id: str, plot_info: Dict[str, Any]) -> None:
+        self._curves = []
+        self._refresh_curve_list()
         self.add_plot(plot_id, plot_info)
 
     def add_plot(self, plot_id: str, plot_info: Dict[str, Any]) -> int:
@@ -2169,14 +2400,21 @@ class SinglePlotPage(QWidget):
         if not isinstance(plot_info, dict):
             return 0
 
-        # 2D plots can't overlay with line curves — replace the curve list
-        # with the single heatmap entry. The actual drawing is delegated to
-        # the plot_func supplied by the results builder.
+        requested_kind = "2d" if plot_info.get("is_2d") else "1d"
+        if self._curves:
+            existing_kind = "2d" if any(c.get("is_2d") for c in self._curves) else "1d"
+            if existing_kind != requested_kind:
+                QMessageBox.information(
+                    self,
+                    "Single Plot",
+                    "1D and 2D histograms cannot be mixed in Single Plot. Clear the current curves first.",
+                )
+                return 0
+
         if plot_info.get("is_2d") and callable(plot_info.get("plot_func")):
             source_name = str(plot_info.get("name", plot_id))
             x_label = str(plot_info.get("x_label", "") or "")
             y_label = str(plot_info.get("y_label", "") or "")
-            self._curves = []
             curve = {
                 "id":          self._next_curve_id,
                 "source_id":   plot_id,
@@ -2195,25 +2433,33 @@ class SinglePlotPage(QWidget):
                     plot_info["y_values_2d"] if plot_info.get("y_values_2d") is not None else [],
                     dtype=float,
                 ),
+                "z_values_2d": np.asarray(
+                    plot_info["z_values_2d"] if plot_info.get("z_values_2d") is not None else [],
+                    dtype=float,
+                ),
                 "x_label":     x_label,
                 "y_label":     y_label,
-                # Placeholders so the curve-list/style panel code paths don't
-                # blow up when they read these fields.
-                "color":       "#444444",
+                "colorbar_label": str(plot_info.get("colorbar_label", "") or ""),
+                "color":       self._next_cycle_color(),
                 "drawstyle":   "default",
                 "linestyle":   "-",
                 "linewidth":   1.0,
                 "marker":      "None",
                 "markersize":  4.0,
                 "alpha":       1.0,
-                "zorder":      1,
+                "zorder":      2 + len(self._curves),
                 "conv_enabled": False,
                 "conv_sigma":   0.0,
+                "conv_sigma_lateral": 0.0,
+                "conv_sigma_depth": 0.0,
                 "scan_area":    [0.0, 0.0],
                 "bin_factor":   1,
                 "is_depth_profile": False,
                 "axis_x":       "bottom",
                 "axis_y":       "left",
+                "render_mode":  "mesh" if not self._curves else "contour",
+                "contour_levels": 8,
+                "label_contours": False,
             }
             self._next_curve_id += 1
             self._curves.append(curve)
@@ -2301,6 +2547,8 @@ class SinglePlotPage(QWidget):
                 "is_depth_profile": is_depth,
                 "conv_enabled": False,
                 "conv_sigma":   0.0,
+                "conv_sigma_lateral": 0.0,
+                "conv_sigma_depth": 0.0,
                 "scan_area":    [0.0, 0.0],
                 "bin_factor":   1,
                 "stats_func":   plot_stats_func,
@@ -2318,6 +2566,28 @@ class SinglePlotPage(QWidget):
 
     def add_dataset_as_curve(self, dataset: Dict[str, Any], label: str = "") -> bool:
         """Append a single externally-loaded dataset as a curve."""
+        requested_kind = "2d" if bool(dataset.get("is_2d")) else "1d"
+        if self._curves:
+            existing_kind = "2d" if any(c.get("is_2d") for c in self._curves) else "1d"
+            if existing_kind != requested_kind:
+                QMessageBox.information(
+                    self,
+                    "Single Plot",
+                    "1D and 2D histograms cannot be mixed in Single Plot. Clear the current curves first.",
+                )
+                return False
+
+        if bool(dataset.get("is_2d")):
+            plot_info = dataset.get("plot_info")
+            if not isinstance(plot_info, dict):
+                return False
+            added = self.add_plot(str(dataset.get("id") or "loaded_2d"), dict(plot_info))
+            if added > 0 and label.strip():
+                self._curves[-1]["label"] = label.strip()
+                self._refresh_curve_list(select_last=True)
+                self._render_plot()
+            return added > 0
+
         x = _to_numeric_vector(dataset.get("x"))
         y = _to_numeric_vector(dataset.get("y"))
         if x is None or y is None or x.size != y.size:
@@ -2375,6 +2645,8 @@ class SinglePlotPage(QWidget):
             "is_depth_profile": bool(dataset.get("is_depth_profile", True)),
             "conv_enabled": False,
             "conv_sigma":   0.0,
+            "conv_sigma_lateral": 0.0,
+            "conv_sigma_depth": 0.0,
             "scan_area":    [0.0, 0.0],
             "stats_func":   None,
             "axis_x":       "bottom",
@@ -2394,11 +2666,12 @@ class SinglePlotPage(QWidget):
         directory = QFileDialog.getExistingDirectory(
             self,
             "Select Simulation Output Directory",
-            "",
+            get_last_used_directory(),
             QFileDialog.Option.ShowDirsOnly,
         )
         if not directory:
             return
+        remember_last_used_path(directory)
         # Lazy import to avoid a circular dependency with mcresults_page.
         try:
             from ui.pages.mcresults_page import _build_plots_from_directory
@@ -2427,6 +2700,16 @@ class SinglePlotPage(QWidget):
         dir_name = os.path.basename(os.path.normpath(directory)) or directory
         datasets: List[Dict[str, Any]] = []
         for plot_id, info in plots.items():
+            if info.get("is_2d"):
+                datasets.append({
+                    "id": plot_id,
+                    "name": str(info.get("name", plot_id)),
+                    "path": directory,
+                    "is_2d": True,
+                    "plot_info": dict(info),
+                    "_dir_name": dir_name,
+                })
+                continue
             x_vals = info.get("x_values")
             cols = info.get("columns")
             if x_vals is None or cols is None:
@@ -2501,7 +2784,7 @@ class SinglePlotPage(QWidget):
         if not self.add_dataset_as_curve(ds, label=label):
             QMessageBox.warning(
                 self, "Add Curve",
-                "Dataset does not contain valid numeric x/y data.",
+                "Dataset does not contain valid plottable data.",
             )
 
     # =====================================================================
@@ -2572,36 +2855,8 @@ class SinglePlotPage(QWidget):
         # or auto-select the first curve when the user interacts.
         self._conv_group.setEnabled(True)
         if not has:
+            self._set_twod_controls_visible(False)
             self._stats_table.setRowCount(0)
-            return
-
-        # 2D curves: line-style controls don't apply, but the Gauss filter
-        # (and the erf scan-area along the lateral axis) does — populate the
-        # convolution fields from the curve.
-        if curve.get("is_2d"):
-            self._style_group.setEnabled(False)
-            self._conv_depth_widget.setVisible(True)
-            self._scan_area_widget.setVisible(True)
-            self._conv_check.blockSignals(True)
-            self._conv_check.setChecked(bool(curve.get("conv_enabled", False)))
-            self._conv_check.blockSignals(False)
-            self._sigma_spin.blockSignals(True)
-            self._sigma_spin.setValue(float(curve.get("conv_sigma", 0.0)))
-            self._sigma_spin.blockSignals(False)
-            sa = curve.get("scan_area") or [0.0, 0.0]
-            self._scan_area_min.blockSignals(True)
-            self._scan_area_max.blockSignals(True)
-            self._scan_area_min.setValue(float(sa[0]) if len(sa) > 0 else 0.0)
-            self._scan_area_max.setValue(float(sa[1]) if len(sa) > 1 else 0.0)
-            self._scan_area_min.blockSignals(False)
-            self._scan_area_max.blockSignals(False)
-            self._bin_combine_spin.blockSignals(True)
-            self._bin_combine_spin.setValue(1)
-            self._bin_combine_spin.blockSignals(False)
-            self._label_edit.blockSignals(True)
-            self._label_edit.setText(str(curve["label"]))
-            self._label_edit.blockSignals(False)
-            self._populate_stats_for(curve)
             return
 
         self._label_edit.blockSignals(True)
@@ -2610,25 +2865,72 @@ class SinglePlotPage(QWidget):
 
         self._update_color_button(curve["color"])
 
-        self._set_combo_data(self._drawstyle_cmb, curve["drawstyle"])
-        self._set_combo_data(self._linestyle_cmb, curve["linestyle"])
-        self._set_combo_data(self._marker_cmb, curve["marker"])
-
+        self._set_combo_data(self._linestyle_cmb, curve.get("linestyle", "-"))
         self._linewidth_spin.blockSignals(True)
-        self._linewidth_spin.setValue(float(curve["linewidth"]))
+        self._linewidth_spin.setValue(float(curve.get("linewidth", 1.4)))
         self._linewidth_spin.blockSignals(False)
+        self._alpha_spin.blockSignals(True)
+        self._alpha_spin.setValue(float(curve.get("alpha", 1.0)))
+        self._alpha_spin.blockSignals(False)
+        self._zorder_spin.blockSignals(True)
+        self._zorder_spin.setValue(int(curve.get("zorder", 2)))
+        self._zorder_spin.blockSignals(False)
+
+        if curve.get("is_2d"):
+            self._set_twod_controls_visible(True)
+            self._drawstyle_cmb.setEnabled(False)
+            self._marker_cmb.setEnabled(False)
+            self._marker_size_spin.setEnabled(False)
+            self._axis_y_cmb.setEnabled(False)
+            self._axis_x_cmb.setEnabled(False)
+            self._bin_combine_spin.setEnabled(False)
+            self._conv_depth_widget.setVisible(True)
+            self._scan_area_widget.setVisible(True)
+            self._conv_check.blockSignals(True)
+            self._conv_check.setChecked(bool(curve.get("conv_enabled", False)))
+            self._conv_check.blockSignals(False)
+            self._sigma_spin.blockSignals(True)
+            self._sigma_spin.setValue(float(curve.get("conv_sigma_lateral", 0.0)))
+            self._sigma_spin.blockSignals(False)
+            self._depth_sigma_spin.blockSignals(True)
+            self._depth_sigma_spin.setValue(float(curve.get("conv_sigma_depth", 0.0)))
+            self._depth_sigma_spin.blockSignals(False)
+            self._sigma_2d_x_spin.blockSignals(True)
+            self._sigma_2d_x_spin.setValue(float(curve.get("conv_sigma_depth", 0.0)))
+            self._sigma_2d_x_spin.blockSignals(False)
+            self._sigma_2d_y_spin.blockSignals(True)
+            self._sigma_2d_y_spin.setValue(float(curve.get("conv_sigma_lateral", 0.0)))
+            self._sigma_2d_y_spin.blockSignals(False)
+            sa = curve.get("scan_area") or [0.0, 0.0]
+            self._scan_area_min.blockSignals(True)
+            self._scan_area_max.blockSignals(True)
+            self._scan_area_min.setValue(float(sa[0]) if len(sa) > 0 else 0.0)
+            self._scan_area_max.setValue(float(sa[1]) if len(sa) > 1 else 0.0)
+            self._scan_area_min.blockSignals(False)
+            self._scan_area_max.blockSignals(False)
+            self._set_combo_data(self._twod_mode_cmb, curve.get("render_mode", "mesh"))
+            self._twod_levels_spin.blockSignals(True)
+            self._twod_levels_spin.setValue(int(curve.get("contour_levels", 8) or 8))
+            self._twod_levels_spin.blockSignals(False)
+            self._twod_label_contours_check.blockSignals(True)
+            self._twod_label_contours_check.setChecked(bool(curve.get("label_contours", False)))
+            self._twod_label_contours_check.blockSignals(False)
+            self._populate_stats_for(curve)
+            return
+
+        self._set_twod_controls_visible(False)
+        self._drawstyle_cmb.setEnabled(True)
+        self._marker_cmb.setEnabled(True)
+        self._marker_size_spin.setEnabled(True)
+        self._axis_y_cmb.setEnabled(True)
+        self._axis_x_cmb.setEnabled(True)
+        self._bin_combine_spin.setEnabled(True)
+        self._set_combo_data(self._drawstyle_cmb, curve["drawstyle"])
+        self._set_combo_data(self._marker_cmb, curve["marker"])
 
         self._marker_size_spin.blockSignals(True)
         self._marker_size_spin.setValue(float(curve["markersize"]))
         self._marker_size_spin.blockSignals(False)
-
-        self._alpha_spin.blockSignals(True)
-        self._alpha_spin.setValue(float(curve["alpha"]))
-        self._alpha_spin.blockSignals(False)
-
-        self._zorder_spin.blockSignals(True)
-        self._zorder_spin.setValue(int(curve["zorder"]))
-        self._zorder_spin.blockSignals(False)
 
         self._set_combo_data(self._axis_y_cmb, curve.get("axis_y", "left"))
         self._set_combo_data(self._axis_x_cmb, curve.get("axis_x", "bottom"))
@@ -2647,8 +2949,11 @@ class SinglePlotPage(QWidget):
         self._conv_check.setChecked(bool(curve.get("conv_enabled", False)))
         self._conv_check.blockSignals(False)
         self._sigma_spin.blockSignals(True)
-        self._sigma_spin.setValue(float(curve.get("conv_sigma", 0.0)))
+        self._sigma_spin.setValue(float(curve.get("conv_sigma_lateral", 0.0)))
         self._sigma_spin.blockSignals(False)
+        self._depth_sigma_spin.blockSignals(True)
+        self._depth_sigma_spin.setValue(float(curve.get("conv_sigma_depth", 0.0)))
+        self._depth_sigma_spin.blockSignals(False)
         if not is_depth:
             sa = curve.get("scan_area") or [0.0, 0.0]
             self._scan_area_min.blockSignals(True)
@@ -2683,6 +2988,97 @@ class SinglePlotPage(QWidget):
         self._color_cycle_idx += 1
         return c
 
+    def _set_twod_controls_visible(self, visible: bool) -> None:
+        self._twod_render_label.setVisible(visible)
+        self._twod_mode_cmb.setVisible(visible)
+        self._twod_contour_label.setVisible(visible)
+        self._twod_contour_holder.setVisible(visible)
+        self._sigma_2d_x_widget.setVisible(visible)
+        self._sigma_2d_y_widget.setVisible(visible)
+        self._sigma_row_widget.setVisible(not visible)
+        self._depth_sigma_row_widget.setVisible(not visible)
+
+    @staticmethod
+    def _curve_sigma_key(curve: Dict[str, Any]) -> str:
+        return "conv_sigma_depth" if bool(curve.get("is_depth_profile", False)) else "conv_sigma_lateral"
+
+    def _effective_curve_sigma(self, curve: Dict[str, Any]) -> float:
+        key = self._curve_sigma_key(curve)
+        return float(curve.get(key, curve.get("conv_sigma", 0.0)) or 0.0)
+
+    def _curve_scan_area(self, curve: Dict[str, Any]) -> Optional[List[float]]:
+        if bool(curve.get("is_depth_profile", False)):
+            return None
+        return curve.get("scan_area")
+
+    def _apply_curve_convolution_1d(
+        self, curve: Dict[str, Any], x: np.ndarray, y: np.ndarray
+    ) -> np.ndarray:
+        if not curve.get("conv_enabled"):
+            return y
+        return self._gauss_convolve(
+            x,
+            y,
+            self._effective_curve_sigma(curve),
+            scan_area=self._curve_scan_area(curve),
+        )
+
+    @staticmethod
+    def _gauss_convolve_2d(
+        x: np.ndarray,
+        y: np.ndarray,
+        data: np.ndarray,
+        sigma_x: float,
+        sigma_y: float,
+        scan_area: Optional[List[float]] = None,
+    ) -> np.ndarray:
+        if data.ndim != 2 or x.size < 2 or y.size < 2:
+            return data
+        if sigma_x <= 0.0 and sigma_y <= 0.0:
+            return data
+        try:
+            from scipy.ndimage import gaussian_filter1d, convolve1d
+            from scipy.special import erf
+        except ImportError:
+            return data
+
+        out = np.asarray(data, dtype=float)
+        dx = float(np.mean(np.diff(x))) if x.size > 1 else 0.0
+        dy = float(np.mean(np.diff(y))) if y.size > 1 else 0.0
+        if dx <= 0.0 or dy <= 0.0:
+            return out
+
+        if sigma_x > 0.0:
+            out = gaussian_filter1d(out, sigma=sigma_x / dx, axis=0, mode="constant")
+
+        if sigma_y > 0.0:
+            a = float(scan_area[0]) if scan_area and len(scan_area) > 0 else 0.0
+            b = float(scan_area[1]) if scan_area and len(scan_area) > 1 else 0.0
+            if abs(b - a) < 1e-12:
+                out = gaussian_filter1d(out, sigma=sigma_y / dy, axis=1, mode="constant")
+            else:
+                sqrt2s = np.sqrt(2.0) * sigma_y
+                reach = 5.0 * sigma_y + max(abs(a), abs(b))
+                max_half = max(3, (y.size - 1) // 2)
+                half = min(max(3, int(np.ceil(reach / dy))), max_half)
+                d = np.arange(-half, half + 1, dtype=float) * dy
+                kernel = 0.5 * (erf((d - a) / sqrt2s) - erf((d - b) / sqrt2s)) * dy
+                out = convolve1d(out, kernel, axis=1, mode="constant")
+        return out
+
+    def _current_2d_data(self, curve: Dict[str, Any]) -> np.ndarray:
+        data = np.asarray(curve.get("z_values_2d", []), dtype=float)
+        if not curve.get("conv_enabled"):
+            return data
+        return self._gauss_convolve_2d(
+            np.asarray(curve.get("x_values_2d", []), dtype=float),
+            np.asarray(curve.get("y_values_2d", []), dtype=float),
+            data,
+            float(curve.get("conv_sigma_depth", 0.0) or 0.0),
+            float(curve.get("conv_sigma_lateral", 0.0) or 0.0),
+            scan_area=curve.get("scan_area"),
+        )
+
     # =====================================================================
     # Curve action slots
     # =====================================================================
@@ -2701,6 +3097,92 @@ class SinglePlotPage(QWidget):
             return
         self._curves = []
         self._refresh_curve_list()
+        self._render_plot()
+
+    def _add_convolution_as_dataset(self) -> None:
+        curve = self._ensure_curve_selected()
+        if curve is None:
+            QMessageBox.information(
+                self,
+                "Add Convolution",
+                "Load or select a curve first.",
+            )
+            return
+
+        if curve.get("is_2d"):
+            sigma_x = float(curve.get("conv_sigma_depth", 0.0) or 0.0)
+            sigma_y = float(curve.get("conv_sigma_lateral", 0.0) or 0.0)
+            if sigma_x <= 0.0 and sigma_y <= 0.0:
+                QMessageBox.information(
+                    self,
+                    "Add Convolution",
+                    "Set a non-zero 2D depth or lateral resolution first.",
+                )
+                return
+            new_curve = dict(curve)
+            new_curve["id"] = self._next_curve_id
+            new_curve["label"] = f"{curve['label']} (convolved)"
+            new_curve["z_values_2d"] = self._gauss_convolve_2d(
+                np.asarray(curve.get("x_values_2d", []), dtype=float),
+                np.asarray(curve.get("y_values_2d", []), dtype=float),
+                np.asarray(curve.get("z_values_2d", []), dtype=float),
+                sigma_x,
+                sigma_y,
+                scan_area=curve.get("scan_area"),
+            )
+            new_curve["conv_enabled"] = False
+            new_curve["conv_sigma"] = 0.0
+            new_curve["conv_sigma_depth"] = 0.0
+            new_curve["conv_sigma_lateral"] = 0.0
+            new_curve["render_mode"] = "contour"
+            new_curve["color"] = self._next_cycle_color()
+            new_curve["zorder"] = int(curve.get("zorder", 2)) + 1
+            curve["render_mode"] = "contour"
+            self._next_curve_id += 1
+            self._curves.append(new_curve)
+            self._refresh_curve_list(select_last=True)
+            self._render_plot()
+            return
+
+        sigma = self._effective_curve_sigma(curve)
+        if sigma <= 0.0:
+            QMessageBox.information(
+                self,
+                "Add Convolution",
+                "Set a non-zero depth or lateral resolution first.",
+            )
+            return
+
+        x = np.asarray(curve.get("x", []), dtype=float)
+        y = np.asarray(curve.get("y_original", []), dtype=float)
+        if x.size == 0 or y.size != x.size:
+            return
+        bf = int(curve.get("bin_factor", 1) or 1)
+        if bf > 1:
+            x, y = self._rebin_curve(x, y, bf)
+        y_conv = self._gauss_convolve(
+            x,
+            y,
+            sigma,
+            scan_area=self._curve_scan_area(curve),
+        )
+        new_curve = dict(curve)
+        new_curve["id"] = self._next_curve_id
+        new_curve["label"] = f"{curve['label']} (convolved)"
+        new_curve["x"] = x.copy()
+        new_curve["y_original"] = y_conv.copy()
+        new_curve["drawstyle"] = "default"
+        new_curve["linestyle"] = "--"
+        new_curve["conv_enabled"] = False
+        new_curve["conv_sigma"] = 0.0
+        new_curve["conv_sigma_depth"] = 0.0
+        new_curve["conv_sigma_lateral"] = 0.0
+        new_curve["bin_factor"] = 1
+        new_curve["color"] = self._next_cycle_color()
+        new_curve["zorder"] = int(curve.get("zorder", 2)) + 1
+        self._next_curve_id += 1
+        self._curves.append(new_curve)
+        self._refresh_curve_list(select_last=True)
         self._render_plot()
 
     def _on_label_edited(self, text: str) -> None:
@@ -2806,47 +3288,109 @@ class SinglePlotPage(QWidget):
         curve = self._selected_curve()
         if curve is not None:
             return curve
-        for idx, c in enumerate(self._curves):
-            if not c.get("is_2d"):
-                self._curve_list.setCurrentRow(idx)
-                return self._selected_curve()
+        if self._curves:
+            self._curve_list.setCurrentRow(0)
+            return self._selected_curve()
         return None
 
     def _on_conv_toggled(self, checked: bool) -> None:
         curve = self._ensure_curve_selected()
         if curve is None:
             # No curves loaded yet — undo the toggle so the UI doesn't lie
-            # about the state, and nudge the user via the status hint.
+            # about the state, and nudge the user via a transient tooltip.
             self._conv_check.blockSignals(True)
             self._conv_check.setChecked(False)
             self._conv_check.blockSignals(False)
-            self._hint_label.setText(
-                "Load a curve first: double-click a plot tile on the MC Results tab."
+            QToolTip.showText(
+                self._conv_check.mapToGlobal(self._conv_check.rect().bottomLeft()),
+                "Load a curve first: double-click a plot tile on the MC Results tab.",
+                self._conv_check,
             )
             return
         curve["conv_enabled"] = bool(checked)
         # When the user first turns convolution on with σ still at zero, pick
         # a sensible non-zero default so the effect is immediately visible.
         # Heuristic: ~3 % of the curve's x-range.
-        if checked and float(curve.get("conv_sigma", 0.0)) <= 0.0:
+        needs_default = False
+        if curve.get("is_2d"):
+            needs_default = (
+                float(curve.get("conv_sigma_depth", 0.0) or 0.0) <= 0.0
+                and float(curve.get("conv_sigma_lateral", 0.0) or 0.0) <= 0.0
+            )
+        else:
+            needs_default = self._effective_curve_sigma(curve) <= 0.0
+        if checked and needs_default:
             if curve.get("is_2d"):
                 x = np.asarray(curve.get("x_values_2d", []), dtype=float)
+                y = np.asarray(curve.get("y_values_2d", []), dtype=float)
             else:
                 x = np.asarray(curve.get("x", []), dtype=float)
-            if x.size >= 2:
-                span = float(x[-1] - x[0])
-                sigma_default = max(span * 0.03, 0.0)
+                y = np.array([], dtype=float)
+            if curve.get("is_2d"):
+                if x.size >= 2 and float(curve.get("conv_sigma_depth", 0.0) or 0.0) <= 0.0:
+                    sigma_x = max(float(x[-1] - x[0]) * 0.03, 0.0)
+                    curve["conv_sigma_depth"] = sigma_x
+                    self._depth_sigma_spin.blockSignals(True)
+                    self._depth_sigma_spin.setValue(sigma_x)
+                    self._depth_sigma_spin.blockSignals(False)
+                    self._sigma_2d_x_spin.blockSignals(True)
+                    self._sigma_2d_x_spin.setValue(sigma_x)
+                    self._sigma_2d_x_spin.blockSignals(False)
+                if y.size >= 2 and float(curve.get("conv_sigma_lateral", 0.0) or 0.0) <= 0.0:
+                    sigma_y = max(float(y[-1] - y[0]) * 0.03, 0.0)
+                    curve["conv_sigma_lateral"] = sigma_y
+                    curve["conv_sigma"] = sigma_y
+                    self._sigma_spin.blockSignals(True)
+                    self._sigma_spin.setValue(sigma_y)
+                    self._sigma_spin.blockSignals(False)
+                    self._sigma_2d_y_spin.blockSignals(True)
+                    self._sigma_2d_y_spin.setValue(sigma_y)
+                    self._sigma_2d_y_spin.blockSignals(False)
+            elif x.size >= 2 and self._effective_curve_sigma(curve) <= 0.0:
+                sigma_default = max(float(x[-1] - x[0]) * 0.03, 0.0)
+                key = self._curve_sigma_key(curve)
+                curve[key] = sigma_default
                 curve["conv_sigma"] = sigma_default
-                self._sigma_spin.blockSignals(True)
-                self._sigma_spin.setValue(sigma_default)
-                self._sigma_spin.blockSignals(False)
+                target_spin = self._depth_sigma_spin if key == "conv_sigma_depth" else self._sigma_spin
+                target_spin.blockSignals(True)
+                target_spin.setValue(sigma_default)
+                target_spin.blockSignals(False)
         self._render_plot()
 
     def _on_sigma_changed(self, v: float) -> None:
         curve = self._ensure_curve_selected()
         if curve is None:
             return
+        curve["conv_sigma_lateral"] = float(v)
         curve["conv_sigma"] = float(v)
+        if curve.get("conv_enabled"):
+            self._render_plot()
+
+    def _on_depth_sigma_changed(self, v: float) -> None:
+        curve = self._ensure_curve_selected()
+        if curve is None:
+            return
+        curve["conv_sigma_depth"] = float(v)
+        if curve.get("is_2d"):
+            self._sigma_2d_x_spin.blockSignals(True)
+            self._sigma_2d_x_spin.setValue(float(v))
+            self._sigma_2d_x_spin.blockSignals(False)
+        if curve.get("conv_enabled"):
+            self._render_plot()
+
+    def _on_sigma_2d_changed(self, _v: float) -> None:
+        curve = self._ensure_curve_selected()
+        if curve is None:
+            return
+        curve["conv_sigma_depth"] = float(self._sigma_2d_x_spin.value())
+        curve["conv_sigma_lateral"] = float(self._sigma_2d_y_spin.value())
+        curve["conv_sigma"] = float(self._sigma_2d_y_spin.value())
+        self._depth_sigma_spin.blockSignals(True)
+        self._depth_sigma_spin.setValue(curve["conv_sigma_depth"])
+        self._depth_sigma_spin.blockSignals(False)
+        self._sigma_spin.blockSignals(True)
+        self._sigma_spin.setValue(curve["conv_sigma_lateral"])
+        self._sigma_spin.blockSignals(False)
         if curve.get("conv_enabled"):
             self._render_plot()
 
@@ -2860,6 +3404,27 @@ class SinglePlotPage(QWidget):
         ]
         if curve.get("conv_enabled"):
             self._render_plot()
+
+    def _on_twod_render_mode_changed(self, _idx: int) -> None:
+        curve = self._selected_curve()
+        if curve is None or not curve.get("is_2d"):
+            return
+        curve["render_mode"] = self._twod_mode_cmb.currentData() or "mesh"
+        self._render_plot()
+
+    def _on_twod_levels_changed(self, value: int) -> None:
+        curve = self._selected_curve()
+        if curve is None or not curve.get("is_2d"):
+            return
+        curve["contour_levels"] = int(value)
+        self._render_plot()
+
+    def _on_twod_contour_labels_toggled(self, checked: bool) -> None:
+        curve = self._selected_curve()
+        if curve is None or not curve.get("is_2d"):
+            return
+        curve["label_contours"] = bool(checked)
+        self._render_plot()
 
     def _on_bin_combine_changed(self, value: int) -> None:
         curve = self._selected_curve()
@@ -2878,11 +3443,12 @@ class SinglePlotPage(QWidget):
 
     def _pick_reference_image(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "Select Reference Image", "",
+            self, "Select Reference Image", get_last_used_directory(),
             "Images (*.png *.jpg *.jpeg);;All files (*)",
         )
         if not path:
             return
+        remember_last_used_path(path)
         try:
             data = mpimg.imread(path)
         except Exception as exc:  # pragma: no cover - depends on file
@@ -2907,6 +3473,41 @@ class SinglePlotPage(QWidget):
         self._ref_image_alpha = float(v)
         if self._ref_image_data is not None:
             self._render_plot()
+
+    def _on_canvas_leave(self, _event) -> None:
+        self._cursor_status.setText("x: -, y: -")
+
+    def _on_canvas_motion(self, event) -> None:
+        if event is None or event.inaxes is None or event.xdata is None or event.ydata is None:
+            self._cursor_status.setText("x: -, y: -")
+            return
+
+        x_val = float(event.xdata)
+        y_val = float(event.ydata)
+        twod_curve = self._selected_curve()
+        if twod_curve is None or not twod_curve.get("is_2d") or not twod_curve.get("visible", True):
+            twod_curve = next(
+                (c for c in self._curves if c.get("is_2d") and c.get("visible", True)),
+                None,
+            )
+        if twod_curve is not None:
+            x_grid = np.asarray(twod_curve.get("x_values_2d", []), dtype=float)
+            y_grid = np.asarray(twod_curve.get("y_values_2d", []), dtype=float)
+            data = self._current_2d_data(twod_curve)
+            if x_grid.size and y_grid.size and data.ndim == 2 and data.shape == (x_grid.size, y_grid.size):
+                if getattr(self, "_beam_from_top", True):
+                    ix = int(np.argmin(np.abs(x_grid - y_val)))
+                    iy = int(np.argmin(np.abs(y_grid - x_val)))
+                else:
+                    ix = int(np.argmin(np.abs(x_grid - x_val)))
+                    iy = int(np.argmin(np.abs(y_grid - y_val)))
+                z_val = float(data[ix, iy])
+                self._cursor_status.setText(
+                    f"x: {x_val:.3f}, y: {y_val:.3f}, f(x,y): {z_val:.6g}"
+                )
+                return
+
+        self._cursor_status.setText(f"x: {x_val:.3f}, y: {y_val:.3f}")
 
     # =====================================================================
     # Axes-level slots
@@ -2948,15 +3549,21 @@ class SinglePlotPage(QWidget):
     # =====================================================================
 
     def _populate_stats_for(self, curve: Dict[str, Any]) -> None:
-        # 2D plots: defer to the stats_func provided by the results builder.
         if curve.get("is_2d"):
-            rows: List[tuple] = [("Source", str(curve.get("source_name", "")))]
-            stats_func = curve.get("stats_func")
-            if callable(stats_func):
-                try:
-                    rows.extend((str(n), str(v)) for n, v in stats_func())
-                except Exception:
-                    pass
+            data = self._current_2d_data(curve)
+            x = np.asarray(curve.get("x_values_2d", []), dtype=float)
+            y = np.asarray(curve.get("y_values_2d", []), dtype=float)
+            rows: List[tuple] = [
+                ("Source", str(curve.get("source_name", ""))),
+                ("Series", str(curve.get("label", ""))),
+                ("Grid", f"{x.size} × {y.size}"),
+                ("Sum", f"{float(np.sum(data)):.3f}"),
+                ("Peak value", f"{float(np.max(data)):.3f}" if data.size else "0.000"),
+            ]
+            if data.size:
+                peak_idx = np.unravel_index(int(np.argmax(data)), data.shape)
+                rows.append(("Peak X", f"{float(x[peak_idx[0]]):.3f}" if x.size else "0.000"))
+                rows.append(("Peak Y", f"{float(y[peak_idx[1]]):.3f}" if y.size else "0.000"))
             self._stats_table.setRowCount(len(rows))
             for r, (name, value) in enumerate(rows):
                 ni = QTableWidgetItem(str(name))
@@ -2972,9 +3579,7 @@ class SinglePlotPage(QWidget):
         bf = int(curve.get("bin_factor", 1) or 1)
         if bf > 1:
             x, y = self._rebin_curve(x, y, bf)
-        if curve.get("conv_enabled"):
-            y = self._gauss_convolve(x, y, float(curve.get("conv_sigma", 0.0)),
-                                     scan_area=curve.get("scan_area"))
+        y = self._apply_curve_convolution_1d(curve, x, y)
 
         rows: List[tuple] = []
         if y.size:
@@ -3098,25 +3703,95 @@ class SinglePlotPage(QWidget):
             return
         self.ax.set_axis_on()
 
-        # 2D plot: a single heatmap drives the whole figure. Delegate to the
-        # plot_func provided by the results builder and skip the curve loop.
-        twod_curve = next(
-            (c for c in self._curves if c.get("is_2d") and c.get("visible", True)),
-            None,
-        )
-        if twod_curve is not None:
-            conv_kwargs = {}
-            if twod_curve.get("conv_enabled"):
-                conv_kwargs["conv"] = {
-                    "sigma": float(twod_curve.get("conv_sigma", 0.0) or 0.0),
-                    "scan_area": twod_curve.get("scan_area"),
-                }
+        visible_2d = [c for c in self._curves if c.get("is_2d") and c.get("visible", True)]
+        if visible_2d:
             try:
-                try:
-                    twod_curve["plot_func"](self.ax, **conv_kwargs)
-                except TypeError:
-                    # Older plot_func without conv kwarg.
-                    twod_curve["plot_func"](self.ax)
+                use_contours = len(visible_2d) > 1 or any(
+                    (c.get("render_mode") or "mesh") == "contour" for c in visible_2d
+                )
+                colorbar = None
+                legend_lines: list = []
+                if self._ref_image_data is not None:
+                    base = visible_2d[0]
+                    x0 = np.asarray(base.get("x_values_2d", []), dtype=float)
+                    y0 = np.asarray(base.get("y_values_2d", []), dtype=float)
+                    if x0.size and y0.size:
+                        self.ax.imshow(
+                            self._ref_image_data,
+                            extent=(float(np.min(x0)), float(np.max(x0)), float(np.min(y0)), float(np.max(y0))),
+                            aspect="auto",
+                            zorder=0,
+                            alpha=float(self._ref_image_alpha),
+                        )
+
+                for idx, curve in enumerate(visible_2d):
+                    x = np.asarray(curve.get("x_values_2d", []), dtype=float)
+                    y = np.asarray(curve.get("y_values_2d", []), dtype=float)
+                    data = self._current_2d_data(curve)
+                    if x.size == 0 or y.size == 0 or data.size == 0:
+                        continue
+                    if use_contours:
+                        levels_count = max(2, int(curve.get("contour_levels", 8) or 8))
+                        vmax = float(np.max(data))
+                        if vmax <= 0.0:
+                            continue
+                        levels = np.linspace(vmax / levels_count, vmax, levels_count)
+                        contour_x = y if getattr(self, "_beam_from_top", True) else x
+                        contour_y = x if getattr(self, "_beam_from_top", True) else y
+                        contour_z = data if getattr(self, "_beam_from_top", True) else data.T
+                        contour = self.ax.contour(
+                            contour_x,
+                            contour_y,
+                            contour_z,
+                            levels=levels,
+                            colors=[curve.get("color", "#444444")],
+                            linewidths=float(curve.get("linewidth", 1.0)),
+                            linestyles=curve.get("linestyle", "-") or "-",
+                            alpha=float(curve.get("alpha", 1.0)),
+                            zorder=int(curve.get("zorder", 2)) + idx,
+                        )
+                        if curve.get("label_contours"):
+                            try:
+                                self.ax.clabel(contour, inline=True, fontsize=max(6, int(self._font_size - 1)))
+                            except Exception:
+                                pass
+                        proxy_line, = self.ax.plot(
+                            [], [],
+                            color=curve.get("color", "#444444"),
+                            linestyle=curve.get("linestyle", "-") or "-",
+                            linewidth=float(curve.get("linewidth", 1.0)),
+                            label=str(curve.get("label", "")),
+                        )
+                        legend_lines.append(proxy_line)
+                    else:
+                        mesh_x = y if getattr(self, "_beam_from_top", True) else x
+                        mesh_y = x if getattr(self, "_beam_from_top", True) else y
+                        mesh_z = data if getattr(self, "_beam_from_top", True) else data.T
+                        mesh = self.ax.pcolormesh(
+                            mesh_x,
+                            mesh_y,
+                            mesh_z,
+                            shading="auto",
+                            cmap="viridis",
+                            alpha=float(curve.get("alpha", 1.0)),
+                        )
+                        colorbar = self.figure.colorbar(mesh, ax=self.ax)
+                        if curve.get("colorbar_label"):
+                            colorbar.set_label(str(curve.get("colorbar_label")))
+                if getattr(self, "_beam_from_top", True):
+                    self.ax.invert_yaxis()
+                self.ax.set_aspect("equal", adjustable="box")
+                if self._axes_state.get("grid"):
+                    self.ax.grid(True, alpha=0.25)
+                else:
+                    self.ax.grid(False)
+                if use_contours and legend_lines and self._axes_state.get("legend"):
+                    self.ax.legend(
+                        legend_lines,
+                        [ln.get_label() for ln in legend_lines],
+                        loc=str(self._axes_state.get("legend_loc", "best")),
+                        fontsize=8,
+                    )
             except Exception as exc:
                 self.ax.text(
                     0.5, 0.5,
@@ -3127,13 +3802,22 @@ class SinglePlotPage(QWidget):
                 self.ax.set_axis_off()
                 self.canvas.draw_idle()
                 return
-            # Override the title/labels with the page's editable axes state.
             if self._axes_state.get("title"):
                 self.ax.set_title(str(self._axes_state["title"]))
-            if self._axes_state.get("xlabel"):
-                self.ax.set_xlabel(str(self._axes_state["xlabel"]))
-            if self._axes_state.get("ylabel"):
-                self.ax.set_ylabel(str(self._axes_state["ylabel"]))
+            if visible_2d and getattr(self, "_beam_from_top", True):
+                if "xlabel" not in self._axes_user_overrides:
+                    self.ax.set_xlabel(str(visible_2d[0].get("y_label", "")))
+                elif self._axes_state.get("xlabel"):
+                    self.ax.set_xlabel(str(self._axes_state["xlabel"]))
+                if "ylabel" not in self._axes_user_overrides:
+                    self.ax.set_ylabel(str(visible_2d[0].get("x_label", "")))
+                elif self._axes_state.get("ylabel"):
+                    self.ax.set_ylabel(str(self._axes_state["ylabel"]))
+            else:
+                if self._axes_state.get("xlabel"):
+                    self.ax.set_xlabel(str(self._axes_state["xlabel"]))
+                if self._axes_state.get("ylabel"):
+                    self.ax.set_ylabel(str(self._axes_state["ylabel"]))
             _apply_axes_font_size(self.ax, self._font_size)
             try:
                 self.figure.tight_layout()
@@ -3159,9 +3843,7 @@ class SinglePlotPage(QWidget):
             bf = int(curve.get("bin_factor", 1) or 1)
             if bf > 1:
                 x, y = self._rebin_curve(x, y, bf)
-            if curve.get("conv_enabled"):
-                y = self._gauss_convolve(x, y, float(curve.get("conv_sigma", 0.0)),
-                                     scan_area=curve.get("scan_area"))
+            y = self._apply_curve_convolution_1d(curve, x, y)
 
             axis_x = curve.get("axis_x", "bottom")
             axis_y = curve.get("axis_y", "left")
@@ -3207,7 +3889,7 @@ class SinglePlotPage(QWidget):
                 ylim = ax_BL.get_ylim()
                 ax_BL.imshow(
                     self._ref_image_data,
-                    extent=[xlim[0], xlim[1], ylim[0], ylim[1]],
+                    extent=(xlim[0], xlim[1], ylim[0], ylim[1]),
                     aspect="auto",
                     zorder=0,
                     alpha=float(self._ref_image_alpha),
@@ -3301,6 +3983,7 @@ class ResultsSidebar(QWidget):
     selection_changed = pyqtSignal(list)  # emits list of selected plot_ids
     mode_changed = pyqtSignal(bool)       # True = multiple plot mode
     single_plot_config_changed = pyqtSignal(list)
+    plot_bin_factor_changed = pyqtSignal(str, int)
     advanced_requested = pyqtSignal(str)
     load_directory_requested = pyqtSignal(str)  # emits the chosen directory path
 
@@ -3310,8 +3993,11 @@ class ResultsSidebar(QWidget):
         self._single_datasets: List[Dict[str, Any]] = []
         self._single_curve_entries: List[Dict[str, Any]] = []
         self._single_curve_id_seq: int = 1
-        self.setMinimumWidth(260)
-        self.setMaximumWidth(380)
+        self._plot_row_controls: Dict[str, Dict[str, Any]] = {}
+        self._plot_bin_factors: Dict[str, int] = {}
+        self._num_groups: Dict[str, Dict[str, Any]] = {}
+        self.setMinimumWidth(320)
+        self.setMaximumWidth(640)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(4, 4, 4, 4)
@@ -3357,13 +4043,28 @@ class ResultsSidebar(QWidget):
         # Enable drag-and-drop reordering inside the list
         self._plot_list.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
         self._plot_list.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self._plot_list.setDragDropOverwriteMode(False)
 
         # Start with an empty plot list. Populated only when results are
         # actually loaded (via update_available_plots).
         self._plot_id_order: List[str] = []
 
-        self._plot_list.itemChanged.connect(self._on_item_changed)
         self._plot_list.reordered.connect(self._on_reordered)
+
+        list_header = QWidget(multi_page)
+        list_header_layout = QHBoxLayout(list_header)
+        list_header_layout.setContentsMargins(8, 0, 8, 0)
+        list_header_layout.setSpacing(6)
+        lbl_plots = QLabel("Plots", list_header)
+        lbl_plots.setStyleSheet("font-weight: 600;")
+        lbl_bins = QLabel("Bins", list_header)
+        lbl_bins.setStyleSheet("font-weight: 600;")
+        lbl_bins.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl_bins.setFixedWidth(58)
+        list_header_layout.addWidget(lbl_plots, 1)
+        list_header_layout.addWidget(lbl_bins)
+        multi_layout.addWidget(list_header)
+        self._plot_list_header = list_header
 
         multi_layout.addWidget(self._plot_list)
 
@@ -3378,15 +4079,9 @@ class ResultsSidebar(QWidget):
         )
         multi_layout.addWidget(self._plot_empty_label)
 
-        hint = QLabel("\u21c5 Drag items to reorder plots")
-        hint.setStyleSheet("color: #888; font-size: 10px;")
-        hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        multi_layout.addWidget(hint)
-        self._plot_list_hint = hint
-
-        # Reflect empty state in the visibility of list/hint vs placeholder.
+        # Reflect empty state in the visibility of list vs placeholder.
+        self._plot_list_header.setVisible(False)
         self._plot_list.setVisible(False)
-        self._plot_list_hint.setVisible(False)
 
         btn_row = QHBoxLayout()
         self._btn_all = QPushButton("Select All")
@@ -3503,6 +4198,8 @@ class ResultsSidebar(QWidget):
         self._num_table.setStyleSheet(
             "QTableWidget { gridline-color: #ccc; }"
         )
+        self._num_table.cellClicked.connect(self._on_num_table_cell_clicked)
+        self._num_table.cellDoubleClicked.connect(self._on_num_table_double_clicked)
 
         # Start empty — no default sample data.
         self._num_table.setRowCount(0)
@@ -3532,20 +4229,24 @@ class ResultsSidebar(QWidget):
         ids = []
         for i in range(self._plot_list.count()):
             item = self._plot_list.item(i)
-            if item.checkState() == Qt.CheckState.Checked:
-                ids.append(item.data(Qt.ItemDataRole.UserRole))
+            if item is None:
+                continue
+            pid = str(item.data(Qt.ItemDataRole.UserRole) or "")
+            ctrl = self._plot_row_controls.get(pid, {})
+            check = ctrl.get("check")
+            if check is not None and check.isChecked():
+                ids.append(pid)
         return ids
 
     def all_plot_ids_in_order(self) -> List[str]:
         """Return all plot IDs (checked or not) in the current list order."""
-        return [
-            self._plot_list.item(i).data(Qt.ItemDataRole.UserRole)
-            for i in range(self._plot_list.count())
-        ]
-
-    def _on_item_changed(self, _item):
-        if self._mode_switch.isChecked():
-            self.selection_changed.emit(self.selected_plot_ids())
+        out: List[str] = []
+        for i in range(self._plot_list.count()):
+            item = self._plot_list.item(i)
+            if item is None:
+                continue
+            out.append(str(item.data(Qt.ItemDataRole.UserRole) or ""))
+        return out
 
     def _on_reordered(self):
         """Fired after a drag-and-drop reorder inside the list."""
@@ -3553,18 +4254,22 @@ class ResultsSidebar(QWidget):
             self.selection_changed.emit(self.selected_plot_ids())
 
     def _select_all(self):
-        self._plot_list.blockSignals(True)
-        for i in range(self._plot_list.count()):
-            self._plot_list.item(i).setCheckState(Qt.CheckState.Checked)
-        self._plot_list.blockSignals(False)
+        for ctrl in self._plot_row_controls.values():
+            check = ctrl.get("check")
+            if check is not None:
+                check.blockSignals(True)
+                check.setChecked(True)
+                check.blockSignals(False)
         if self._mode_switch.isChecked():
             self.selection_changed.emit(self.selected_plot_ids())
 
     def _deselect_all(self):
-        self._plot_list.blockSignals(True)
-        for i in range(self._plot_list.count()):
-            self._plot_list.item(i).setCheckState(Qt.CheckState.Unchecked)
-        self._plot_list.blockSignals(False)
+        for ctrl in self._plot_row_controls.values():
+            check = ctrl.get("check")
+            if check is not None:
+                check.blockSignals(True)
+                check.setChecked(False)
+                check.blockSignals(False)
         if self._mode_switch.isChecked():
             self.selection_changed.emit(self.selected_plot_ids())
 
@@ -3700,11 +4405,12 @@ class ResultsSidebar(QWidget):
         directory = QFileDialog.getExistingDirectory(
             self,
             "Select Simulation Output Directory",
-            "",
+            get_last_used_directory(),
             QFileDialog.Option.ShowDirsOnly,
         )
         if not directory:
             return
+        remember_last_used_path(directory)
         # Bubble the chosen path up to MCResultsPage, which knows how to
         # actually read the .his/.mom files and populate this view.
         self.load_directory_requested.emit(directory)
@@ -3723,13 +4429,19 @@ class ResultsSidebar(QWidget):
         data_map: Dict[str, dict] = {}
         for i in range(self._plot_list.count()):
             item = self._plot_list.item(i)
-            pid = item.data(Qt.ItemDataRole.UserRole)
+            if item is None:
+                continue
+            pid = str(item.data(Qt.ItemDataRole.UserRole) or "")
+            ctrl = self._plot_row_controls.get(pid, {})
+            check = ctrl.get("check")
             data_map[pid] = {
-                "name": item.text(),
-                "checked": item.checkState(),
+                "name": str(check.text() if check is not None else item.text() or ""),
+                "checked": bool(check.isChecked()) if check is not None else True,
+                "bin_factor": int(self._plot_bin_factors.get(pid, 1)),
             }
 
         self._plot_list.clear()
+        self._plot_row_controls = {}
 
         added: set = set()
         for pid in ordered_ids:
@@ -3744,16 +4456,51 @@ class ResultsSidebar(QWidget):
         self._plot_list.blockSignals(False)
 
     def _add_list_item(self, pid: str, data: dict):
-        item = QListWidgetItem(data["name"])
+        item = QListWidgetItem("")
         item.setFlags(
             item.flags()
-            | Qt.ItemFlag.ItemIsUserCheckable
             | Qt.ItemFlag.ItemIsDragEnabled
             | Qt.ItemFlag.ItemIsDropEnabled
+            | Qt.ItemFlag.ItemIsEnabled
+            | Qt.ItemFlag.ItemIsSelectable
         )
-        item.setCheckState(data["checked"])
         item.setData(Qt.ItemDataRole.UserRole, pid)
         self._plot_list.addItem(item)
+
+        row = QWidget()
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(4, 1, 4, 1)
+        row_layout.setSpacing(6)
+
+        check = QCheckBox(str(data.get("name", pid)), row)
+        check.setChecked(bool(data.get("checked", True)))
+        check.toggled.connect(lambda _v, this_pid=pid: self._on_plot_check_changed(this_pid))
+        row_layout.addWidget(check, 1)
+
+        bins = QComboBox(row)
+        bins.setMinimumWidth(58)
+        bins.setMaximumWidth(58)
+        for factor, bins_value in ((1, 120), (2, 60), (3, 40), (4, 30), (5, 24), (6, 20)):
+            bins.addItem(f"{bins_value}", factor)
+        selected_factor = max(1, min(6, int(data.get("bin_factor", self._plot_bin_factors.get(pid, 1)))))
+        idx = bins.findData(selected_factor)
+        bins.setCurrentIndex(idx if idx >= 0 else 0)
+        bins.currentIndexChanged.connect(
+            lambda _idx, this_pid=pid, cmb=bins: self._on_plot_bins_changed(this_pid, cmb)
+        )
+        row_layout.addWidget(bins)
+
+        self._plot_row_controls[pid] = {"check": check, "bins": bins}
+        self._plot_list.setItemWidget(item, row)
+
+    def _on_plot_check_changed(self, _pid: str) -> None:
+        if self._mode_switch.isChecked():
+            self.selection_changed.emit(self.selected_plot_ids())
+
+    def _on_plot_bins_changed(self, pid: str, combo: QComboBox) -> None:
+        factor = int(combo.currentData() or 1)
+        self._plot_bin_factors[pid] = factor
+        self.plot_bin_factor_changed.emit(pid, factor)
 
     # --- public API for updating values later -------------------------
 
@@ -3765,80 +4512,22 @@ class ResultsSidebar(QWidget):
         - A dict ``{"rows": [...], "atom_table": {...}}`` (atom-column layout)
         """
         rows: List[Dict[str, str]] = []
-        atom_table: Optional[Dict[str, Any]] = None
         if isinstance(values, dict):
             rows = list(values.get("rows", []) or [])
-            atom_table = values.get("atom_table")
         elif isinstance(values, list):
             rows = list(values)
 
-        atoms: List[str] = []
-        atom_rows: List[tuple] = []
-        if isinstance(atom_table, dict):
-            atoms = list(atom_table.get("atoms", []) or [])
-            atom_rows = list(atom_table.get("rows", []) or [])
-
         # Toggle empty-state placeholder vs table visibility.
-        has_data = bool(atoms) or bool(rows)
+        has_data = bool(rows)
         if hasattr(self, "_num_empty_label"):
             self._num_empty_label.setVisible(not has_data)
         self._num_table.setVisible(has_data)
         if not has_data:
             self._num_table.setRowCount(0)
+            self._num_groups = {}
             return
 
-        if atoms:
-            n_cols = 1 + len(atoms)
-            self._num_table.setColumnCount(n_cols)
-            headers = ["Parameter"] + atoms
-            self._num_table.setHorizontalHeaderLabels(headers)
-            header = self._num_table.horizontalHeader()
-            # Interactive: user can drag column dividers freely.
-            for c in range(n_cols):
-                header.setSectionResizeMode(c, QHeaderView.ResizeMode.Interactive)
-            header.setStretchLastSection(True)
-            header.setMinimumSectionSize(40)
-            # Sensible initial widths — narrow Parameter column, compact atoms.
-            self._num_table.setColumnWidth(0, 130)
-            for c in range(1, n_cols):
-                self._num_table.setColumnWidth(c, 70)
-
-            total_rows = len(atom_rows) + len(rows)
-            self._num_table.setRowCount(total_rows)
-
-            for r, (name, cells) in enumerate(atom_rows):
-                name_item = QTableWidgetItem(str(name))
-                name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                self._num_table.setItem(r, 0, name_item)
-                # Visually distinguish section headers (rows whose value cells
-                # are empty strings).
-                is_header = all(not str(cells.get(a, "")).strip() for a in atoms)
-                if is_header:
-                    font = name_item.font()
-                    font.setBold(True)
-                    name_item.setFont(font)
-                for c, atom in enumerate(atoms, start=1):
-                    cell = QTableWidgetItem(str(cells.get(atom, "")))
-                    cell.setFlags(cell.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                    cell.setTextAlignment(Qt.AlignmentFlag.AlignRight
-                                          | Qt.AlignmentFlag.AlignVCenter)
-                    self._num_table.setItem(r, c, cell)
-
-            for r, entry in enumerate(rows, start=len(atom_rows)):
-                name_item = QTableWidgetItem(str(entry.get("name", "")))
-                name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                self._num_table.setItem(r, 0, name_item)
-                value_item = QTableWidgetItem(str(entry.get("value", "")))
-                value_item.setFlags(value_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                # Span the value across the remaining columns.
-                for c in range(1, n_cols):
-                    self._num_table.setItem(r, c, QTableWidgetItem(""))
-                self._num_table.setItem(r, 1, value_item)
-                if n_cols > 2:
-                    self._num_table.setSpan(r, 1, 1, n_cols - 1)
-            return
-
-        # Legacy / no atom table: keep simple Parameter | Value layout.
+        # Parameter | Value layout with optional accordion rows.
         self._num_table.setColumnCount(2)
         self._num_table.setHorizontalHeaderLabels(["Parameter", "Value"])
         header = self._num_table.horizontalHeader()
@@ -3846,41 +4535,161 @@ class ResultsSidebar(QWidget):
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
         header.setStretchLastSection(True)
         header.setMinimumSectionSize(40)
-        self._num_table.setColumnWidth(0, 130)
+        self._num_table.setColumnWidth(0, 190)
         self._num_table.setRowCount(len(rows))
+        self._num_groups = {}
+
         for row, entry in enumerate(rows):
+            row_type = str(entry.get("row_type", ""))
+            group_id = str(entry.get("group", ""))
             name_item = QTableWidgetItem(str(entry.get("name", "")))
             name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            if row_type in {"section", "group"}:
+                f = name_item.font()
+                f.setBold(True)
+                name_item.setFont(f)
+                if row_type == "group":
+                    prefix = "▸ " if bool(entry.get("collapsed", True)) else "▾ "
+                    name_item.setText(prefix + str(entry.get("name", "")))
+                    name_item.setToolTip("Click to expand/collapse")
+
             value_item = QTableWidgetItem(str(entry.get("value", "")))
             value_item.setFlags(value_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            tooltip = str(entry.get("tooltip", "") or "").strip()
+            if tooltip:
+                value_item.setToolTip(tooltip)
+            if row_type == "child":
+                name_item.setText("   " + name_item.text())
+
             self._num_table.setItem(row, 0, name_item)
             self._num_table.setItem(row, 1, value_item)
+
+            if row_type == "group" and group_id:
+                self._num_groups[group_id] = {
+                    "header": row,
+                    "rows": [],
+                    "collapsed": bool(entry.get("collapsed", True)),
+                }
+            elif row_type == "child" and group_id in self._num_groups:
+                self._num_groups[group_id]["rows"].append(row)
+
+        for info in self._num_groups.values():
+            collapsed = bool(info.get("collapsed", True))
+            for r in info.get("rows", []):
+                self._num_table.setRowHidden(int(r), collapsed)
+
+    def _on_num_table_cell_clicked(self, row: int, column: int) -> None:
+        if column != 0:
+            return
+        for info in self._num_groups.values():
+            if int(info.get("header", -1)) != int(row):
+                continue
+
+            collapsed = not bool(info.get("collapsed", True))
+            info["collapsed"] = collapsed
+            for child_row in info.get("rows", []):
+                self._num_table.setRowHidden(int(child_row), collapsed)
+
+            header_item = self._num_table.item(row, 0)
+            if header_item is not None:
+                text = header_item.text()
+                if text.startswith("▸ ") or text.startswith("▾ "):
+                    header_item.setText(("▸ " if collapsed else "▾ ") + text[2:])
+            return
+
+    def _on_num_table_double_clicked(self, _row: int, _column: int) -> None:
+        self._open_num_table_popup()
+
+    def _open_num_table_popup(self) -> None:
+        if self._num_table.rowCount() == 0:
+            return
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Numerical Results")
+        dlg.resize(900, 620)
+        layout = QVBoxLayout(dlg)
+
+        table = QTableWidget(self._num_table.rowCount(), self._num_table.columnCount(), dlg)
+        labels: List[str] = []
+        for c in range(self._num_table.columnCount()):
+            hdr = self._num_table.horizontalHeaderItem(c)
+            labels.append(hdr.text() if hdr is not None else "")
+        table.setHorizontalHeaderLabels(labels)
+        table.verticalHeader().setVisible(False)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        table.setAlternatingRowColors(True)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        table.horizontalHeader().setStretchLastSection(True)
+        table.setColumnWidth(0, 240)
+
+        popup_groups: Dict[str, Dict[str, Any]] = {
+            gid: {
+                "header": int(info.get("header", -1)),
+                "rows": [int(r) for r in info.get("rows", [])],
+                "collapsed": bool(info.get("collapsed", True)),
+            }
+            for gid, info in self._num_groups.items()
+        }
+
+        for r in range(self._num_table.rowCount()):
+            if self._num_table.isRowHidden(r):
+                table.setRowHidden(r, True)
+            for c in range(self._num_table.columnCount()):
+                src = self._num_table.item(r, c)
+                if src is None:
+                    continue
+                clone = QTableWidgetItem(src)
+                clone.setFlags(clone.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                table.setItem(r, c, clone)
+
+        def _toggle_popup_group(row: int, column: int) -> None:
+            if column != 0:
+                return
+            for info in popup_groups.values():
+                if int(info.get("header", -1)) != int(row):
+                    continue
+
+                collapsed = not bool(info.get("collapsed", True))
+                info["collapsed"] = collapsed
+                for child_row in info.get("rows", []):
+                    table.setRowHidden(int(child_row), collapsed)
+
+                header_item = table.item(row, 0)
+                if header_item is not None:
+                    text = header_item.text()
+                    if text.startswith("▸ ") or text.startswith("▾ "):
+                        header_item.setText(("▸ " if collapsed else "▾ ") + text[2:])
+                return
+
+        table.cellClicked.connect(_toggle_popup_group)
+
+        layout.addWidget(table)
+        dlg.exec()
 
     def update_available_plots(self, plots: Dict[str, dict]):
         """Replace the plot selection list."""
         self._plot_list.blockSignals(True)
         self._plot_list.clear()
+        self._plot_row_controls = {}
         self._plot_id_order = list(plots.keys())
         for pid, info in plots.items():
-            item = QListWidgetItem(info["name"])
-            item.setFlags(
-                item.flags()
-                | Qt.ItemFlag.ItemIsUserCheckable
-                | Qt.ItemFlag.ItemIsDragEnabled
-                | Qt.ItemFlag.ItemIsDropEnabled
+            self._add_list_item(
+                str(pid),
+                {
+                    "name": str(info.get("name", pid)),
+                    "checked": True,
+                    "bin_factor": int(self._plot_bin_factors.get(str(pid), 1)),
+                },
             )
-            item.setCheckState(Qt.CheckState.Checked)
-            item.setData(Qt.ItemDataRole.UserRole, pid)
-            self._plot_list.addItem(item)
         self._plot_list.blockSignals(False)
 
         # Toggle the empty-state placeholder.
         has_plots = bool(plots)
         if hasattr(self, "_plot_empty_label"):
             self._plot_empty_label.setVisible(not has_plots)
+        if hasattr(self, "_plot_list_header"):
+            self._plot_list_header.setVisible(has_plots)
         self._plot_list.setVisible(has_plots)
-        if hasattr(self, "_plot_list_hint"):
-            self._plot_list_hint.setVisible(has_plots)
 
         if self._mode_switch.isChecked():
             self.selection_changed.emit(self.selected_plot_ids())
@@ -3931,10 +4740,10 @@ class MCResultsWidget(QWidget):
         # Sidebar occupies ~25 % initially
         self._splitter.setStretchFactor(0, 0)
         self._splitter.setStretchFactor(1, 1)
-        self._splitter.setSizes([280, 900])
+        self._splitter.setSizes([420, 860])
 
         # Wire selection changes (sidebar → plot area)
-        self.sidebar.selection_changed.connect(self.plot_area.set_visible_plots)
+        self.sidebar.selection_changed.connect(self._on_sidebar_selection_changed)
         # Wire tile reorder (plot area → sidebar)
         self.plot_area.order_changed.connect(self.sidebar.set_plot_order)
         # Tile double-click → forward to parent (main window) for Single Plot tab
@@ -3944,11 +4753,20 @@ class MCResultsWidget(QWidget):
         # Wire mode + single-plot selection
         self.sidebar.mode_changed.connect(self._on_mode_changed)
         self.sidebar.single_plot_config_changed.connect(self._on_single_plot_config_changed)
+        self.sidebar.plot_bin_factor_changed.connect(self.plot_area.set_plot_bin_factor)
         # Sidebar "Load Output Directory" → bubble to parent page
         self.sidebar.load_directory_requested.connect(self.load_directory_requested)
 
         # Default mode: multiple plots
         self._on_mode_changed(True)
+
+    def _on_sidebar_selection_changed(self, plot_ids: List[str]) -> None:
+        self.plot_area.set_visible_plots(plot_ids)
+        if len(plot_ids) == 1:
+            plot_id = str(plot_ids[0])
+            info = AVAILABLE_PLOTS.get(plot_id)
+            if info is not None:
+                self.plot_open_in_single.emit(plot_id, info)
 
     def _on_mode_changed(self, multiple_mode: bool) -> None:
         self._plot_stack.setCurrentIndex(0 if multiple_mode else 1)
@@ -3973,6 +4791,11 @@ class MCResultsWidget(QWidget):
 
     def set_plot_bin_combine(self, factor: int) -> None:
         self.plot_area.set_bin_factor(int(factor))
+
+    def set_beam_from_top(self, enabled: bool) -> None:
+        self.plot_area.set_beam_from_top(bool(enabled))
+        if hasattr(self.single_plot_area, "set_beam_from_top"):
+            self.single_plot_area.set_beam_from_top(bool(enabled))
 
     # --- public API for future real-data integration ------------------
 

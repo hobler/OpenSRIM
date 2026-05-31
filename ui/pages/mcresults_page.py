@@ -171,117 +171,147 @@ def _parse_species(label: str) -> tuple:
     return text, ""
 
 
-def _build_atom_table(all_moments: Dict[str, dict], total_ions: float) -> Dict[str, Any]:
-    """Build a 2D table: rows are parameter names, columns are atom species.
+def _fmt_scaled(value: float, quantity: str) -> str:
+    """Format value with a human-friendly unit scale."""
+    v = float(value)
+    if not np.isfinite(v):
+        return "—"
 
-    The grouping follows the user's request:
-      Backscattered:  reflected (ion column), sputtered (target atom columns)
-      Transmitted:    transmitted (ion column), forward-sputtered (target atoms)
-      Inside:         stopped (ion column), vacancies, interstitials (target atoms)
+    if quantity == "length_a":
+        meters = v * 1e-10
+        scales = [
+            (1e-12, "pm"),
+            (1e-9, "nm"),
+            (1e-6, "um"),
+            (1e-3, "mm"),
+            (1.0, "m"),
+        ]
+        abs_m = abs(meters)
+        unit_scale, unit = scales[1]
+        for s, u in scales:
+            if abs_m < 1000.0 * s:
+                unit_scale, unit = s, u
+                break
+        return f"{meters / unit_scale:.3g} {unit}"
 
-    Returns a dict with keys: "atoms", "rows" where
-       atoms : ordered list of atom labels (ion first, then targets)
-       rows  : list of (row_name, {atom_label: value_str}) tuples
-    """
-    ion_label: Optional[str] = None
-    target_atoms: List[str] = []
+    if quantity == "energy_kev":
+        ev = v * 1e3
+        abs_ev = abs(ev)
+        if abs_ev < 1e3:
+            return f"{ev:.3g} eV"
+        if abs_ev < 1e6:
+            return f"{ev / 1e3:.3g} keV"
+        return f"{ev / 1e6:.3g} MeV"
 
-    def _register(label: str, *, is_ion: bool) -> None:
-        nonlocal ion_label
-        if is_ion and ion_label is None:
-            ion_label = label
-            return
-        if not is_ion and label not in target_atoms and label != ion_label:
-            target_atoms.append(label)
+    if quantity == "angle_deg":
+        return f"{v:.3g} deg"
 
-    for key in ("x", "be", "te"):
-        for species in all_moments.get(key, {}).keys():
-            elem, kind = _parse_species(species)
-            _register(elem, is_ion=(kind == "ion"))
+    return f"{v:.3g}"
 
-    atoms: List[str] = []
-    if ion_label:
-        atoms.append(ion_label)
-    atoms.extend(target_atoms)
-    if not atoms:
-        return {"atoms": [], "rows": []}
 
-    def _zeros() -> Dict[str, float]:
-        return {a: 0.0 for a in atoms}
+def _build_yields_rows(all_moments: Dict[str, dict], total_ions: float) -> List[Dict[str, Any]]:
+    """Build simplified Yields section with Backscattered/Transmitted/Inside rows."""
+    back = 0.0
+    trans = 0.0
+    inside_ion = 0.0
 
-    refl = _zeros()
-    sput = _zeros()
-    trans = _zeros()
-    fsput = _zeros()
-    stopped = _zeros()
-    vac = _zeros()
-    inter = _zeros()
-
-    for species, vals in all_moments.get("be", {}).items():
-        elem, kind = _parse_species(species)
-        total = float(vals.get("total", 0.0) or 0.0)
-        if elem not in atoms:
-            continue
-        if kind == "ion":
-            refl[elem] += total
-        else:
-            sput[elem] += total
-
-    for species, vals in all_moments.get("te", {}).items():
-        elem, kind = _parse_species(species)
-        total = float(vals.get("total", 0.0) or 0.0)
-        if elem not in atoms:
-            continue
-        if kind == "ion":
-            trans[elem] += total
-        else:
-            fsput[elem] += total
-
+    for vals in all_moments.get("be", {}).values():
+        back += float(vals.get("total", 0.0) or 0.0)
+    for vals in all_moments.get("te", {}).values():
+        trans += float(vals.get("total", 0.0) or 0.0)
     for species, vals in all_moments.get("x", {}).items():
-        elem, kind = _parse_species(species)
-        total = float(vals.get("total", 0.0) or 0.0)
-        if elem not in atoms:
-            continue
+        _elem, kind = _parse_species(species)
         if kind == "ion":
-            stopped[elem] += total
-        elif kind == "vacancies":
-            vac[elem] += total
-        elif kind == "interstitials":
-            inter[elem] += total
+            inside_ion += float(vals.get("total", 0.0) or 0.0)
 
-    def _row(name: str, values: Dict[str, float], *, as_pct: bool = False) -> tuple:
-        cells = {}
-        for a in atoms:
-            v = values.get(a, 0.0)
-            if as_pct and total_ions > 0:
-                cells[a] = f"{(100.0 * v / total_ions):.3f} %"
-            elif v == 0.0:
-                cells[a] = "—"
-            else:
-                cells[a] = f"{v:.0f}"
-        return (name, cells)
+    if inside_ion <= 0.0 and total_ions > 0.0:
+        inside_ion = max(total_ions - back - trans, 0.0)
 
-    rows: List[tuple] = [
-        ("— Backscattered —", {a: "" for a in atoms}),
-        _row("Reflected", refl),
-        _row("Sputtered", sput),
-        ("— Transmitted —", {a: "" for a in atoms}),
-        _row("Transmitted", trans),
-        _row("Forward sputtered", fsput),
-        ("— Inside (1 − backscatt. − transm.) —", {a: "" for a in atoms}),
-        _row("Stopped in target", stopped),
-        _row("Vacancies", vac),
-        _row("Interstitials", inter),
+    rows: List[Dict[str, Any]] = []
+    candidates = [
+        ("Backscattered", back),
+        ("Transmitted", trans),
+        ("Inside", inside_ion),
+    ]
+    for name, val in candidates:
+        if val <= 0:
+            continue
+        txt = f"{val:.0f}"
+        if total_ions > 0:
+            txt += f" ({100.0 * val / total_ions:.2f} %)"
+        rows.append({"name": name, "value": txt})
+    return rows
+
+
+def _best_species_moments(moment_dict: Dict[str, Dict[str, float]]) -> Optional[Dict[str, float]]:
+    """Pick ion moments first, otherwise the first non-empty species."""
+    for species, vals in moment_dict.items():
+        _elem, kind = _parse_species(species)
+        if kind == "ion":
+            return vals
+    for vals in moment_dict.values():
+        if float(vals.get("total", 0.0) or 0.0) > 0.0:
+            return vals
+    return None
+
+
+def _build_moment_rows(all_moments: Dict[str, dict]) -> List[Dict[str, Any]]:
+    """Build accordion-ready moment rows; groups are collapsed by default."""
+    groups = [
+        ("x", "Projected Range", "length_a"),
+        ("y", "Lateral Range", "length_a"),
+        ("xn", "Projected Nuclear Energy Deposition", "energy_kev"),
+        ("yn", "Lateral Nuclear Energy Deposition", "energy_kev"),
+        ("xe", "Projected Electronic Energy Deposition", "energy_kev"),
+        ("ye", "Lateral Electronic Energy Deposition", "energy_kev"),
+        ("be", "Backscattered Energy", "energy_kev"),
+        ("ba", "Backscattered Angle", "angle_deg"),
+        ("te", "Transmitted Energy", "energy_kev"),
+        ("ta", "Transmitted Angle", "angle_deg"),
     ]
 
-    if total_ions > 0:
-        rows.append(("— Yields (% of total ions) —", {a: "" for a in atoms}))
-        rows.append(_row("Reflected yield", refl, as_pct=True))
-        rows.append(_row("Sputter yield", sput, as_pct=True))
-        rows.append(_row("Transmitted yield", trans, as_pct=True))
-        rows.append(_row("Forward sputter yield", fsput, as_pct=True))
+    rows: List[Dict[str, Any]] = []
+    for key, title, quantity in groups:
+        best = _best_species_moments(all_moments.get(key, {}))
+        if not best:
+            continue
+        mean = float(best.get("mean", 0.0) or 0.0)
+        std = float(best.get("std", 0.0) or 0.0)
+        skew = float(best.get("skewness", 0.0) or 0.0)
+        kurt = float(best.get("kurtosis", 0.0) or 0.0)
+        if mean == 0.0 and std == 0.0 and skew == 0.0 and kurt == 0.0:
+            continue
 
-    return {"atoms": atoms, "rows": rows}
+        group_id = f"mom::{key}"
+        rows.append({
+            "name": title,
+            "value": "",
+            "row_type": "group",
+            "group": group_id,
+            "collapsed": True,
+        })
+
+        child_rows = [
+            ("Mean", mean, float(best.get("mean_err", 0.0) or 0.0), quantity),
+            ("Standard Deviation", std, float(best.get("std_err", 0.0) or 0.0), quantity),
+            ("Skewness", skew, None, ""),
+            ("Kurtosis", kurt, None, ""),
+        ]
+        for label, val, err, row_quantity in child_rows:
+            if val == 0.0 and (err is None or err == 0.0):
+                continue
+            tip = None
+            if err is not None and err > 0.0:
+                tip = f"Error: {_fmt_scaled(err, row_quantity)}"
+            rows.append({
+                "name": label,
+                "value": _fmt_scaled(val, row_quantity),
+                "row_type": "child",
+                "group": group_id,
+                "tooltip": tip,
+            })
+
+    return rows
 
 
 def _build_plots_from_directory(results_dir: str):
@@ -400,7 +430,7 @@ def _build_plots_from_directory(results_dir: str):
             plot_name = f"{plot_prefix} ({spec_label})"
 
             def _make_2d_plot_func(_x, _y, _data, _xlabel, _ylabel, _title, _cbar):
-                def plot_func(ax, bin_factor: int = 1, conv=None):
+                def plot_func(ax, bin_factor: int = 1, conv=None, beam_from_top: bool = True):
                     # x_edges/y_edges from the binary file are bin centers
                     # (linspace over limits with `nbins` points). pcolormesh
                     # treats them as cell-edge coordinates with shading="auto".
@@ -435,12 +465,21 @@ def _build_plots_from_directory(results_dir: str):
                                     erf((d - a) / sqrt2s) - erf((d - b) / sqrt2s)
                                 ) * dy
                                 data = convolve1d(data, kernel, axis=1, mode="constant")
-                    mesh = ax.pcolormesh(
-                        _x, _y, data.T,
-                        shading="auto", cmap="viridis",
-                    )
-                    ax.set_xlabel(_xlabel)
-                    ax.set_ylabel(_ylabel)
+                    if beam_from_top:
+                        mesh = ax.pcolormesh(
+                            _y, _x, data,
+                            shading="auto", cmap="viridis",
+                        )
+                        ax.set_xlabel(_ylabel)
+                        ax.set_ylabel(_xlabel)
+                        ax.invert_yaxis()
+                    else:
+                        mesh = ax.pcolormesh(
+                            _x, _y, data.T,
+                            shading="auto", cmap="viridis",
+                        )
+                        ax.set_xlabel(_xlabel)
+                        ax.set_ylabel(_ylabel)
                     ax.set_title(_title)
                     cbar = ax.figure.colorbar(mesh, ax=ax)
                     cbar.set_label(_cbar)
@@ -471,8 +510,10 @@ def _build_plots_from_directory(results_dir: str):
                 # Raw 2-D axes for downstream convolution / σ-default heuristics.
                 "x_values_2d": x_edges,
                 "y_values_2d": y_edges,
+                "z_values_2d": data,
                 "x_label": xlabel,
                 "y_label": ylabel,
+                "colorbar_label": cbar_label,
                 "colors": [],
             }
 
@@ -493,29 +534,16 @@ def _build_plots_from_directory(results_dir: str):
         except Exception:
             pass
 
-    # Build the per-atom 2D table (Backscattered/Transmitted/Inside × atom columns).
-    atom_table = _build_atom_table(all_moments, total_ions)
+    # Yields block (simplified, no empty entries).
+    yields = _build_yields_rows(all_moments, total_ions)
+    if yields:
+        summary_rows.append({"name": "Yields", "value": "", "row_type": "section"})
+        summary_rows.extend(yields)
 
-    # Add per-species moments for the depth distribution as flat summary rows
-    # (mean range, straggling, etc.).
-    x_moms = all_moments.get("x", {})
-    for species, vals in x_moms.items():
-        mean = float(vals.get("mean", 0.0) or 0.0)
-        mean_err = float(vals.get("mean_err", 0.0) or 0.0)
-        std = float(vals.get("std", 0.0) or 0.0)
-        std_err = float(vals.get("std_err", 0.0) or 0.0)
-        summary_rows.append({"name": f"{species} – Mean Range",
-                             "value": f"{mean:.2f} ± {mean_err:.2f} Å"})
-        summary_rows.append({"name": f"{species} – Straggling",
-                             "value": f"{std:.2f} ± {std_err:.2f} Å"})
-        if "skewness" in vals:
-            summary_rows.append({"name": f"{species} – Skewness",
-                                 "value": f"{float(vals['skewness']):.4f}"})
-        if "kurtosis" in vals:
-            summary_rows.append({"name": f"{species} – Kurtosis",
-                                 "value": f"{float(vals['kurtosis']):.4f}"})
+    # Moments blocks as accordions (collapsed by default).
+    summary_rows.extend(_build_moment_rows(all_moments))
 
-    numerical = {"rows": summary_rows, "atom_table": atom_table}
+    numerical = {"rows": summary_rows, "atom_table": None}
     return plots, numerical
 
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import os
 from typing import Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal, QPropertyAnimation, QEasingCurve
@@ -18,7 +20,17 @@ from PyQt6.QtWidgets import (
     QFrame,
     QPushButton,
     QStyle,
+    QTableWidget,
+    QTableWidgetItem,
+    QHeaderView,
+    QAbstractItemView,
+    QSizePolicy,
 )
+
+try:
+    from ui.widgets.periodic_table_picker import PeriodicTableDialog
+except ModuleNotFoundError:  # pragma: no cover
+    from OpenSRIM.ui.widgets.periodic_table_picker import PeriodicTableDialog  # type: ignore
 
 
 class AccordionItem(QFrame):
@@ -144,11 +156,17 @@ class AccordionItem(QFrame):
 class AdvancedOptionsPage(QWidget):
     atoms_columns_visibility_changed = pyqtSignal(bool, bool, bool)
     mc_ion_angle_changed = pyqtSignal(float)
+    mc_follow_recoils_changed = pyqtSignal(bool)
+    mc_rng_seed_changed = pyqtSignal(int)
+    mc_electronic_stopping_changed = pyqtSignal(str)
+    mc_scattering_algorithm_changed = pyqtSignal(str)
+    mc_n_absc_changed = pyqtSignal(int)
+    mc_lindhard_correction_changed = pyqtSignal(dict)
     toolbar_visibility_changed = pyqtSignal(bool)
     columns_changed = pyqtSignal(int)        # 0=auto, 1, 2, 3
     borders_visibility_changed = pyqtSignal(bool)
     plot_font_size_changed = pyqtSignal(float)
-    bin_combine_changed = pyqtSignal(int)    # 1..6 adjacent bins summed per tile
+    beam_from_top_changed = pyqtSignal(bool)
     koral_solver_changed = pyqtSignal(dict)
     histogram_settings_changed = pyqtSignal(dict)
 
@@ -217,28 +235,114 @@ class AdvancedOptionsPage(QWidget):
         model_l.addLayout(nbins_row)
         model_l.addStretch(1)
 
-        # --- Cascade Options content (placeholder) ---
+        # --- Cascade Options content ---
         cascade_opts = QWidget(content)
         cascade_opts_l = QVBoxLayout(cascade_opts)
         cascade_opts_l.setContentsMargins(0, 0, 0, 0)
         cascade_opts_l.setSpacing(8)
-        cascade_opts_l.addWidget(QLabel("Cascade options (placeholder)"))
+
+        self.chk_follow_recoils = QCheckBox("Follow recoils")
+        self.chk_follow_recoils.setChecked(True)
+        cascade_opts_l.addWidget(self.chk_follow_recoils)
+
+        seed_row = QHBoxLayout()
+        seed_row.addWidget(QLabel("RNG Seed:"))
+        self.spin_rng_seed = QSpinBox()
+        self.spin_rng_seed.setRange(0, 2_147_483_647)
+        self.spin_rng_seed.setValue(12345)
+        seed_row.addWidget(self.spin_rng_seed)
+        seed_row.addStretch(1)
+        cascade_opts_l.addLayout(seed_row)
         cascade_opts_l.addStretch(1)
 
-        # --- Nuclear Stopping content (placeholder) ---
+        # --- Nuclear Stopping content ---
         nuclear_opts = QWidget(content)
         nuclear_opts_l = QVBoxLayout(nuclear_opts)
         nuclear_opts_l.setContentsMargins(0, 0, 0, 0)
         nuclear_opts_l.setSpacing(8)
-        nuclear_opts_l.addWidget(QLabel("Nuclear stopping options (placeholder)"))
+
+        alg_row = QHBoxLayout()
+        alg_row.addWidget(QLabel("Scattering Algorithm:"))
+        self.cmb_scattering_algorithm = QComboBox()
+        self.cmb_scattering_algorithm.addItems(["magic", "Legendre"])
+        self.cmb_scattering_algorithm.setCurrentText("Legendre")
+        alg_row.addWidget(self.cmb_scattering_algorithm)
+        alg_row.addStretch(1)
+        nuclear_opts_l.addLayout(alg_row)
+
+        absc_row = QHBoxLayout()
+        absc_row.addWidget(QLabel("n_absc:"))
+        self.spin_n_absc = QSpinBox()
+        self.spin_n_absc.setRange(1, 1000)
+        self.spin_n_absc.setValue(4)
+        absc_row.addWidget(self.spin_n_absc)
+        absc_row.addStretch(1)
+        nuclear_opts_l.addLayout(absc_row)
         nuclear_opts_l.addStretch(1)
 
-        # --- Electronic Stopping content (placeholder) ---
+        # --- Electronic Stopping content ---
         electronic_opts = QWidget(content)
         electronic_opts_l = QVBoxLayout(electronic_opts)
         electronic_opts_l.setContentsMargins(0, 0, 0, 0)
         electronic_opts_l.setSpacing(8)
-        electronic_opts_l.addWidget(QLabel("Electronic stopping options (placeholder)"))
+
+        model_row = QHBoxLayout()
+        model_row.addWidget(QLabel("Electronic Stopping Model:"))
+        self.cmb_electronic_stopping = QComboBox()
+        self.cmb_electronic_stopping.addItems(["SRIM", "Lindhard"])
+        self.cmb_electronic_stopping.setCurrentText("SRIM")
+        model_row.addWidget(self.cmb_electronic_stopping)
+        model_row.addStretch(1)
+        electronic_opts_l.addLayout(model_row)
+
+        electronic_opts_l.addWidget(QLabel("Lindhard correction factors:"))
+        self.tbl_lindhard_correction = QTableWidget(0, 3)
+        self.tbl_lindhard_correction.setHorizontalHeaderLabels(["Projectile", "Target", "Factor"])
+        self.tbl_lindhard_correction.setFrameShape(QFrame.Shape.Box)
+        self.tbl_lindhard_correction.setFrameShadow(QFrame.Shadow.Plain)
+        self.tbl_lindhard_correction.setLineWidth(1)
+        self.tbl_lindhard_correction.verticalHeader().setVisible(False)
+        self.tbl_lindhard_correction.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.tbl_lindhard_correction.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.tbl_lindhard_correction.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        self.tbl_lindhard_correction.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        self.tbl_lindhard_correction.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
+        self.tbl_lindhard_correction.horizontalHeader().setStretchLastSection(False)
+        self.tbl_lindhard_correction.setColumnWidth(0, 120)
+        self.tbl_lindhard_correction.setColumnWidth(1, 120)
+        self.tbl_lindhard_correction.setColumnWidth(2, 240)
+        self.tbl_lindhard_correction.setMinimumWidth(500)
+        self.tbl_lindhard_correction.setMaximumWidth(500)
+        self.tbl_lindhard_correction.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Minimum)
+        self.tbl_lindhard_correction.setAlternatingRowColors(True)
+        self.tbl_lindhard_correction.setShowGrid(True)
+        self.tbl_lindhard_correction.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.tbl_lindhard_correction.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.tbl_lindhard_correction.setStyleSheet(
+            "QTableWidget {"
+            " border: 1px solid palette(mid);"
+            " border-radius: 6px;"
+            " background: palette(base);"
+            " alternate-background-color: palette(alternate-base);"
+            " selection-background-color: palette(highlight);"
+            " gridline-color: palette(mid);"
+            " }"
+            " QHeaderView::section {"
+            " background: palette(alternate-base);"
+            " border: 1px solid palette(mid);"
+            " padding: 6px 8px;"
+            " font-weight: 600;"
+            " }"
+        )
+        electronic_opts_l.addWidget(self.tbl_lindhard_correction)
+
+        lindhard_btn_row = QHBoxLayout()
+        self.btn_lindhard_add = QPushButton("Add Row")
+        self.btn_lindhard_remove = QPushButton("Remove Row")
+        lindhard_btn_row.addWidget(self.btn_lindhard_add)
+        lindhard_btn_row.addWidget(self.btn_lindhard_remove)
+        lindhard_btn_row.addStretch(1)
+        electronic_opts_l.addLayout(lindhard_btn_row)
         electronic_opts_l.addStretch(1)
 
         # --- KORAL Solver content ---
@@ -289,9 +393,20 @@ class AdvancedOptionsPage(QWidget):
         hist_l.setContentsMargins(0, 0, 0, 0)
         hist_l.setSpacing(8)
 
-        self.chk_hist_override = QCheckBox("Override histogram limits")
+        self.chk_hist_override = QCheckBox("Use custom histogram limits for simulation output")
         self.chk_hist_override.setChecked(False)
+        self.chk_hist_override.setToolTip(
+            "When enabled, the custom bins and min/max ranges below are written into the simulation TOML. "
+            "When disabled, histogram limits are derived from the current layer width and ion energy."
+        )
         hist_l.addWidget(self.chk_hist_override)
+
+        self.lbl_hist_info = QLabel(
+            "These settings affect generated simulation histograms, not the display of existing MC Results plots."
+        )
+        self.lbl_hist_info.setWordWrap(True)
+        self.lbl_hist_info.setStyleSheet("color: palette(mid);")
+        hist_l.addWidget(self.lbl_hist_info)
 
         self.spin_hist_nbins = QSpinBox()
         self.spin_hist_nbins.setRange(10, 10000)
@@ -344,6 +459,11 @@ class AdvancedOptionsPage(QWidget):
         self.chk_borders.toggled.connect(self.borders_visibility_changed)
         display_l.addWidget(self.chk_borders)
 
+        self.chk_beam_from_top = QCheckBox("Show beam from top in 2D plots")
+        self.chk_beam_from_top.setChecked(True)
+        self.chk_beam_from_top.toggled.connect(self.beam_from_top_changed)
+        display_l.addWidget(self.chk_beam_from_top)
+
         font_row = QHBoxLayout()
         font_row.addWidget(QLabel("Plot Font Size:"))
         self.spin_plot_font_size = QDoubleSpinBox()
@@ -364,18 +484,6 @@ class AdvancedOptionsPage(QWidget):
         col_row.addWidget(self.col_combo)
         display_l.addLayout(col_row)
 
-        bin_row = QHBoxLayout()
-        bin_row.addWidget(QLabel("Combine Bins:"))
-        self.spin_bin_combine = QSpinBox()
-        self.spin_bin_combine.setRange(1, 6)
-        self.spin_bin_combine.setValue(1)
-        self.spin_bin_combine.setToolTip(
-            "Sum N adjacent histogram bins per tile (1 = no combining, up to 6)."
-        )
-        self.spin_bin_combine.valueChanged.connect(self.bin_combine_changed)
-        bin_row.addWidget(self.spin_bin_combine)
-        bin_row.addStretch(1)
-        display_l.addLayout(bin_row)
         display_l.addStretch(1)
 
         self._acc_ion = AccordionItem("Ion selection", ion, expanded=False, parent=content)
@@ -385,13 +493,14 @@ class AdvancedOptionsPage(QWidget):
         self._acc_nuclear = AccordionItem("Nuclear Stopping", nuclear_opts, expanded=False, parent=content)
         self._acc_electronic = AccordionItem("Electronic Stopping", electronic_opts, expanded=False, parent=content)
         self._acc_koral_solver = AccordionItem("KORAL Solver", koral_solver, expanded=False, parent=content)
-        self._acc_hist = AccordionItem("Output Histograms", hist, expanded=False, parent=content)
+        self._acc_hist = AccordionItem("Simulation Output Histograms", hist, expanded=False, parent=content)
         self._acc_display = AccordionItem("Display Settings", display, expanded=False, parent=content)
 
         self._accordion_by_id = {
             "ion_selection_mc": self._acc_ion,
             "atoms_per_layer": self._acc_atoms,
             "model_selection": self._acc_model,
+            "mc_setup_advanced": self._acc_cascade,
             "cascade_options": self._acc_cascade,
             "nuclear_stopping": self._acc_nuclear,
             "electronic_stopping": self._acc_electronic,
@@ -430,7 +539,15 @@ class AdvancedOptionsPage(QWidget):
         self.cmb_koral_method.currentIndexChanged.connect(self._emit_koral_solver)
         self.le_koral_rtol.textChanged.connect(self._emit_koral_solver)
         self.le_koral_atol.textChanged.connect(self._emit_koral_solver)
+        self.chk_follow_recoils.toggled.connect(self._emit_mc_setup_advanced)
+        self.spin_rng_seed.valueChanged.connect(self._emit_mc_setup_advanced)
+        self.cmb_electronic_stopping.currentIndexChanged.connect(self._emit_mc_setup_advanced)
+        self.cmb_scattering_algorithm.currentIndexChanged.connect(self._emit_mc_setup_advanced)
+        self.spin_n_absc.valueChanged.connect(self._emit_mc_setup_advanced)
+        self.btn_lindhard_add.clicked.connect(self._on_add_lindhard_row)
+        self.btn_lindhard_remove.clicked.connect(self._on_remove_lindhard_row)
         self.chk_hist_override.toggled.connect(self._emit_histogram_settings)
+        self.chk_hist_override.toggled.connect(self._update_histogram_override_ui)
         self.spin_hist_nbins.valueChanged.connect(self._emit_histogram_settings)
         for spin in (
             self.spin_depth_min,
@@ -443,6 +560,16 @@ class AdvancedOptionsPage(QWidget):
             self.spin_angle_max,
         ):
             spin.valueChanged.connect(self._emit_histogram_settings)
+
+        self._elements_by_symbol = self._load_elements_lookup()
+        self._element_symbols = sorted(self._elements_by_symbol.keys())
+        self._updating_lindhard = False
+        self._suppress_incoming_mc_setup_apply = False
+
+        # Default examples to avoid empty free-text parsing by users.
+        self._apply_lindhard_correction({"B->Si": 1.5, "Si->Si": 1.0})
+        self._update_lindhard_table_height()
+        self._update_histogram_override_ui(bool(self.chk_hist_override.isChecked()))
 
     def _handle_item_toggled(self, source: AccordionItem, expanded: bool) -> None:
         if not expanded:
@@ -464,6 +591,147 @@ class AdvancedOptionsPage(QWidget):
     def _emit_koral_solver(self, *_args) -> None:
         self.koral_solver_changed.emit(self._collect_koral_solver())
 
+    def _emit_mc_setup_advanced(self, *_args) -> None:
+        self._suppress_incoming_mc_setup_apply = True
+        try:
+            self.mc_follow_recoils_changed.emit(bool(self.chk_follow_recoils.isChecked()))
+            self.mc_rng_seed_changed.emit(int(self.spin_rng_seed.value()))
+            self.mc_electronic_stopping_changed.emit(str(self.cmb_electronic_stopping.currentText()))
+            self.mc_scattering_algorithm_changed.emit(str(self.cmb_scattering_algorithm.currentText()))
+            self.mc_n_absc_changed.emit(int(self.spin_n_absc.value()))
+            self.mc_lindhard_correction_changed.emit(self._collect_lindhard_correction())
+        finally:
+            self._suppress_incoming_mc_setup_apply = False
+
+    def _on_lindhard_editor_changed(self, *_args) -> None:
+        if self._updating_lindhard:
+            return
+        self._emit_mc_setup_advanced()
+
+    def _on_add_lindhard_row(self) -> None:
+        self._add_lindhard_row("", "", 1.0, emit=False)
+        row = self.tbl_lindhard_correction.rowCount() - 1
+        if row >= 0:
+            self.tbl_lindhard_correction.selectRow(row)
+
+    def _on_remove_lindhard_row(self) -> None:
+        row = self.tbl_lindhard_correction.currentRow()
+        if row < 0:
+            row = self.tbl_lindhard_correction.rowCount() - 1
+        if row < 0:
+            return
+        self.tbl_lindhard_correction.removeRow(row)
+        self._update_lindhard_table_height()
+        self._emit_mc_setup_advanced()
+
+    def _on_lindhard_pick_clicked(self, button: QPushButton) -> None:
+        dialog = PeriodicTableDialog(self, compact=True, show_hover_info=True, bordered=True)
+
+        def _set_selected_element(element: dict) -> None:
+            symbol = str(element.get("symbol", "")).strip()
+            name = str(element.get("name", "")).strip()
+            if not symbol:
+                return
+            button.setProperty("element_symbol", symbol)
+            button.setProperty("element_name", name or symbol)
+            button.setText(name or symbol)
+            self._emit_mc_setup_advanced()
+
+        dialog.element_selected.connect(_set_selected_element)
+        dialog.exec()
+
+    def _load_elements_lookup(self) -> dict[str, str]:
+        json_path = os.path.join(os.path.dirname(__file__), "..", "widgets", "PeriodicTableJSON.json")
+        json_path = os.path.normpath(json_path)
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+        except OSError:
+            return {}
+        except json.JSONDecodeError:
+            return {}
+
+        elements = payload.get("elements", []) if isinstance(payload, dict) else []
+        lookup: dict[str, str] = {}
+        for elem in elements:
+            if not isinstance(elem, dict):
+                continue
+            symbol = str(elem.get("symbol", "")).strip()
+            name = str(elem.get("name", "")).strip()
+            if symbol:
+                lookup[symbol] = name or symbol
+        return lookup
+
+    def _create_lindhard_pick_button(self, symbol: str) -> QPushButton:
+        btn = QPushButton(self.tbl_lindhard_correction)
+        sym = symbol.strip()
+        name = self._elements_by_symbol.get(sym, sym)
+        btn.setProperty("element_symbol", sym)
+        btn.setProperty("element_name", name)
+        btn.setText(name if name else "Pick element…")
+        btn.clicked.connect(lambda _checked=False, b=btn: self._on_lindhard_pick_clicked(b))
+        return btn
+
+    def _create_lindhard_factor_spin(self, factor: float) -> QDoubleSpinBox:
+        spin = QDoubleSpinBox(self.tbl_lindhard_correction)
+        spin.setRange(0.0, 1000.0)
+        spin.setDecimals(6)
+        spin.setSingleStep(0.1)
+        spin.setValue(float(factor))
+        spin.valueChanged.connect(self._on_lindhard_editor_changed)
+        return spin
+
+    def _update_lindhard_table_height(self) -> None:
+        header_h = self.tbl_lindhard_correction.horizontalHeader().height()
+        frame = self.tbl_lindhard_correction.frameWidth() * 2
+        rows_h = 0
+        for row in range(self.tbl_lindhard_correction.rowCount()):
+            rows_h += self.tbl_lindhard_correction.rowHeight(row)
+        if self.tbl_lindhard_correction.rowCount() == 0:
+            rows_h = self.tbl_lindhard_correction.verticalHeader().defaultSectionSize()
+        total = header_h + rows_h + frame + 2
+        self.tbl_lindhard_correction.setFixedHeight(total)
+
+    def _add_lindhard_row(self, projectile: str, target: str, factor: float, *, emit: bool = True) -> None:
+        row = self.tbl_lindhard_correction.rowCount()
+        self.tbl_lindhard_correction.insertRow(row)
+        self.tbl_lindhard_correction.setCellWidget(row, 0, self._create_lindhard_pick_button(str(projectile)))
+        self.tbl_lindhard_correction.setCellWidget(row, 1, self._create_lindhard_pick_button(str(target)))
+        self.tbl_lindhard_correction.setCellWidget(row, 2, self._create_lindhard_factor_spin(float(factor)))
+        self._update_lindhard_table_height()
+        if emit:
+            self._emit_mc_setup_advanced()
+
+    def _collect_lindhard_correction(self) -> dict[str, float]:
+        parsed: dict[str, float] = {}
+        for row in range(self.tbl_lindhard_correction.rowCount()):
+            p_widget = self.tbl_lindhard_correction.cellWidget(row, 0)
+            t_widget = self.tbl_lindhard_correction.cellWidget(row, 1)
+            f_widget = self.tbl_lindhard_correction.cellWidget(row, 2)
+
+            projectile = str(p_widget.property("element_symbol") or "").strip() if isinstance(p_widget, QPushButton) else ""
+            target = str(t_widget.property("element_symbol") or "").strip() if isinstance(t_widget, QPushButton) else ""
+            if not projectile or not target:
+                continue
+            factor = float(f_widget.value()) if isinstance(f_widget, QDoubleSpinBox) else 1.0
+            parsed[f"{projectile}->{target}"] = factor
+        return parsed
+
+    def _apply_lindhard_correction(self, correction: dict[str, float]) -> None:
+        self._updating_lindhard = True
+        self.tbl_lindhard_correction.setRowCount(0)
+        for key, value in correction.items():
+            if "->" not in str(key):
+                continue
+            projectile, target = str(key).split("->", 1)
+            try:
+                factor = float(value)
+            except (TypeError, ValueError):
+                continue
+            self._add_lindhard_row(projectile.strip(), target.strip(), factor, emit=False)
+        self._update_lindhard_table_height()
+        self._updating_lindhard = False
+
     def _collect_histogram_settings(self) -> dict:
         return {
             "enabled": bool(self.chk_hist_override.isChecked()),
@@ -480,6 +748,53 @@ class AdvancedOptionsPage(QWidget):
 
     def _emit_histogram_settings(self, *_args) -> None:
         self.histogram_settings_changed.emit(self._collect_histogram_settings())
+
+    def _update_histogram_override_ui(self, enabled: bool) -> None:
+        for widget in (
+            self.spin_hist_nbins,
+            self.spin_depth_min,
+            self.spin_depth_max,
+            self.spin_lateral_min,
+            self.spin_lateral_max,
+            self.spin_energy_min,
+            self.spin_energy_max,
+            self.spin_angle_min,
+            self.spin_angle_max,
+        ):
+            widget.setEnabled(bool(enabled))
+
+    def apply_histogram_defaults(self, defaults: dict) -> None:
+        if not isinstance(defaults, dict):
+            return
+        if self.chk_hist_override.isChecked():
+            return
+        for key, spin in (
+            ("depth_min", self.spin_depth_min),
+            ("depth_max", self.spin_depth_max),
+            ("lateral_min", self.spin_lateral_min),
+            ("lateral_max", self.spin_lateral_max),
+            ("energy_min", self.spin_energy_min),
+            ("energy_max", self.spin_energy_max),
+            ("angle_min", self.spin_angle_min),
+            ("angle_max", self.spin_angle_max),
+        ):
+            if key not in defaults:
+                continue
+            spin.blockSignals(True)
+            try:
+                spin.setValue(float(defaults[key]))
+            except (TypeError, ValueError):
+                pass
+            finally:
+                spin.blockSignals(False)
+        if "nbins" in defaults:
+            self.spin_hist_nbins.blockSignals(True)
+            try:
+                self.spin_hist_nbins.setValue(int(defaults["nbins"]))
+            except (TypeError, ValueError):
+                pass
+            finally:
+                self.spin_hist_nbins.blockSignals(False)
 
     # Backwards-compat helper: treat set_ion_angle as the MC angle.
     def set_ion_angle(self, value: float) -> None:
@@ -500,6 +815,16 @@ class AdvancedOptionsPage(QWidget):
             "atol": str(self.le_koral_atol.text()),
         }
 
+    def _collect_mc_setup_advanced(self) -> dict:
+        return {
+            "follow_recoils": bool(self.chk_follow_recoils.isChecked()),
+            "rng_seed": int(self.spin_rng_seed.value()),
+            "electronic_stopping": str(self.cmb_electronic_stopping.currentText()),
+            "scattering_algorithm": str(self.cmb_scattering_algorithm.currentText()),
+            "n_absc": int(self.spin_n_absc.value()),
+            "lindhard_correction": self._collect_lindhard_correction(),
+        }
+
     def collect_config(self) -> dict:
         return {
             "ion": {
@@ -513,11 +838,13 @@ class AdvancedOptionsPage(QWidget):
             "model_selection": {
                 "nbins": int(self.spin_nbins.value()),
             },
+            "mc_setup_advanced": self._collect_mc_setup_advanced(),
             "koral_solver": self._collect_koral_solver(),
             "histogram_settings": self._collect_histogram_settings(),
             "display_settings": {
                 "show_toolbars": bool(self.chk_toolbars.isChecked()),
                 "show_borders": bool(self.chk_borders.isChecked()),
+                "beam_from_top": bool(self.chk_beam_from_top.isChecked()),
                 "plot_font_size": float(self.spin_plot_font_size.value()),
                 "grid_columns": int(self.col_combo.currentIndex()),
             },
@@ -556,6 +883,10 @@ class AdvancedOptionsPage(QWidget):
                 self.spin_nbins.setValue(int(model_sel["nbins"]))
             except (TypeError, ValueError):
                 pass
+
+        mc_setup_adv = payload.get("mc_setup_advanced") or {}
+        if isinstance(mc_setup_adv, dict):
+            self.apply_mc_setup_advanced_config(mc_setup_adv)
 
         ks = payload.get("koral_solver") or {}
         if isinstance(ks, dict):
@@ -601,6 +932,7 @@ class AdvancedOptionsPage(QWidget):
         if isinstance(disp, dict):
             self.chk_toolbars.setChecked(bool(disp.get("show_toolbars", self.chk_toolbars.isChecked())))
             self.chk_borders.setChecked(bool(disp.get("show_borders", self.chk_borders.isChecked())))
+            self.chk_beam_from_top.setChecked(bool(disp.get("beam_from_top", self.chk_beam_from_top.isChecked())))
             if "plot_font_size" in disp:
                 try:
                     self.spin_plot_font_size.setValue(float(disp.get("plot_font_size", self.spin_plot_font_size.value())))
@@ -609,6 +941,46 @@ class AdvancedOptionsPage(QWidget):
             idx = int(disp.get("grid_columns", self.col_combo.currentIndex()))
             if 0 <= idx < self.col_combo.count():
                 self.col_combo.setCurrentIndex(idx)
+
+    def apply_mc_setup_advanced_config(self, payload: dict) -> None:
+        if self._suppress_incoming_mc_setup_apply:
+            return
+        if not isinstance(payload, dict):
+            return
+        if "follow_recoils" in payload:
+            self.chk_follow_recoils.blockSignals(True)
+            self.chk_follow_recoils.setChecked(bool(payload.get("follow_recoils", self.chk_follow_recoils.isChecked())))
+            self.chk_follow_recoils.blockSignals(False)
+        if "rng_seed" in payload:
+            try:
+                self.spin_rng_seed.blockSignals(True)
+                self.spin_rng_seed.setValue(int(payload["rng_seed"]))
+            except (TypeError, ValueError):
+                pass
+            finally:
+                self.spin_rng_seed.blockSignals(False)
+        if "electronic_stopping" in payload:
+            idx = self.cmb_electronic_stopping.findText(str(payload.get("electronic_stopping", self.cmb_electronic_stopping.currentText())))
+            if idx >= 0:
+                self.cmb_electronic_stopping.blockSignals(True)
+                self.cmb_electronic_stopping.setCurrentIndex(idx)
+                self.cmb_electronic_stopping.blockSignals(False)
+        if "scattering_algorithm" in payload:
+            idx = self.cmb_scattering_algorithm.findText(str(payload.get("scattering_algorithm", self.cmb_scattering_algorithm.currentText())))
+            if idx >= 0:
+                self.cmb_scattering_algorithm.blockSignals(True)
+                self.cmb_scattering_algorithm.setCurrentIndex(idx)
+                self.cmb_scattering_algorithm.blockSignals(False)
+        if "n_absc" in payload:
+            try:
+                self.spin_n_absc.blockSignals(True)
+                self.spin_n_absc.setValue(int(payload["n_absc"]))
+            except (TypeError, ValueError):
+                pass
+            finally:
+                self.spin_n_absc.blockSignals(False)
+        if "lindhard_correction" in payload and isinstance(payload.get("lindhard_correction"), dict):
+            self._apply_lindhard_correction(payload.get("lindhard_correction") or {})
 
     def open_section(self, section_id: str) -> None:
         item = self._accordion_by_id.get(section_id)

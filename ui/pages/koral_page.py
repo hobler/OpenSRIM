@@ -214,7 +214,8 @@ class KoralPage(QWidget):
         self._ui_param_base_specs: dict[str, dict] = {}
 
         layout = QVBoxLayout(self)
-        layout.setSpacing(10)
+        layout.setContentsMargins(6, 6, 6, 4)
+        layout.setSpacing(0)
 
         ion_box = self.build_ion_data()
         target_box = self.build_input_elements()
@@ -251,7 +252,7 @@ class KoralPage(QWidget):
             main_splitter.setStretchFactor(1, 1)
         except Exception:
             pass
-        layout.addWidget(main_splitter)
+        layout.addWidget(main_splitter, 1)
         # Equalize after the layout has resolved real pixel sizes
         def _equalize_splitter() -> None:
             total = main_splitter.width()
@@ -259,6 +260,13 @@ class KoralPage(QWidget):
                 half = total // 2
                 main_splitter.setSizes([half, total - half])
         QTimer.singleShot(0, _equalize_splitter)
+
+        def _prioritize_koral_plot_height() -> None:
+            total = right_col.height()
+            if total > 0:
+                top = min(max(170, total // 4), 240)
+                right_col.setSizes([top, max(1, total - top)])
+        QTimer.singleShot(0, _prioritize_koral_plot_height)
 
         layout.addWidget(self._build_koral_footer())
 
@@ -503,6 +511,7 @@ class KoralPage(QWidget):
 
     def _build_koral_footer(self) -> QWidget:
         footer = QFrame(self)
+        footer.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         layout = QHBoxLayout(footer)
         layout.setContentsMargins(16, 10, 16, 10)
         layout.setSpacing(12)
@@ -588,7 +597,7 @@ class KoralPage(QWidget):
 
     def _handle_save_koral(self) -> None:
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save KORAL", "", "KORAL Files (*.koral);;All Files (*)"
+            self, "Save KORAL", self.state.get_dialog_start_directory(), "KORAL Files (*.koral);;All Files (*)"
         )
         if not path:
             return
@@ -634,13 +643,14 @@ class KoralPage(QWidget):
 
         try:
             Path(path).write_text(toml_str, encoding="utf-8")
+            self.state.remember_dialog_path(path)
             self.add_log_entry(f"Saved to {Path(path).name}")
         except OSError as exc:
             QMessageBox.warning(self, "KORAL", f"Unable to save file:\n{exc}")
 
     def _handle_load_koral(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "Load KORAL", "", "KORAL Files (*.koral);;All Files (*)"
+            self, "Load KORAL", self.state.get_dialog_start_directory(), "KORAL Files (*.koral);;All Files (*)"
         )
         if not path:
             return
@@ -658,6 +668,7 @@ class KoralPage(QWidget):
         config = payload.get("config")
         if isinstance(config, dict):
             self.apply_config(config)
+        self.state.remember_dialog_path(path)
 
         # Restore _last_request units/requested for correct plot axis labels
         request_section = payload.get("request") or {}
@@ -1086,7 +1097,7 @@ class KoralPage(QWidget):
         canonical = self._density_to_canonical(val, old_unit)
         self._density_unit = new_unit
         self.spin_target_density.setText(
-            f"{self._density_from_canonical(canonical, new_unit):.4e}"
+            f"{self._density_from_canonical(canonical, new_unit):.1e}"
         )
 
     def _get_target_density(self) -> float:
@@ -1104,7 +1115,7 @@ class KoralPage(QWidget):
         if not hasattr(self, "spin_target_density"):
             return
         disp = self._density_from_canonical(value, getattr(self, "_density_unit", "atoms/cm³"))
-        self.spin_target_density.setText(f"{disp:.4e}")
+        self.spin_target_density.setText(f"{disp:.1e}")
 
     def _convert_stopping(self, value_J_per_m: float, unit: str, *, number_density_atoms_cm3: float, density_g_cm3: float) -> float:
         """Convert stopping from SI base (J/m) to the selected unit."""
@@ -1239,9 +1250,9 @@ class KoralPage(QWidget):
         except (TypeError, ValueError):
             e = 0.0
         if e >= 1000.0:
-            s = f"{e/1000.0:.2f} MeV"
+            s = f"{e/1000.0:.1f} MeV"
         else:
-            s = f"{e:.2f} keV"
+            s = f"{e:.1f} keV"
         return s.replace(".", ",") if use_comma else s
 
     def _format_sci(self, v: float, *, use_comma: bool = False) -> str:
@@ -1249,7 +1260,7 @@ class KoralPage(QWidget):
             x = float(v)
         except (TypeError, ValueError):
             x = 0.0
-        s = f"{x:.3E}"
+        s = f"{x:.1E}"
         return s.replace(".", ",") if use_comma else s
 
     def _format_length(self, v_m: float, unit: str, *, use_comma: bool = False) -> str:
@@ -1258,7 +1269,7 @@ class KoralPage(QWidget):
         if u == "Ång":
             s = f"{int(round(val))} A"
         else:
-            s = f"{val:.3g} {u}"
+            s = f"{val:.1f} {u}"
         return s.replace(".", ",") if use_comma else s
 
     def _filter_results_for_display(self, results: list[dict]) -> list[dict]:
@@ -1551,7 +1562,8 @@ class KoralPage(QWidget):
             QMessageBox.information(self, "KORAL", "No results to export.\nRun a calculation first.")
             return
 
-        path, _ = QFileDialog.getSaveFileName(self, "Export SRIM-style table", "koral_results.txt", "Text Files (*.txt)")
+        default_path = str(Path(self.state.get_dialog_start_directory()) / "koral_results.txt")
+        path, _ = QFileDialog.getSaveFileName(self, "Export SRIM-style table", default_path, "Text Files (*.txt)")
         if not path:
             return
 
@@ -1562,6 +1574,7 @@ class KoralPage(QWidget):
             QMessageBox.warning(self, "KORAL", f"Failed to write file:\n{exc}")
             return
 
+        self.state.remember_dialog_path(path)
         self.add_log_entry(f"Exported results to: {path}")
 
     def _export_results_csv(self) -> None:
@@ -1569,7 +1582,8 @@ class KoralPage(QWidget):
             QMessageBox.information(self, "KORAL", "No results to export.\nRun a calculation first.")
             return
 
-        path, _ = QFileDialog.getSaveFileName(self, "Export KORAL CSV", "koral_results.csv", "CSV Files (*.csv)")
+        default_path = str(Path(self.state.get_dialog_start_directory()) / "koral_results.csv")
+        path, _ = QFileDialog.getSaveFileName(self, "Export KORAL CSV", default_path, "CSV Files (*.csv)")
         if not path:
             return
 
@@ -1580,6 +1594,7 @@ class KoralPage(QWidget):
             QMessageBox.warning(self, "KORAL", f"Failed to write file:\n{exc}")
             return
 
+        self.state.remember_dialog_path(path)
         self.add_log_entry(f"Exported CSV results to: {path}")
 
     def _build_csv_export_text(self, results: list) -> str:
@@ -2494,7 +2509,7 @@ class KoralPage(QWidget):
         grid.addWidget(QLabel("Mass (amu)"), 0, 1, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self.ion_mass = QDoubleSpinBox()
         self.ion_mass.setRange(0.01, 1000.0)
-        self.ion_mass.setDecimals(3)
+        self.ion_mass.setDecimals(1)
         self.ion_mass.setReadOnly(False)
         self.ion_mass.setMaximumWidth(120)
         self.ion_mass.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
@@ -2504,7 +2519,7 @@ class KoralPage(QWidget):
         grid.addWidget(QLabel("Energy min (keV)"), 0, 2, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self.energy_min = QDoubleSpinBox()
         self.energy_min.setRange(0.0, 1e6)
-        self.energy_min.setDecimals(4)
+        self.energy_min.setDecimals(1)
         self.energy_min.setValue(10.0)
         self.energy_min.setMaximumWidth(130)
         self.energy_min.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
@@ -2513,7 +2528,7 @@ class KoralPage(QWidget):
         grid.addWidget(QLabel("Energy max (keV)"), 0, 3, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self.energy_max = QDoubleSpinBox()
         self.energy_max.setRange(0.0, 1e6)
-        self.energy_max.setDecimals(2)
+        self.energy_max.setDecimals(1)
         self.energy_max.setValue(10000.0)
         self.energy_max.setMaximumWidth(130)
         self.energy_max.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
@@ -2664,7 +2679,7 @@ class KoralPage(QWidget):
         # --- compound correction (left half) ---
         self.spin_compound_corr = QDoubleSpinBox()
         self.spin_compound_corr.setRange(0.0, 10.0)
-        self.spin_compound_corr.setDecimals(4)
+        self.spin_compound_corr.setDecimals(1)
         self.spin_compound_corr.setSingleStep(0.01)
         self.spin_compound_corr.setValue(1.0)
         self.spin_compound_corr.setToolTip(
@@ -2870,11 +2885,11 @@ class KoralPage(QWidget):
             # Mass (amu) -- now editable
             mass_val = entry.get("mass_override")
             if mass_val is not None:
-                mass_text = f"{float(mass_val):.3f}"
+                mass_text = f"{float(mass_val):.1f}"
             else:
                 mass_raw = element.get("atomic_mass")
                 try:
-                    mass_text = f"{float(mass_raw):.3f}"
+                    mass_text = f"{float(mass_raw):.1f}"
                 except (TypeError, ValueError):
                     mass_text = str(mass_raw)
             mass_item = QTableWidgetItem(mass_text)
@@ -2882,12 +2897,12 @@ class KoralPage(QWidget):
             self.elem_table.setItem(row, 4, mass_item)
 
             # Ratio (editable)
-            ratio_item = QTableWidgetItem(f"{entry['ratio']:.4f}")
+            ratio_item = QTableWidgetItem(f"{entry['ratio']:.1f}")
             ratio_item.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEditable | Qt.ItemFlag.ItemIsEnabled)
             self.elem_table.setItem(row, 5, ratio_item)
 
             percent = (entry["ratio"] / total_ratio * 100.0) if total_ratio else 0.0
-            self.elem_table.setItem(row, 6, ro_item(f"{percent:.2f}"))
+            self.elem_table.setItem(row, 6, ro_item(f"{percent:.1f}"))
 
             for offset, key in enumerate(("damage", "disp", "latt", "surf"), start=7):
                 self.elem_table.setItem(row, offset, ro_item(str(entry[key])))
@@ -3018,7 +3033,7 @@ class KoralPage(QWidget):
         opt_grid.addWidget(self.cmb_prange, 0, 1)
         self._output_option_widgets["prange"] = [self.chk_prange, self.cmb_prange]
 
-        # Plot / List switch – top-right, right-aligned
+        # Plot / List switch – below all output checkboxes, right-aligned
         self.sw_koral_mode = ToggleSwitch()
         self.sw_koral_mode.setChecked(False)  # False = Plot, True = List
         sw_container = QWidget()
@@ -3028,17 +3043,17 @@ class KoralPage(QWidget):
         sw_layout.addWidget(QLabel("Plot"))
         sw_layout.addWidget(self.sw_koral_mode)
         sw_layout.addWidget(QLabel("List"))
-        opt_grid.addWidget(sw_container, 0, 6, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        opt_grid.addWidget(sw_container, 3, 0, 1, 2, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.sw_koral_mode.toggled.connect(self._update_koral_plot_view)
 
-        # "All" toggle, directly under the Plot/List switch
+        # "All" toggle, directly under nuclear/electronic stopping
         self.all_none_chk = QCheckBox("All")
-        self.all_none_chk.setTristate(False)
-        self.all_none_chk.setChecked(False)
-        self.all_none_chk.stateChanged.connect(self._toggle_all_options)
+        self.all_none_chk.setTristate(True)
+        self.all_none_chk.setCheckState(Qt.CheckState.Unchecked)
+        self.all_none_chk.clicked.connect(self._toggle_all_options)
         opt_grid.addWidget(
-            self.all_none_chk, 1, 6,
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+            self.all_none_chk, 2, 3, 1, 2,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
         )
 
         self.chk_long_strag = QCheckBox("Long. Straggling (σ_x)")
@@ -3085,18 +3100,48 @@ class KoralPage(QWidget):
         opt_grid.addWidget(self.cmb_elec_stop_unit, 1, 4)
         self._output_option_widgets["elec_stop"] = [self.chk_elec_hop, self.cmb_elec_stop_unit]
 
+        for checkbox in self._koral_output_checkboxes():
+            checkbox.toggled.connect(self._sync_all_options_checkbox)
+
+        self._sync_all_options_checkbox()
+
         v.addLayout(opt_grid)
-        v.addStretch(1)
 
         return box
 
-    def _toggle_all_options(self, state):
-        # Toggle all checkboxes between checked and unchecked based on all_none_chk
-        new_state = self.all_none_chk.isChecked()
-        for checkbox in [self.chk_prange, self.chk_long_strag, self.chk_lat_strag,
-                         self.chk_nucl_strag, self.chk_elec_hop]:
+    def _koral_output_checkboxes(self) -> list[QCheckBox]:
+        return [
+            self.chk_prange,
+            self.chk_long_strag,
+            self.chk_lat_strag,
+            self.chk_nucl_strag,
+            self.chk_elec_hop,
+        ]
+
+    def _sync_all_options_checkbox(self) -> None:
+        checkboxes = [c for c in self._koral_output_checkboxes() if c.isEnabled() and c.isVisible()]
+        if not checkboxes:
+            checkboxes = self._koral_output_checkboxes()
+        all_checked = all(c.isChecked() for c in checkboxes)
+        any_checked = any(c.isChecked() for c in checkboxes)
+        self.all_none_chk.blockSignals(True)
+        self.all_none_chk.setCheckState(
+            Qt.CheckState.Checked if all_checked else
+            Qt.CheckState.PartiallyChecked if any_checked else
+            Qt.CheckState.Unchecked
+        )
+        self.all_none_chk.blockSignals(False)
+
+    def _toggle_all_options(self) -> None:
+        if self.all_none_chk.checkState() == Qt.CheckState.PartiallyChecked:
+            self.all_none_chk.setCheckState(Qt.CheckState.Checked)
+        new_state = self.all_none_chk.checkState() == Qt.CheckState.Checked
+        for checkbox in self._koral_output_checkboxes():
             if checkbox.isEnabled() and checkbox.isVisible():
+                checkbox.blockSignals(True)
                 checkbox.setChecked(new_state)
+                checkbox.blockSignals(False)
+        self._sync_all_options_checkbox()
 
     def _build_koral_plot_list_section(self) -> QGroupBox:
         box = QGroupBox("")

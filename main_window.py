@@ -105,6 +105,7 @@ class MainWindow(QMainWindow):
         self.mc_results_tab = self._create_mc_results_tab()
         self.single_plot_page = SinglePlotPage()
         self.advanced_options_tab = AdvancedOptionsPage()
+        self._advanced_previous_widget = None
 
         self.tab_widget.addTab(self.koral_tab, "KORAL")
         self.tab_widget.addTab(self.mc_setup_tab, "MC Setup")
@@ -127,13 +128,6 @@ class MainWindow(QMainWindow):
         self.tab_widget.tabCloseRequested.connect(self._on_tab_close_requested)
         self._update_tab_close_buttons()
 
-        adv_index = self.tab_widget.addTab(self.advanced_options_tab, "Advanced Options")
-        # Hide this tab label; it is still navigable programmatically.
-        try:
-            self.tab_widget.tabBar().setTabVisible(adv_index, False)
-        except Exception:
-            pass
-
         self.mc_setup_tab.advanced_requested.connect(self._open_advanced_options)
         self.mc_results_tab.advanced_requested.connect(self._open_advanced_options)
         self.koral_tab.advanced_requested.connect(self._open_advanced_options)
@@ -141,6 +135,15 @@ class MainWindow(QMainWindow):
         self.mc_setup_tab.load_requested.connect(self._handle_load_configuration)
         self.mc_setup_tab.simulation_finished.connect(self._on_simulation_finished)
         self.mc_setup_tab.results_update.connect(self._on_results_update)
+        self.mc_setup_tab.advanced_simulation_settings_changed.connect(
+            self.advanced_options_tab.apply_mc_setup_advanced_config
+        )
+        self.advanced_options_tab.mc_follow_recoils_changed.connect(self.mc_setup_tab.set_follow_recoils)
+        self.advanced_options_tab.mc_rng_seed_changed.connect(self.mc_setup_tab.set_rng_seed)
+        self.advanced_options_tab.mc_electronic_stopping_changed.connect(self.mc_setup_tab.set_electronic_stopping_model)
+        self.advanced_options_tab.mc_scattering_algorithm_changed.connect(self.mc_setup_tab.set_scattering_algorithm)
+        self.advanced_options_tab.mc_n_absc_changed.connect(self.mc_setup_tab.set_n_absc)
+        self.advanced_options_tab.mc_lindhard_correction_changed.connect(self.mc_setup_tab.set_lindhard_correction)
         self.advanced_options_tab.atoms_columns_visibility_changed.connect(
             lambda disp, latt, surf: self.mc_setup_tab._set_atoms_energy_columns_visible(
                 show_disp=disp, show_latt=latt, show_surf=surf
@@ -156,11 +159,17 @@ class MainWindow(QMainWindow):
         self.advanced_options_tab.plot_font_size_changed.connect(
             self.single_plot_page.set_font_size
         )
+        self.advanced_options_tab.beam_from_top_changed.connect(
+            self.single_plot_page.set_beam_from_top
+        )
         self.advanced_options_tab.koral_solver_changed.connect(
             self.koral_tab.set_koral_solver_settings
         )
         self.advanced_options_tab.histogram_settings_changed.connect(
             self.mc_setup_tab.set_histogram_settings
+        )
+        self.mc_setup_tab.histogram_defaults_changed.connect(
+            self.advanced_options_tab.apply_histogram_defaults
         )
 
         # initial sync
@@ -168,8 +177,34 @@ class MainWindow(QMainWindow):
             self.advanced_options_tab.set_mc_ion_angle(self.mc_setup_tab.get_ion_angle())
         except Exception:
             pass
+        try:
+            self.advanced_options_tab.apply_mc_setup_advanced_config(
+                self.mc_setup_tab.get_advanced_simulation_settings()
+            )
+        except Exception:
+            pass
+        try:
+            self.advanced_options_tab.apply_histogram_defaults(
+                self.mc_setup_tab.get_histogram_default_settings()
+            )
+        except Exception:
+            pass
+        try:
+            persisted_display = self.state.get_persisted_display_settings()
+            if persisted_display:
+                self.advanced_options_tab.apply_config({"display_settings": persisted_display})
+        except Exception:
+            pass
+
+        self.advanced_options_tab.toolbar_visibility_changed.connect(self._persist_display_settings)
+        self.advanced_options_tab.borders_visibility_changed.connect(self._persist_display_settings)
+        self.advanced_options_tab.beam_from_top_changed.connect(self._persist_display_settings)
+        self.advanced_options_tab.plot_font_size_changed.connect(self._persist_display_settings)
+        self.advanced_options_tab.columns_changed.connect(self._persist_display_settings)
 
         self.tab_widget.currentChanged.connect(self._on_tab_changed)
+        self._on_tab_changed(self.tab_widget.currentIndex())
+        self.tab_widget.setCurrentWidget(self.mc_setup_tab)
         self._on_tab_changed(self.tab_widget.currentIndex())
 
         self._apply_startup_geometry()
@@ -273,8 +308,8 @@ class MainWindow(QMainWindow):
         self.advanced_options_tab.plot_font_size_changed.connect(
             widget.set_plot_font_size
         )
-        self.advanced_options_tab.bin_combine_changed.connect(
-            widget.set_plot_bin_combine
+        self.advanced_options_tab.beam_from_top_changed.connect(
+            widget.set_beam_from_top
         )
 
     def _is_mc_results_tab_index(self, index: int) -> bool:
@@ -282,8 +317,7 @@ class MainWindow(QMainWindow):
         return isinstance(widget, MCResultsPage)
 
     def _update_tab_close_buttons(self) -> None:
-        """Show close buttons only on extra MC Results tabs (>1) — never on
-        the fixed Koral/MC Setup/first MC Results/Single Plot/Advanced tabs."""
+        """Show close buttons only on extra MC Results tabs and the temporary Advanced tab."""
         bar = self.tab_widget.tabBar()
         if bar is None:
             return
@@ -295,6 +329,8 @@ class MainWindow(QMainWindow):
                 results_count += 1
                 if results_count > 1:
                     closable = True
+            elif widget is self.advanced_options_tab:
+                closable = True
             try:
                 btn_right = bar.tabButton(i, bar.ButtonPosition.RightSide)
                 btn_left = bar.tabButton(i, bar.ButtonPosition.LeftSide)
@@ -303,6 +339,11 @@ class MainWindow(QMainWindow):
                         btn_right.hide()
                     if btn_left is not None:
                         btn_left.hide()
+                else:
+                    if btn_right is not None:
+                        btn_right.show()
+                    if btn_left is not None:
+                        btn_left.show()
             except Exception:
                 pass
 
@@ -321,6 +362,9 @@ class MainWindow(QMainWindow):
 
     def _on_tab_close_requested(self, index: int) -> None:
         widget = self.tab_widget.widget(index)
+        if widget is self.advanced_options_tab:
+            self._close_advanced_options_tab(index)
+            return
         if not isinstance(widget, MCResultsPage):
             return
         # Refuse to close the very first MC Results tab.
@@ -347,6 +391,13 @@ class MainWindow(QMainWindow):
         self.tab_widget.setCurrentWidget(self.single_plot_page)
 
     def _open_advanced_options(self, section_id: str):
+        current = self.tab_widget.currentWidget()
+        if current is not self.advanced_options_tab:
+            self._advanced_previous_widget = current
+        adv_index = self.tab_widget.indexOf(self.advanced_options_tab)
+        if adv_index < 0:
+            adv_index = self.tab_widget.addTab(self.advanced_options_tab, "Advanced Settings")
+            self._update_tab_close_buttons()
         self.tab_widget.setCurrentWidget(self.advanced_options_tab)
         # Sync the correct angle when opening the relevant section.
         if section_id == "ion_selection_mc":
@@ -354,7 +405,27 @@ class MainWindow(QMainWindow):
                 self.advanced_options_tab.set_mc_ion_angle(self.mc_setup_tab.get_ion_angle())
             except Exception:
                 pass
+        if section_id == "histogram_settings":
+            try:
+                self.advanced_options_tab.apply_histogram_defaults(
+                    self.mc_setup_tab.get_histogram_default_settings()
+                )
+            except Exception:
+                pass
         self.advanced_options_tab.open_section(section_id)
+
+    def _close_advanced_options_tab(self, index: int) -> None:
+        previous = self._advanced_previous_widget
+        fallback = self.mc_setup_tab
+        if previous is self.advanced_options_tab:
+            previous = None
+        if previous is not None and self.tab_widget.indexOf(previous) >= 0:
+            self.tab_widget.setCurrentWidget(previous)
+        else:
+            self.tab_widget.setCurrentWidget(fallback)
+        self.tab_widget.removeTab(index)
+        self._advanced_previous_widget = None
+        self._update_tab_close_buttons()
 
     def _apply_mc_ion_angle(self, angle: float) -> None:
         try:
@@ -407,6 +478,15 @@ class MainWindow(QMainWindow):
         self._on_add_results_tab_clicked()
         return self.mc_results_tabs[-1]
 
+    def _persist_display_settings(self, *_args) -> None:
+        try:
+            payload = self.advanced_options_tab.collect_config()
+        except Exception:
+            return
+        display = payload.get("display_settings")
+        if isinstance(display, dict):
+            self.state.set_persisted_display_settings(display)
+
     # --- config save/load ---
     def _handle_save_configuration(self):
         if self.state.current_config_path:
@@ -415,10 +495,11 @@ class MainWindow(QMainWindow):
             self._handle_save_configuration_as()
 
     def _handle_save_configuration_as(self):
+        start_path = self.state.current_config_path or self.state.get_dialog_start_directory()
         path, _ = QFileDialog.getSaveFileName(
             self,
             "Save Configuration",
-            "",
+            start_path,
             "Config Files (*.config);;All Files (*)",
         )
         if path:
@@ -438,6 +519,7 @@ class MainWindow(QMainWindow):
             with open(path, "w", encoding="utf-8") as fh:
                 json.dump(payload, fh, indent=2)
             self.state.current_config_path = path
+            self.state.remember_dialog_path(path)
             emit_log(f"Configuration saved to {os.path.basename(path)}.")
         except OSError as exc:
             QMessageBox.warning(self, "Save Configuration", f"Unable to save file:\n{exc}")
@@ -446,7 +528,7 @@ class MainWindow(QMainWindow):
         path, _ = QFileDialog.getOpenFileName(
             self,
             "Load Configuration",
-            "",
+            self.state.get_dialog_start_directory(),
             "Config Files (*.config);;JSON Files (*.json);;All Files (*)",
         )
         if not path:
@@ -479,6 +561,7 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
             self.state.current_config_path = path
+            self.state.remember_dialog_path(path)
             emit_log(f"Configuration loaded from {os.path.basename(path)}.")
         except (OSError, json.JSONDecodeError) as exc:
             QMessageBox.warning(self, "Load Configuration", f"Unable to load file:\n{exc}")

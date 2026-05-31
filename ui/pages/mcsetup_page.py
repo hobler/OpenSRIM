@@ -130,6 +130,8 @@ class MCSetupPage(QWidget):
     load_requested = pyqtSignal()
     simulation_finished = pyqtSignal(str)  # emits results directory path
     results_update = pyqtSignal(str)      # emits results dir for live refresh
+    advanced_simulation_settings_changed = pyqtSignal(dict)
+    histogram_defaults_changed = pyqtSignal(dict)
 
     def __init__(self, state: AppState, on_log: Optional[Callable[[str], None]] = None, parent=None):
         super().__init__(parent)
@@ -153,9 +155,30 @@ class MCSetupPage(QWidget):
         self._atoms_latt_col = 8
         self._atoms_surf_col = 9
         self._working_directory: Optional[str] = None
+        self._current_toml_path: Optional[Path] = None
         self._density_user_override: set[int] = set()
         self._updating_layers_table = False
         self._histogram_settings: dict = {}
+        self._follow_recoils = True
+        self._rng_seed = 12345
+        self._scattering_algorithm = "Legendre"
+        self._n_absc = 4
+        self._electronic_stopping_model = "SRIM"
+        self._loaded_model_correction: dict[str, float] = {}
+
+        if _read_opentrim_params is not None:
+            try:
+                _defaults = _read_opentrim_params()
+                _sim = _defaults.get("simulation", {})
+                _model = _defaults.get("models", {})
+                _scatter = _model.get("scattering_integrals", {})
+                self._follow_recoils = bool(_sim.get("follow_recoils", self._follow_recoils))
+                self._rng_seed = int(_sim.get("rng_seed", self._rng_seed))
+                self._scattering_algorithm = str(_scatter.get("algorithm", self._scattering_algorithm))
+                self._n_absc = int(_scatter.get("n_absc", self._n_absc))
+                self._electronic_stopping_model = str(_model.get("electronic_stopping", self._electronic_stopping_model))
+            except Exception:
+                pass
 
         # Hints
         self._hint_system: Optional[HintSystem] = None
@@ -168,7 +191,7 @@ class MCSetupPage(QWidget):
         )
 
         layout = QVBoxLayout(self)
-        layout.setSpacing(10)
+        layout.setSpacing(0)
 
         ion_box = self.build_ion_data()
 
@@ -274,6 +297,13 @@ class MCSetupPage(QWidget):
             "no_of_ions": int(self.no_of_ions_spin.value()) if self.no_of_ions_spin else 0,
             "update_after_ions": int(self.update_after_ions_spin.value()) if self.update_after_ions_spin else 0,
         }
+        simulation_meta = {
+            "follow_recoils": bool(self._follow_recoils),
+            "nions": ions_meta["no_of_ions"],
+            "nions_update": ions_meta["update_after_ions"],
+            "rng_seed": int(self._rng_seed),
+            "workdir": self._working_directory or "",
+        }
 
         layers = []
         layer_rows = max(self.layers_table.rowCount() - 1, 0) if hasattr(self, "layers_table") else 0
@@ -310,8 +340,11 @@ class MCSetupPage(QWidget):
         model_meta = {
             "cascade": self.cascade_combo.currentText() if hasattr(self, "cascade_combo") else "",
             "nuclear_stopping": self.nuclear_stopping_combo.currentText() if hasattr(self, "nuclear_stopping_combo") else "",
-            "electronic_stopping": self.electronic_stopping_combo.currentText() if hasattr(self, "electronic_stopping_combo") else "",
+            "electronic_stopping": self._electronic_stopping_model,
             "simulator": self.simulator_combo.currentText() if hasattr(self, "simulator_combo") else "",
+            "scattering_algorithm": self._scattering_algorithm,
+            "n_absc": int(self._n_absc),
+            "lindhard_correction": dict(self._loaded_model_correction),
         }
         output_meta = {
             "traj_start": bool(self.chk_traj_start.isChecked()) if hasattr(self, "chk_traj_start") else False,
@@ -337,6 +370,7 @@ class MCSetupPage(QWidget):
         return {
             "ion": ion_data,
             "ions": ions_meta,
+            "simulation": simulation_meta,
             "layers": layers,
             "selection": model_meta,
             "output": output_meta,
@@ -363,16 +397,28 @@ class MCSetupPage(QWidget):
                     pass
 
         ions_meta = payload.get("ions") or {}
+        simulation_meta = payload.get("simulation") or {}
         if self.no_of_ions_spin is not None:
             try:
-                self.no_of_ions_spin.setValue(int(ions_meta.get("no_of_ions", self.no_of_ions_spin.value())))
+                self.no_of_ions_spin.setValue(int(simulation_meta.get("nions", ions_meta.get("no_of_ions", self.no_of_ions_spin.value()))))
             except (TypeError, ValueError):
                 pass
         if self.update_after_ions_spin is not None:
             try:
-                self.update_after_ions_spin.setValue(int(ions_meta.get("update_after_ions", self.update_after_ions_spin.value())))
+                self.update_after_ions_spin.setValue(int(simulation_meta.get("nions_update", ions_meta.get("update_after_ions", self.update_after_ions_spin.value()))))
             except (TypeError, ValueError):
                 pass
+        try:
+            self.set_follow_recoils(bool(simulation_meta.get("follow_recoils", self._follow_recoils)))
+        except Exception:
+            self._follow_recoils = bool(simulation_meta.get("follow_recoils", self._follow_recoils))
+        try:
+            self.set_rng_seed(int(simulation_meta.get("rng_seed", self._rng_seed)))
+        except Exception:
+            self._rng_seed = int(simulation_meta.get("rng_seed", self._rng_seed))
+        workdir = simulation_meta.get("workdir")
+        if isinstance(workdir, str) and workdir:
+            self._set_working_directory(workdir)
 
         layers = payload.get("layers") or []
         self.layers_table.setRowCount(0)
@@ -431,6 +477,7 @@ class MCSetupPage(QWidget):
                 idx = self.electronic_stopping_combo.findText(electronic)
                 if idx >= 0:
                     self.electronic_stopping_combo.setCurrentIndex(idx)
+                self.set_electronic_stopping_model(electronic)
 
         if hasattr(self, "simulator_combo"):
             simulator = selection.get("simulator")
@@ -438,6 +485,16 @@ class MCSetupPage(QWidget):
                 idx = self.simulator_combo.findText(simulator)
                 if idx >= 0:
                     self.simulator_combo.setCurrentIndex(idx)
+        algorithm = selection.get("scattering_algorithm")
+        if isinstance(algorithm, str) and algorithm:
+            self.set_scattering_algorithm(algorithm)
+        try:
+            self.set_n_absc(int(selection.get("n_absc", self._n_absc)))
+        except (TypeError, ValueError):
+            pass
+        lindhard_correction = selection.get("lindhard_correction")
+        if isinstance(lindhard_correction, dict):
+            self.set_lindhard_correction(lindhard_correction)
 
         output = payload.get("output") or {}
         for attr, key in (
@@ -681,6 +738,7 @@ class MCSetupPage(QWidget):
         self.width_unit_combo.addItems(self.state.unit_options)
         self.width_unit_combo.setCurrentText("Ång")
         self.width_unit_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self.width_unit_combo.currentTextChanged.connect(self._emit_histogram_default_settings)
         layers_hdr.set_header_widget(2, self.width_unit_combo)  # "Width" column
 
         self.density_unit_combo = QComboBox()
@@ -815,6 +873,7 @@ class MCSetupPage(QWidget):
         if data_rows:
             self.layers_table.selectRow(min(max(row - 1, 0), data_rows - 1))
         self._refresh_element_table()
+        self._emit_histogram_default_settings()
 
     def add_layer_row(self):
         action_row = max(self.layers_table.rowCount() - 1, 0)
@@ -823,6 +882,7 @@ class MCSetupPage(QWidget):
         self.layer_elements.insert(action_row, [])
         self._ensure_layers_action_row()
         self.layers_table.selectRow(action_row)
+        self._emit_histogram_default_settings()
 
     def delete_selected_layers(self):
         data_rows = max(self.layers_table.rowCount() - 1, 0)
@@ -846,6 +906,7 @@ class MCSetupPage(QWidget):
         if data_rows:
             self.layers_table.selectRow(min(data_rows - 1, 0))
         self._refresh_element_table()
+        self._emit_histogram_default_settings()
 
     def _handle_layer_gas_toggled(self, checked: bool) -> None:
         """Prevent gas layers from containing solid-state energy parameters."""
@@ -1085,7 +1146,6 @@ class MCSetupPage(QWidget):
 
         self.electronic_stopping_combo, _electronic_w = _combo_with_gear(["SRIM"], "electronic_stopping")
         grid.addWidget(_electronic_w, 1, 6, Qt.AlignmentFlag.AlignLeft)
-
         grid.setColumnStretch(7, 1)
         v.addLayout(grid)
         v.addStretch(1)
@@ -1243,9 +1303,9 @@ class MCSetupPage(QWidget):
         sim_grid.setHorizontalSpacing(8)
         sim_grid.setVerticalSpacing(8)
 
-        sim_grid.addWidget(QLabel("Working Directory:"), 0, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        sim_grid.addWidget(QLabel("Output Directory:"), 0, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self._wd_btn = QPushButton("Select", box)
-        self._wd_btn.setToolTip("Select the working directory used for outputs")
+        self._wd_btn.setToolTip("Select the output directory used for outputs")
         self._wd_btn.clicked.connect(self._choose_working_directory)
         sim_grid.addWidget(self._wd_btn, 0, 1, Qt.AlignmentFlag.AlignLeft)
 
@@ -1286,6 +1346,7 @@ class MCSetupPage(QWidget):
         from PyQt6.QtWidgets import QProgressBar  # local import
 
         footer = QFrame()
+        footer.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         layout = QHBoxLayout(footer)
         layout.setContentsMargins(16, 10, 16, 10)
         layout.setSpacing(12)
@@ -1308,11 +1369,11 @@ class MCSetupPage(QWidget):
 
         load_btn = QPushButton("Load")
         load_btn.setToolTip("Load configuration")
-        load_btn.clicked.connect(self.load_requested.emit)
+        load_btn.clicked.connect(self.load_toml_configuration)
 
         save_btn = QPushButton("Save")
         save_btn.setToolTip("Save configuration")
-        save_btn.clicked.connect(self.save_requested.emit)
+        save_btn.clicked.connect(self.save_toml_configuration)
 
         self.run_button = QPushButton("Run")
         self.run_button.clicked.connect(self._handle_run_clicked)
@@ -1328,17 +1389,232 @@ class MCSetupPage(QWidget):
         path = QFileDialog.getExistingDirectory(
             self,
             "Select working directory",
-            self._working_directory or str(Path.home()),
+            self.state.get_dialog_start_directory(self._working_directory),
         )
         if not path:
             return
-        self._working_directory = str(path)
-        # Show last path component on button; full path on hover.
+        self._set_working_directory(path)
+
+        directory = Path(path)
+        toml_path = self._find_toml_in_directory(directory)
+        if toml_path is not None:
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Icon.Question)
+            msg.setWindowTitle("Working directory contains TOML")
+            msg.setText(f"Found {toml_path.name} in the selected directory.")
+            msg.setInformativeText(
+                "Load this TOML now or keep the current UI values.\n"
+                "On the next run, existing histogram files in this directory can be overwritten."
+            )
+            load_btn = msg.addButton("Load TOML", QMessageBox.ButtonRole.AcceptRole)
+            keep_btn = msg.addButton("Keep current values", QMessageBox.ButtonRole.RejectRole)
+            msg.addButton(QMessageBox.StandardButton.Cancel)
+            msg.exec()
+            clicked = msg.clickedButton()
+            if clicked is load_btn:
+                self.load_toml_from_path(toml_path)
+            elif clicked is keep_btn:
+                self.add_log_entry(f"Working directory set to: {self._working_directory}")
+            return
+
+        self.add_log_entry(f"Working directory set to: {self._working_directory}")
+
+    def _set_working_directory(self, path: str) -> None:
+        self._working_directory = str(Path(path))
+        self.state.remember_dialog_path(path)
         tail = Path(path).name or path
         if hasattr(self, "_wd_btn") and self._wd_btn is not None:
             self._wd_btn.setText(tail)
-            self._wd_btn.setToolTip(path)
-        self.add_log_entry(f"Working directory set to: {self._working_directory}")
+            self._wd_btn.setToolTip(str(path))
+
+    @staticmethod
+    def _find_toml_in_directory(directory: Path) -> Optional[Path]:
+        if not directory.exists() or not directory.is_dir():
+            return None
+        preferred = directory / "input.toml"
+        if preferred.is_file():
+            return preferred
+        for candidate in sorted(directory.glob("*.toml")):
+            if candidate.is_file():
+                return candidate
+        return None
+
+    @staticmethod
+    def _clear_existing_histogram_files(directory: Path) -> list[Path]:
+        removed: list[Path] = []
+        for pattern in ("*.his", "*.mom", "*.hisb", "progress"):
+            for candidate in directory.glob(pattern):
+                if not candidate.is_file():
+                    continue
+                try:
+                    candidate.unlink()
+                    removed.append(candidate)
+                except OSError:
+                    continue
+        return removed
+
+    def _raw_toml_to_payload(self, params: dict) -> dict:
+        simulation = params.get("simulation") or {}
+        beam = params.get("beam") or {}
+        layers = params.get("layer") or []
+        models = params.get("models") or {}
+        output = params.get("output") or {}
+
+        payload_layers: list[dict] = []
+        for layer in layers:
+            if not isinstance(layer, dict):
+                continue
+            elements = []
+            for element in layer.get("element", []):
+                if not isinstance(element, dict):
+                    continue
+                display_mass = element.get("M", element.get("mass", 0.0))
+                display_disp = element.get("displacement_energy", element.get("disp", 25.0))
+                elements.append({
+                    "Z": element.get("Z", element.get("number", 0)),
+                    "symbol": element.get("symbol", ""),
+                    "name": element.get("name", ""),
+                    "mass": display_mass,
+                    "ratio": element.get("stoichiometry", element.get("ratio", 1.0)),
+                    "damage": display_disp,
+                    "disp": display_disp,
+                    "latt": self.state.energy_defaults.get("latt", "3"),
+                    "surf": self.state.energy_defaults.get("surf", "3"),
+                })
+
+            display_density = layer.get("density", 0.0)
+            if elements:
+                density_elements = [{"symbol": e["symbol"], "ratio": e["ratio"], "mass": e["mass"]} for e in elements]
+                try:
+                    display_density = float(layer.get("density", 0.0)) * self._avg_atomic_mass(density_elements) / 0.602214076
+                except (TypeError, ValueError):
+                    display_density = layer.get("density", 0.0)
+
+            payload_layers.append({
+                "name": layer.get("name", ""),
+                "width": layer.get("width", 0.0),
+                "unit": "Ång",
+                "density": display_density,
+                "density_unit": "g/cm³",
+                "compound_corr": layer.get("compound_correction", 1.0),
+                "gas": layer.get("gas", False),
+                "elements": elements,
+            })
+
+        self._loaded_model_correction = {}
+        lindhard = models.get("lindhard_correction")
+        if isinstance(lindhard, dict):
+            self._loaded_model_correction = {
+                str(key): float(value)
+                for key, value in lindhard.items()
+                if isinstance(key, str)
+            }
+
+        payload = {
+            "ion": {
+                "symbol": beam.get("symbol", ""),
+                "name": beam.get("name", ""),
+                "number": beam.get("Z", beam.get("number", 0)),
+                "mass": beam.get("M", beam.get("mass", 0.0)),
+                "energy": beam.get("energy", 0.0),
+                "angle": beam.get("tilt", beam.get("angle", 0.0)),
+            },
+            "ions": {
+                "no_of_ions": simulation.get("nions", 0),
+                "update_after_ions": simulation.get("nions_update", 0),
+            },
+            "simulation": {
+                "follow_recoils": simulation.get("follow_recoils", True),
+                "nions": simulation.get("nions", 0),
+                "nions_update": simulation.get("nions_update", 0),
+                "rng_seed": simulation.get("rng_seed", 12345),
+                "workdir": simulation.get("workdir", ""),
+            },
+            "layers": payload_layers,
+            "selection": {
+                "cascade": "Full cascade" if bool(simulation.get("follow_recoils", True)) else "Ions only",
+                "nuclear_stopping": models.get("potential", "ZBL"),
+                "electronic_stopping": models.get("electronic_stopping", "SRIM"),
+                "simulator": "OpenTRIM",
+                "scattering_algorithm": (models.get("scattering_integrals") or {}).get("algorithm", "Legendre"),
+                "n_absc": (models.get("scattering_integrals") or {}).get("n_absc", 4),
+                "lindhard_correction": dict(self._loaded_model_correction),
+            },
+            "output": {
+                "traj_start": bool((output.get("trajectories") or {}).get("start", False)),
+                "traj_end": bool((output.get("trajectories") or {}).get("stopped", False)),
+                "traj_collisions": bool((output.get("trajectories") or {}).get("collisions", False)),
+                "traj_preview": bool(self.chk_traj_preview.isChecked()) if hasattr(self, "chk_traj_preview") else False,
+                "range_ion_recoil": bool((output.get("depth_distribution") or {}).get("ion_recoils", {}).get("score", False)),
+                "range_phonons": bool((output.get("depth_distribution") or {}).get("nuclear_energy_deposition", {}).get("score", False)),
+                "range_ionization": bool((output.get("depth_distribution") or {}).get("electronic_energy_deposition", {}).get("score", False)),
+                "lateral_ion_recoil": bool((output.get("lateral_distribution") or {}).get("ion_recoils", {}).get("score", False)),
+                "lateral_phonons": bool((output.get("lateral_distribution") or {}).get("nuclear_energy_deposition", {}).get("score", False)),
+                "lateral_ionization": bool((output.get("lateral_distribution") or {}).get("electronic_energy_deposition", {}).get("score", False)),
+                "dist2d_ion_recoil": bool((output.get("distribution_2d") or {}).get("ion_recoils", {}).get("score", False)),
+                "dist2d_phonons": bool((output.get("distribution_2d") or {}).get("nuclear_energy_deposition", {}).get("score", False)),
+                "dist2d_ionization": bool((output.get("distribution_2d") or {}).get("electronic_energy_deposition", {}).get("score", False)),
+                "dist2d_all": False,
+                "backscattered_energy": bool((output.get("backscattered_atoms") or {}).get("energy", {}).get("score", False)),
+                "backscattered_angle": bool((output.get("backscattered_atoms") or {}).get("angle", {}).get("score", False)),
+                "transmitted_energy": bool((output.get("transmitted_atoms") or {}).get("energy", {}).get("score", False)),
+                "transmitted_angle": bool((output.get("transmitted_atoms") or {}).get("angle", {}).get("score", False)),
+            },
+        }
+        return payload
+
+    def load_toml_from_path(self, path: str | Path) -> None:
+        toml_path = Path(path)
+        if _read_opentrim_params is None:
+            QMessageBox.warning(self, "Load Configuration", "TOML loading is unavailable in this environment.")
+            return
+        try:
+            params = _read_opentrim_params(toml_path)
+        except Exception as exc:
+            QMessageBox.warning(self, "Load Configuration", f"Unable to load TOML:\n{exc}")
+            return
+
+        payload = self._raw_toml_to_payload(params)
+        self.apply_simulation_config(payload)
+        self._current_toml_path = toml_path
+        self.state.remember_dialog_path(toml_path)
+        self.add_log_entry(f"Loaded TOML configuration from: {toml_path}")
+
+    def load_toml_configuration(self) -> None:
+        start_dir = self.state.get_dialog_start_directory(self._working_directory)
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Load TOML Configuration",
+            start_dir,
+            "TOML Files (*.toml);;All Files (*)",
+        )
+        if path:
+            self.load_toml_from_path(path)
+
+    def save_toml_configuration(self) -> None:
+        default_path = self._current_toml_path
+        if default_path is None and self._working_directory:
+            default_path = Path(self._working_directory) / "input.toml"
+        if default_path is None:
+            default_path = Path(self.state.get_dialog_start_directory()) / "input.toml"
+
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save TOML Configuration",
+            str(default_path),
+            "TOML Files (*.toml);;All Files (*)",
+        )
+        if not path:
+            return
+        if not path.lower().endswith(".toml"):
+            path += ".toml"
+        toml_path = Path(path)
+        toml_path.parent.mkdir(parents=True, exist_ok=True)
+        toml_path.write_text(self._build_input_toml(str(toml_path.parent)), encoding="utf-8")
+        self._current_toml_path = toml_path
+        self._set_working_directory(str(toml_path.parent))
+        self.state.remember_dialog_path(toml_path)
+        self.add_log_entry(f"Saved TOML configuration to: {toml_path}")
 
     def _show_logs_dialog(self):
         dialog = QDialog(self)
@@ -1494,12 +1770,112 @@ class MCSetupPage(QWidget):
         if isinstance(settings, dict):
             self._histogram_settings = dict(settings)
 
+    def get_histogram_default_settings(self) -> dict:
+        width_unit = (self.width_unit_combo.currentText()
+                      if hasattr(self, "width_unit_combo") else "Ång")
+        total_width = 0.0
+        config = self.collect_simulation_config() if hasattr(self, "layers_table") else {}
+        layers = config.get("layers", []) if isinstance(config, dict) else []
+        for layer in layers:
+            try:
+                width_value = float(layer.get("width", 0.0))
+            except (TypeError, ValueError):
+                width_value = 0.0
+            total_width += self._width_in_angstrom(width_value, width_unit)
+
+        try:
+            energy_max = float(self.ion_energy.value())
+        except Exception:
+            energy_max = 1000.0
+
+        half_width = total_width / 2.0 if total_width > 0 else 2000.0
+        depth_max = total_width if total_width > 0 else 4000.0
+        existing = self._histogram_settings if isinstance(self._histogram_settings, dict) else {}
+        return {
+            "enabled": False,
+            "nbins": int(existing.get("nbins", 120) or 120),
+            "depth_min": 0.0,
+            "depth_max": depth_max,
+            "lateral_min": -half_width,
+            "lateral_max": half_width,
+            "energy_min": 0.0,
+            "energy_max": energy_max,
+            "angle_min": -90.0,
+            "angle_max": 90.0,
+        }
+
+    def _emit_histogram_default_settings(self) -> None:
+        self.histogram_defaults_changed.emit(self.get_histogram_default_settings())
+
+    def _emit_advanced_simulation_settings(self) -> None:
+        self.advanced_simulation_settings_changed.emit({
+            "follow_recoils": bool(self._follow_recoils),
+            "rng_seed": int(self._rng_seed),
+            "electronic_stopping": str(self._electronic_stopping_model),
+            "scattering_algorithm": str(self._scattering_algorithm),
+            "n_absc": int(self._n_absc),
+            "lindhard_correction": dict(self._loaded_model_correction),
+        })
+
+    def get_advanced_simulation_settings(self) -> dict:
+        return {
+            "follow_recoils": bool(self._follow_recoils),
+            "rng_seed": int(self._rng_seed),
+            "electronic_stopping": str(self._electronic_stopping_model),
+            "scattering_algorithm": str(self._scattering_algorithm),
+            "n_absc": int(self._n_absc),
+            "lindhard_correction": dict(self._loaded_model_correction),
+        }
+
+    def set_follow_recoils(self, value: bool) -> None:
+        self._follow_recoils = bool(value)
+        self._emit_advanced_simulation_settings()
+
+    def set_rng_seed(self, value: int) -> None:
+        try:
+            self._rng_seed = int(value)
+        except (TypeError, ValueError):
+            self._rng_seed = 12345
+        self._emit_advanced_simulation_settings()
+
+    def set_scattering_algorithm(self, value: str) -> None:
+        if value in {"magic", "Legendre"}:
+            self._scattering_algorithm = value
+        self._emit_advanced_simulation_settings()
+
+    def set_electronic_stopping_model(self, value: str) -> None:
+        if value in {"SRIM", "Lindhard"}:
+            self._electronic_stopping_model = value
+        self._emit_advanced_simulation_settings()
+
+    def set_n_absc(self, value: int) -> None:
+        try:
+            self._n_absc = max(1, int(value))
+        except (TypeError, ValueError):
+            self._n_absc = 4
+        self._emit_advanced_simulation_settings()
+
+    def set_lindhard_correction(self, value: dict) -> None:
+        if not isinstance(value, dict):
+            return
+        converted: dict[str, float] = {}
+        for key, corr in value.items():
+            if not isinstance(key, str):
+                continue
+            try:
+                converted[key] = float(corr)
+            except (TypeError, ValueError):
+                continue
+        self._loaded_model_correction = converted
+        self._emit_advanced_simulation_settings()
+
     # -------- TOML generation ----------
     def _build_input_toml(self, results_dir: str) -> str:
         """Build the contents of an OpenTRIM input.toml from the current UI state."""
         cfg = self.collect_simulation_config()
         ion = cfg["ion"]
         ions = cfg["ions"]
+        simulation = cfg["simulation"]
         layers = cfg["layers"]
         sel = cfg["selection"]
         out = cfg["output"]
@@ -1509,16 +1885,14 @@ class MCSetupPage(QWidget):
         density_unit = (self.density_unit_combo.currentText()
                         if hasattr(self, "density_unit_combo") else "g/cm³")
 
-        follow_recoils = sel.get("cascade", "") == "Full cascade"
-
         lines = [
             "# Auto-generated by OpenSRIM MC Setup",
             "",
             "[simulation]",
-            f"follow_recoils = {'true' if follow_recoils else 'false'}",
+            f"follow_recoils = {'true' if simulation.get('follow_recoils', True) else 'false'}",
             f"nions = {ions['no_of_ions']}",
             f"nions_update = {ions['update_after_ions']}",
-            f"rng_seed = 12345",
+            f"rng_seed = {simulation.get('rng_seed', 12345)}",
             f'workdir = "{results_dir}"',
             "",
             "[beam]",
@@ -1586,10 +1960,18 @@ class MCSetupPage(QWidget):
             f'electronic_stopping = "{estop}"',
             "",
             "[models.scattering_integrals]",
-            'algorithm = "magic"',
-            "n_absc = 4",
+            f'algorithm = "{sel.get("scattering_algorithm", "Legendre")}"',
+            f"n_absc = {sel.get('n_absc', 4)}",
             "",
         ]
+
+        if self._loaded_model_correction:
+            lines += [
+                "[models.lindhard_correction]",
+            ]
+            for key, value in self._loaded_model_correction.items():
+                lines.append(f'"{key}" = {value}')
+            lines.append("")
 
         # Output section
         energy_kev = ion["energy"]
@@ -1765,9 +2147,9 @@ class MCSetupPage(QWidget):
         if not has_output:
             errors.append("No output options selected (check at least one distribution).")
 
-        # Working directory
+        # Output directory
         if not self._working_directory:
-            errors.append("No working directory set. Click 'Set working directory' first.")
+            errors.append("No output directory set. Click 'Select' first.")
 
         return "\n".join(errors) if errors else None
 
@@ -1782,15 +2164,31 @@ class MCSetupPage(QWidget):
             return
 
         base_dir = Path(self._working_directory)  # type: ignore[arg-type]  # validated above
+        base_dir.mkdir(parents=True, exist_ok=True)
 
-        results_dir = base_dir / datetime.now().strftime("run_%Y%m%d_%H%M%S")
-        results_dir.mkdir(parents=True, exist_ok=True)
+        stale_candidates = []
+        for pattern in ("*.his", "*.mom", "*.hisb", "progress"):
+            stale_candidates.extend([candidate for candidate in base_dir.glob(pattern) if candidate.is_file()])
+        if stale_candidates:
+            reply = QMessageBox.question(
+                self,
+                "Overwrite existing histogram files",
+                f"Found {len(stale_candidates)} existing histogram/progress files in the selected working directory.\n\n"
+                "They will be deleted before the simulation starts, but the TOML file will be kept.\n"
+                "Continue?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+            self._clear_existing_histogram_files(base_dir)
 
-        toml_path = results_dir / "input.toml"
-        toml_content = self._build_input_toml(str(results_dir))
+        toml_path = base_dir / "input.toml"
+        toml_content = self._build_input_toml(str(base_dir))
         toml_path.write_text(toml_content, encoding="utf-8")
 
-        self._current_results_dir = str(results_dir)
+        self._current_results_dir = str(base_dir)
+        self._current_toml_path = toml_path
         self._current_nions = int(self.no_of_ions_spin.value()) if self.no_of_ions_spin else 10000
 
         self.run_button.setEnabled(False)
@@ -2132,6 +2530,8 @@ class MCSetupPage(QWidget):
             return
         if item.column() == 4:
             self._density_user_override.add(item.row())
+        if item.column() == 2:
+            self._emit_histogram_default_settings()
 
     def _handle_element_item_changed(self, item):
         if self._updating_elements_table:

@@ -244,13 +244,15 @@ def plot_theta_error(screen_fun):
     from zbl import magic
     plt.rcParams.update({'font.size': 13})
 
-    p_vals = (np.linspace(0.02, 30, 101), 
+    p_vals = (np.linspace(0.02, 50, 101), 
+              np.linspace(0.02, 30, 101), 
               np.linspace(0.02, 12, 101), 
               np.linspace(0.02, 4, 101))
 
     n_absc_vals = (1, 2, 3, 4, 5, 10)
 
-    for ie, e in enumerate((1e-4, 0.1, 100)):
+    for ie, e in enumerate((1e-7, 1e-4, 0.1, 100)):
+        print('e=', e)
         fig, ax = plt.subplots(1, 1, figsize=(6, 4), layout='constrained')
         theta_ref_vals = []
         theta_magic_vals = []
@@ -459,8 +461,8 @@ if __name__ == "__main__":
 
     #screen_fun = ZBL_screen()
 
-    Z1 = 33
-    Z2 = 14
+    Z1 = 74
+    Z2 = 74
     rnorm = 0.4685 / (np.sqrt(np.sqrt(Z1)) + np.sqrt(np.sqrt(Z2)))
     screen_fun = NLHlin_screen(Z1, Z2, rnorm)
     
@@ -470,8 +472,8 @@ if __name__ == "__main__":
     #plot_chi_near_zero(r0_vals, screen_fun)
     #plot_chi_near_one(r0_vals, screen_fun)
 
-    #plot_theta_error(screen_fun)
-    plot_tau_error(screen_fun)
+    plot_theta_error(screen_fun)
+    #plot_tau_error(screen_fun)
 
     #plot_tau_over_theta(screen_fun)
     #plot_sinhalftheta_over_p(screen_fun)

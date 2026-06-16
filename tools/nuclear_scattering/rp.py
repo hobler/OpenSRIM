@@ -374,7 +374,6 @@ def plot_rp(Z1, Z2, coarse=False):
         print(f"Saved figure to {fname}")
 
 
-
 def plot_rp_ratio(Z2=None, zbl=True, krc=False):
     """Plot the ratio of projected ranges between NLHlin and ZBL or KrC.
 
@@ -591,6 +590,146 @@ def plot_rp_ratio_at_e(e_vals, Z2=None, zbl=True, krc=False):
         print(f"Saved figure to {fname}")
 
 
+def plot_sn_ratio_at_rp_homo(rp_lst, Z1=None, Z2=None, krc=False):
+    """Plot S_n(NLHlin)/S_n(ZBL or KrC) for given values of R_p.
+
+    Parameters:
+        rp_lst (list): List of projected ranges at which to plot the ratio
+        Z1 (int): Atomic number of first atom, None for all
+        Z2 (int): Atomic number of second atom, None for all
+        krc (bool): Whether to use KrC instead of ZBLpotential
+    """
+    import matplotlib.pyplot as plt
+    import matplotlib as mpl    
+    plt.rcParams.update({'font.size': 14})
+
+    if Z1 is None:
+        Z1_vals = range(1, 93)
+    else:
+        Z1_vals = [Z1]
+    assert Z2 is None, "Currently only implemented for Z2=Z1"
+
+    fig = plt.figure()
+
+    for rp in rp_lst:
+        sn_ratios = []
+        for Z1 in Z1_vals:
+            #for Z2 in Z1_vals:
+                Z2 = Z1
+                # e at Rp
+                directory = os.path.join(os.path.dirname(__file__), 
+                                        f"../../data/nuclear_scattering")
+                fname = f'nlhlin/rp_tables/rp_table_nlhlin_{Z1:02d}_{Z2:02d}.txt'
+                fname = os.path.join(directory, fname)
+                data = np.loadtxt(fname, comments='#')
+                e_vals = data[:, 0]
+                rp_vals = data[:, 1]
+                if rp < rp_vals[0]:
+                    e = e_vals[0] * (rp / rp_vals[0])
+                else:
+                    e = np.exp(np.interp(np.log(rp), np.log(rp_vals), 
+                                        np.log(e_vals)))
+
+                # Sn(NLHlin) and Sn(ZBL or KrC) at e
+                M1 = get_mass(Z1)
+                M2 = get_mass(Z2)
+                sn_nlhlin = Sn(Z1, Z2, M1, M2)
+                sn_ref = Sn(Z1, Z2, M1, M2, zbl=not krc, krc=krc)
+                sn_ratios.append(sn_nlhlin(e) / sn_ref(e))
+
+        plt.plot(Z1_vals, sn_ratios, '.-', label=f'R$_p$={rp} A')
+
+    plt.axhline(1, color='k', linestyle='--', zorder=100)
+    plt.xlim(0, 93)
+    plt.ylim(0, 2)
+    #plt.ylim(0.8, 1.2)
+    plt.xlabel('Atomic number Z$_1$=Z$_2$')
+    if krc:
+        plt.ylabel(r'S$_n$(NLHlin)/S$_n$(KrC) at R$_p$')
+    else:
+        plt.ylabel(r'S$_n$(NLHlin)/S$_n$(ZBL) at R$_p$')
+    plt.xticks(range(0, 100, 10))
+    plt.gca().xaxis.set_minor_locator(MultipleLocator(1))
+    plt.grid(True, which='major', ls='--')
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_sn_ratio_at_rp_all(rp, krc=False, plot_vs_Z1=True):
+    """Plot S_n(NLHlin)/S_n(ZBL or KrC) for given values of R_p.
+
+    Parameters:
+        rp (float): Projected range at which to plot the ratio
+        krc (bool): Whether to use KrC instead of ZBLpotential
+        plot_vs_Z1 (bool): Whether to plot vs Z1 or Z2
+    """
+    import matplotlib.pyplot as plt
+    import matplotlib as mpl    
+    plt.rcParams.update({'font.size': 14})
+    cmap = plt.get_cmap('viridis', 92)
+    fig = plt.figure()
+
+    ticks = range(0, 100, 10)
+    bounds = np.linspace(1, 92, 92)
+    norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
+    if plot_vs_Z1:
+        Z_cmap_text = r'Z$_2$'
+    else:
+        Z_cmap_text = r'Z$_1$'
+    plt.colorbar(mpl.cm.ScalarMappable(norm=norm, cmap=cmap),
+                 ax=plt.gca(),
+                 label=f'atomic number {Z_cmap_text}', 
+                 ticks=ticks)
+    Z_vals = range(1, 93)
+
+    for Z1 in Z_vals:
+        for Z2 in Z_vals:
+            # e at Rp
+            directory = os.path.join(os.path.dirname(__file__), 
+                                    f"../../data/nuclear_scattering")
+            fname = f'nlhlin/rp_tables/rp_table_nlhlin_{Z1:02d}_{Z2:02d}.txt'
+            fname = os.path.join(directory, fname)
+            data = np.loadtxt(fname, comments='#')
+            e_vals = data[:, 0]
+            rp_vals = data[:, 1]
+            if rp < rp_vals[0]:
+                e = e_vals[0] * (rp / rp_vals[0])
+            else:
+                e = np.exp(np.interp(np.log(rp), np.log(rp_vals), 
+                                    np.log(e_vals)))
+
+            # Sn(NLHlin) and Sn(ZBL or KrC) at e
+            M1 = get_mass(Z1)
+            M2 = get_mass(Z2)
+            sn_nlhlin = Sn(Z1, Z2, M1, M2)
+            sn_ref = Sn(Z1, Z2, M1, M2, zbl=not krc, krc=krc)
+            sn_ratio = sn_nlhlin(e) / sn_ref(e)
+            if plot_vs_Z1:
+                plt.plot(Z1, sn_ratio, '.', 
+                         color=cmap((Z2-1)/92), zorder=Z2, markersize=2)
+            else:
+                plt.plot(Z2, sn_ratio, '.', 
+                         color=cmap((Z1-1)/92), zorder=Z1, markersize=2)
+
+    plt.axhline(1, color='k', linestyle='--', zorder=100)
+    plt.xlim(0, 93)
+    plt.ylim(0, 2)
+    if plot_vs_Z1:
+        plt.xlabel('Atomic number Z$_1$')
+    else:
+        plt.xlabel('Atomic number Z$_2$')
+    if krc:
+        plt.ylabel(fr'S$_n$(NLHlin)/S$_n$(KrC) at R$_p$={rp} A')
+    else:
+        plt.ylabel(fr'S$_n$(NLHlin)/S$_n$(ZBL) at R$_p$={rp} A')
+    plt.xticks(range(0, 100, 10))
+    plt.gca().xaxis.set_minor_locator(MultipleLocator(1))
+    plt.grid(True, which='major', ls='--')
+    plt.tight_layout()
+    plt.show()
+
+
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
     plt.rcParams.update({'font.size': 14})
@@ -616,9 +755,14 @@ if __name__ == '__main__':
     #tab_all_rp(zbl=True)
     #tab_all_rp(krc=True)
 
-    plot_rp_ratio(zbl=True)
+    #plot_rp_ratio(zbl=True)
     #plot_rp_ratio(Z2=74, zbl=True)
     #plot_rp_ratio(krc=True)
     #plot_rp_ratio_at_e(100, krc=False)
     #plot_rp_ratio_at_e([100], Z2=6, krc=False)
     #plot_rp_ratio_at_e(100, krc=True)
+
+    #plot_sn_ratio_at_rp_homo([10, 100, 1000, 10000], krc=False)
+    #plot_sn_ratio_at_rp_homo([10, 100, 1000, 10000], krc=True)
+    plot_sn_ratio_at_rp_all(100, krc=False, plot_vs_Z1=True)
+

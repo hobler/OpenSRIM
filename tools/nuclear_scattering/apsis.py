@@ -64,7 +64,7 @@ class Apsis:
                                           dapses_de[::-1],
                                           powerof2=True)
 
-    def __call__(self, e, p):
+    def __call__(self, e, p, relerr=1e-3):
         """Calculate the distance of closest approach (apsis) in a colllision.
 
         As initial condition, the larger of the apsis estimate from the table 
@@ -96,7 +96,7 @@ class Apsis:
             return r - screen/e - p**2/r, 1 - dscreen/e + p**2/r**2
         
         count = 0
-        while abs(delta_r0) > 1e-3 * r0:
+        while abs(delta_r0) > relerr * r0:
             f, df = fun(r0)
             delta_r0 = - f / df
             r0 += delta_r0

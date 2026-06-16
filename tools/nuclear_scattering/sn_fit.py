@@ -130,12 +130,17 @@ def fit_sn(p1, p2, fname, plot=True, Z1=None, Z2=None):
         plt.tight_layout()
         plt.show()
 
-        if (round(p1, 2), round(p2, 2)) == (0.23, 1):
+        if 'zbl' in fname:
             potname = 'zbl'
-        elif (round(p1, 2), round(p2, 2)) == (0.5, 0.67):
+        elif 'krc' in fname:
             potname = 'krc'
-        else:
+        elif 'nlhlin' in fname:
             potname = f"nlhlin_{atom[Z1]}_{atom[Z2]}"
+        elif 'nlh' in fname:
+            potname = f"nlh_{atom[Z1]}_{atom[Z2]}"
+        else:
+            print("Unknown potential type for filename:", fname)
+            potname = "unknown"
         fname = os.path.join(os.path.dirname(__file__), 
                             f"figs/sn_fit_{potname}.pdf")
         fname = ask_if_save(fname)
@@ -249,12 +254,17 @@ def fit_qn(p1, p2, fname, plot=True, Z1=None, Z2=None):
         plt.tight_layout()
         plt.show()
 
-        if (round(p1, 2), round(p2, 2)) == (0.23, 1):
+        if 'zbl' in fname:
             potname = 'zbl'
-        elif (round(p1, 2), round(p2, 2)) == (0.5, 0.67):
+        elif 'krc' in fname:
             potname = 'krc'
-        else:
+        elif 'nlhlin' in fname:
             potname = f"nlhlin_{atom[Z1]}_{atom[Z2]}"
+        elif 'nlh' in fname:
+            potname = f"nlh_{atom[Z1]}_{atom[Z2]}"
+        else:
+            print("Unknown potential type for filename:", fname)
+            potname = "unknown"
         fname = os.path.join(os.path.dirname(__file__), 
                             f"figs/qn_fit_{potname}.pdf")
         fname = ask_if_save(fname)
@@ -296,6 +306,47 @@ def tab_qn_fit():
             for Z2 in range(Z1, 93):
                 fname = (f"{directory}/sn_qn_tables/"
                          f"sn_qn_table_nlhlin_{Z1:02d}_{Z2:02d}.txt")
+                #print(f"Fitting Qn for Z1={Z1}, Z2={Z2} from {fname}")
+                popt, rms_relerr, max_relerr = fit_qn(p1=0.5, p2=0.5, 
+                                                      fname=fname, plot=False)
+                #print(f"Z1={Z1}, Z2={Z2}, a={popt[0]}, b={popt[1]}, "
+                #      f"c={popt[2]}, d={popt[3]}")
+                f.write(f"{Z1:2d} {Z2:2d} {popt[0]:8.5f} {popt[1]:8.5f}"
+                        f" {popt[2]:8.5f} {popt[3]:8.5f} "
+                        f"{rms_relerr:5.2f} {max_relerr:5.2f}\n")
+
+
+def tab_sn_fit_nlh():
+    """Tabulate parameters for NLH Sn fit of all Z1-Z2 combinations.
+    """
+    directory = os.path.join(os.path.dirname(__file__),
+                             "../../data/nuclear_scattering/nlh")
+    with open(f"{directory}/sn_fit_params.txt", "w") as f:
+        f.write("# Z1 Z2 a b c d rms_err(%) max_err(%)\n")
+        for Z1 in range(1, 93):
+            for Z2 in range(Z1, 93):
+                fname = (f"{directory}/sn_qn_tables/"
+                         f"sn_qn_table_nlh_{Z1:02d}_{Z2:02d}.txt")
+                #print(f"Fitting Sn for Z1={Z1}, Z2={Z2} from {fname}")
+                popt, rms_relerr, max_relerr = fit_sn(p1=0.5, p2=0.5, 
+                                                      fname=fname, plot=False)
+                #print(f"Z1={Z1}, Z2={Z2}, a={popt[0]}, b={popt[1]}, "
+                #      f"c={popt[2]}, d={popt[3]}")
+                f.write(f"{Z1:2d} {Z2:2d} {popt[0]:8.5f} {popt[1]:8.5f}"
+                        f" {popt[2]:8.5f} {popt[3]:8.5f} "
+                        f"{rms_relerr:5.2f} {max_relerr:5.2f}\n")
+
+
+def tab_qn_fit_nlh():
+    """Tabulate parameters for NLH Qn fit of all Z1-Z2 combinations."""
+    directory = os.path.join(os.path.dirname(__file__),
+                             "../../data/nuclear_scattering/nlh")
+    with open(f"{directory}/qn_fit_params.txt", "w") as f:
+        f.write("# Z1 Z2 a b c d rms_err(%) max_err(%)\n")
+        for Z1 in range(1, 93):
+            for Z2 in range(Z1, 93):
+                fname = (f"{directory}/sn_qn_tables/"
+                         f"sn_qn_table_nlh_{Z1:02d}_{Z2:02d}.txt")
                 #print(f"Fitting Qn for Z1={Z1}, Z2={Z2} from {fname}")
                 popt, rms_relerr, max_relerr = fit_qn(p1=0.5, p2=0.5, 
                                                       fname=fname, plot=False)
@@ -430,6 +481,8 @@ if __name__ == "__main__":
     #fit_sn(p1=0.5, p2=2/3, fname="krc/sn_qn_tables/sn_qn_table_krc.txt")
     #fit_sn(p1=1/2, p2=1/2, fname="nlhlin/sn_qn_tables/sn_qn_table_nlhlin_"
     #       f"{Z1:02d}_{Z2:02d}.txt", Z1=Z1, Z2=Z2)
+    fit_sn(p1=1/2, p2=1/2, fname="nlh/sn_qn_tables/sn_qn_table_nlh_"
+           f"{Z1:02d}_{Z2:02d}.txt", Z1=Z1, Z2=Z2)
     #tab_sn_fit()
 
     #fit_qn(p1=0.23, p2=1, fname="zbl/sn_qn_tables/sn_qn_table_zbl.txt")
@@ -440,4 +493,4 @@ if __name__ == "__main__":
 
     energies = [10, 100, 1000, 10000]
     #plot_sn_ratio_at_e(energies, p1=1/2, p2=1/2)
-    plot_sn_ratio_at_e(energies, p1=1/2, p2=1/2, krc=True)
+    #plot_sn_ratio_at_e(energies, p1=1/2, p2=1/2, krc=True)

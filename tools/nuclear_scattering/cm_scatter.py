@@ -42,7 +42,7 @@ def calc_phi_chi(u, r0, screen_fun):
     return phi, chi
 
 
-def scatter_integrals(e, p, screen_fun):
+def scatter_integrals(e, p, screen_fun, relerr_apsis=1e-3):
     """Calculate scattering angle and time integral.
 
     The calculation uses Gauss-Legendre quadrature with a fixed number of
@@ -54,6 +54,7 @@ def scatter_integrals(e, p, screen_fun):
         p (float): Reduced impact parameter.
         screen_fun (callable): Function to calculate the screening function
             for given distance r (RNORM).
+        relerr_apsis: relative error for apsis calculation
     
     Returns:
         (float): Pi minus scattering angle (rad)
@@ -64,7 +65,7 @@ def scatter_integrals(e, p, screen_fun):
     #elif p == 0.0:
     #    return np.pi, 0.0
     
-    r0, _ = screen_fun.apsis(e, p)
+    r0, _ = screen_fun.apsis(e, p, relerr_apsis)
 
     def integrands(u):
         phi, chi = calc_phi_chi(u, r0, screen_fun)
@@ -258,7 +259,8 @@ def plot_theta_error(screen_fun):
         theta_magic_vals = []
         setup(n_absc=32)
         for p in p_vals[ie]:
-            pi_minus_theta_ref, _ = scatter_integrals(e, p, screen_fun)
+            pi_minus_theta_ref, _ = scatter_integrals(e, p, screen_fun, 
+                                                      relerr_apsis=1e-6)
             theta_ref = np.pi - pi_minus_theta_ref
             theta_ref_vals.append(theta_ref)
             if type(screen_fun) is ZBL_screen:
@@ -330,7 +332,7 @@ def plot_tau_error(screen_fun):
         tau_ref_vals = []
         setup(n_absc=32)
         for p in p_vals[ie]:
-            _, tau_ref = scatter_integrals(e, p, screen_fun)
+            _, tau_ref = scatter_integrals(e, p, screen_fun, relerr_apsis=1e-6)
             tau_ref_vals.append(tau_ref)
         tau_ref_vals = np.array(tau_ref_vals)
 
@@ -459,12 +461,12 @@ if __name__ == "__main__":
     from zbl import ZBL_screen
     from nlhlin import NLHlin_screen
 
-    #screen_fun = ZBL_screen()
+    screen_fun = ZBL_screen()
 
     Z1 = 74
     Z2 = 74
     rnorm = 0.4685 / (np.sqrt(np.sqrt(Z1)) + np.sqrt(np.sqrt(Z2)))
-    screen_fun = NLHlin_screen(Z1, Z2, rnorm)
+    #screen_fun = NLHlin_screen(Z1, Z2, rnorm)
     
     r0_vals = [0.01, 0.1, 1, 10]
     #print(screen_fun(1.0))

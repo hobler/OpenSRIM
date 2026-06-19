@@ -481,8 +481,8 @@ if __name__ == "__main__":
     #fit_sn(p1=0.5, p2=2/3, fname="krc/sn_qn_tables/sn_qn_table_krc.txt")
     #fit_sn(p1=1/2, p2=1/2, fname="nlhlin/sn_qn_tables/sn_qn_table_nlhlin_"
     #       f"{Z1:02d}_{Z2:02d}.txt", Z1=Z1, Z2=Z2)
-    fit_sn(p1=1/2, p2=1/2, fname="nlh/sn_qn_tables/sn_qn_table_nlh_"
-           f"{Z1:02d}_{Z2:02d}.txt", Z1=Z1, Z2=Z2)
+    #fit_sn(p1=1/2, p2=1/2, fname="nlh/sn_qn_tables/sn_qn_table_nlh_"
+    #       f"{Z1:02d}_{Z2:02d}.txt", Z1=Z1, Z2=Z2)
     #tab_sn_fit()
 
     #fit_qn(p1=0.23, p2=1, fname="zbl/sn_qn_tables/sn_qn_table_zbl.txt")
@@ -492,5 +492,5 @@ if __name__ == "__main__":
     #tab_qn_fit()
 
     energies = [10, 100, 1000, 10000]
-    #plot_sn_ratio_at_e(energies, p1=1/2, p2=1/2)
+    plot_sn_ratio_at_e(energies, p1=1/2, p2=1/2)
     #plot_sn_ratio_at_e(energies, p1=1/2, p2=1/2, krc=True)

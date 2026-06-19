@@ -113,7 +113,7 @@ class NLH_screen:
         return integral
 
 
-def post_plot(p1, p2, Z2, xmax=None, ymin=None):
+def post_plot(p1, p2, Z2, xmax=None, ymin=None, all=False, vmin=1):
     """Do post-plot setup for NLH screening function plots.
     
     Parameters:
@@ -122,11 +122,14 @@ def post_plot(p1, p2, Z2, xmax=None, ymin=None):
         Z2 (int or None): atomic number of second atom, or None for Z2=Z1
         xmax (float or None): maximum x value for plot
         ymin (float or None): minimum y value for plot
+        all (bool): whether to plot all Z1-Z2 combinations (overrides z2)
+        vmin (float): minimum potential value for plotting
     """
+    print(all)
     import matplotlib.pyplot as plt
     import matplotlib as mpl
 
-    plt.plot(0, 1, 'k:', label='V<1eV')
+    plt.plot(0, 1, 'k', label=f'V>{vmin}eV')
     plt.legend(loc=(0.635, 0.6),frameon=False)
 
     plt.yscale('log')
@@ -147,11 +150,12 @@ def post_plot(p1, p2, Z2, xmax=None, ymin=None):
             text += fr'(Z$_1^{{{round(p1, 2)}}}$+Z$_2^{{{round(p1, 2)}}}$)'
         if p2 != 1:
             text += fr'$^{{{round(p2, 2)}}}$'
+    if not all:
         text += '\n'
-    if Z2 is None:
-        text += f' Z$_2$=Z$_1$'
-    else:
-        text += f' Z$_2$={Z2}'
+        if Z2 is None:
+            text += f' Z$_2$=Z$_1$'
+        else:
+            text += f' Z$_2$={Z2}'
     plt.text(0.95, 0.95, text, 
              horizontalalignment='right', verticalalignment='top',
              transform=plt.gca().transAxes, fontsize='medium')
@@ -162,21 +166,29 @@ def post_plot(p1, p2, Z2, xmax=None, ymin=None):
         plt.xlabel('reduced distance')
     plt.ylabel('NLH screening function')
 
-    ticks = range(0, 100, 10)
-    bounds = np.linspace(1, 92, 92)
+    if all:
+        ticks = range(0, 200, 20)
+        bounds = np.linspace(1, 184, 184)
+    else:
+        ticks = range(0, 100, 10)
+        bounds = np.linspace(1, 92, 92)
     cmap = mpl.cm.viridis
     #bounds = np.linspace(1, 10, 10)
     #cmap = mpl.cm.jet
     norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
+    if all:
+        label = r'atomic numbers Z$_1$+Z$_2$'
+    else:
+        label = r'atomic number Z$_1$'
     plt.colorbar(mpl.cm.ScalarMappable(norm=norm, cmap=cmap), 
                  ax=plt.gca(),
-                 label=r'atomic number Z$_1$', 
+                 label=label, 
                  ticks=ticks)
 
     plt.tight_layout()
 
 
-def plot_screen(p1, p2, z2=None, xmax=None, ymin=None):
+def plot_screen(p1, p2, z2=None, xmax=None, ymin=None, all=False, vmin=1):
     """Plot the NLH screening function for testing purposes.
     
     Parameters:
@@ -185,6 +197,8 @@ def plot_screen(p1, p2, z2=None, xmax=None, ymin=None):
         z2 (int or None): atomic number of second atom, or None for Z2=Z1
         xmax (float or None): maximum x value for plot
         ymin (float or None): minimum y value for plot
+        all (bool): whether to plot all Z1-Z2 combinations (overrides z2)
+        vmin (float): minimum potential value for plotting
     """
     import matplotlib.pyplot as plt
     import matplotlib as mpl
@@ -193,26 +207,36 @@ def plot_screen(p1, p2, z2=None, xmax=None, ymin=None):
 
     fig = plt.figure()
     #cmap = plt.get_cmap('jet', 92)
-    cmap = plt.get_cmap('viridis', 92)
+    if all:
+        cmap = plt.get_cmap('viridis', 184)
+    else:
+        cmap = plt.get_cmap('viridis', 92)
     plt.rcParams.update({'font.size': 14})
     #plt.gca().set_facecolor('darkgray')
 
     for Z1 in range(1, 93):
-        if z2 is None:
-            Z2 = Z1
+        if all:
+            Z2_range = range(Z1, 93)
         else:
-            Z2 = z2
-        if (p1, p2) == (0, 0):
-            rnorm = 1.0
-        else:
-            rnorm = 0.4685 / (Z1**p1 + Z2**p1)**p2
-        rmax = rmax_A / rnorm
+            Z2_range = [Z1] if z2 is None else [z2]
+        for Z2 in Z2_range:
+            if (p1, p2) == (0, 0):
+                rnorm = 1.0
+            else:
+                rnorm = 0.4685 / (Z1**p1 + Z2**p1)**p2
+            rmax = rmax_A / rnorm
 
-        r = np.linspace(0.0, rmax, 101)
-        screen, _ = NLH_screen(Z1, Z2, rnorm)(r)
-        plt.plot(r, screen, ':', color=cmap((Z1-1)/92), zorder=Z1)
-        mask = (14.4 * Z1 * Z2 / np.maximum(1e-10, r*rnorm) * screen > 1)
-        plt.plot(r[mask], screen[mask], color=cmap((Z1-1)/92), zorder=Z1)
+            r = np.linspace(0.0, rmax, 101)
+            screen, _ = NLH_screen(Z1, Z2, rnorm)(r)
+            if all:
+                color = cmap((Z1+Z2-2)/184)
+                zorder = Z1 + Z2
+            else:
+                color = cmap((Z1-1)/92)
+                zorder = Z1
+            plt.plot(r, screen, ':', color=color, zorder=zorder)
+            mask = (14.4 * Z1 * Z2 / np.maximum(1e-10, r*rnorm) * screen > vmin)
+            plt.plot(r[mask], screen[mask], color=color, zorder=zorder)
 
     if (p1, p2) == (0.23, 1):
         screen, _ = ZBL_screen()(r)
@@ -223,7 +247,7 @@ def plot_screen(p1, p2, z2=None, xmax=None, ymin=None):
         plt.plot(r, screen, 'k--', label='KrC', zorder=100)
         #plt.legend(loc='right')
 
-    post_plot(p1, p2, Z2=z2, xmax=xmax, ymin=ymin)
+    post_plot(p1, p2, Z2=z2, xmax=xmax, ymin=ymin, all=all, vmin=vmin)
     plt.show()
 
     if (p1, p2) == (0, 0):
@@ -237,7 +261,7 @@ def plot_screen(p1, p2, z2=None, xmax=None, ymin=None):
         fig.savefig(os.path.join(os.path.dirname(__file__), fname))
 
 
-def plot_ZBLscreen(p1, p2, z2=None, xmax=None, ymin=None):
+def plot_ZBLscreen(p1, p2, z2=None, xmax=None, ymin=None, vmin=1):
     """Plot the ZBL screening function for comparison.
     
     Parameters:
@@ -246,6 +270,7 @@ def plot_ZBLscreen(p1, p2, z2=None, xmax=None, ymin=None):
         z2 (int or None): atomic number of second atom, or None for Z2=Z1
         xmax (float or None): maximum x value for plot
         ymin (float or None): minimum y value for plot
+        vmin (float): minimum potential value for plotting
     """
     import matplotlib.pyplot as plt
     import matplotlib as mpl
@@ -272,10 +297,10 @@ def plot_ZBLscreen(p1, p2, z2=None, xmax=None, ymin=None):
         r = np.linspace(0.0, rmax_A, 101)
         screen, _ = ZBL_screen()(r/a_ZBL)
         plt.plot(r/rnorm, screen, ':', color=cmap((Z1-1)/92), zorder=Z1)
-        mask = (14.4 * Z1 * Z2 / np.maximum(1e-10, r*rnorm) * screen > 1)
+        mask = (14.4 * Z1 * Z2 / np.maximum(1e-10, r*rnorm) * screen > vmin)
         plt.plot(r[mask]/rnorm, screen[mask], color=cmap((Z1-1)/92), zorder=Z1)
 
-    post_plot(p1, p2, Z2=r'Z$_1$', xmax=xmax, ymin=ymin)
+    post_plot(p1, p2, Z2=r'Z$_1$', xmax=xmax, ymin=ymin, vmin=vmin)
     plt.ylabel('ZBL screening function')
     plt.show()
 
@@ -297,11 +322,13 @@ if __name__ == "__main__":
     #plot_screen(p1=2/3, p2=1/2)  # Lindhard
     #plot_screen(p1=0.23, p2=1, xmax=14.0, ymin=0.01)   # ZBL
     #plot_screen(p1=1/4, p2=1)    # Suggested by M. Hou (AI generated, true?)
-    #plot_screen(p1=1/2, p2=1/2, xmax=10.0, ymin=0.01)  # New suggestion
+    #plot_screen(p1=1/2, p2=1/2, xmax=10.0, ymin=0.01, all=True)  # New suggestion
     #plot_screen(p1=1, p2=1/4, z2=Z2, xmax=10.0, ymin=0.01)    # Alternative suggestion   
-    for Z2 in range(1, 93):
-        plot_screen(p1=1/2, p2=1/2, z2=Z2, xmax=30.0, ymin=1e-5)  # New suggestion
+    #for Z2 in range(1, 93):
+    #    plot_screen(p1=1/2, p2=1/2, z2=Z2, xmax=30.0, ymin=1e-5)  # New suggestion
     #plot_screen(p1=1/4, p2=1, z2=Z2, xmax=10.0, ymin=0.01)    # Alternative suggestion   
+
+    plot_screen(p1=1/2, p2=1/2, all=True, vmin=2)      # New suggestion
 
     #plot_ZBLscreen(p1=0, p2=0)   # unscaled ZBL
     #plot_ZBLscreen(p1=0.23, p2=1) # ZBL

@@ -61,7 +61,7 @@ According to Eqs.~(\ref{eq:sn_physics_psi}) and (\ref{eq:sn_physics_dE}), the sc
 %
 \begin{equation}
     \label{eq:sn_impulse_psi_Fy}
-    \psi \approx \tan \psi \approx \frac{M_2}{M_1 + M_2} \, \theta
+    \psi_1 \approx \tan \psi_1 \approx \frac{M_2}{M_1 + M_2} \, \theta
     \approx \frac{1}{E} \left(
         \frac{1}{2} \int_{-\infty}^{\infty} F_\mathrm{y}(x) \, \mathrm{d}x
     \right)
@@ -78,8 +78,8 @@ and
 \end{equation}
 %
 respectively.
-Like $\theta$, $\psi$ and $\Delta E$ are proportional to $1/E$.
-Interestingly, $\psi$ does not depend on the atom masses $M_1$ and $M_2$.
+Like $\theta$, $\psi_1$ and $\Delta E$ are proportional to $1/E$.
+Interestingly, $\psi_1$ does not depend on the atom masses $M_1$ and $M_2$.
 
 For a spherically symmetric potential $V(r)$, the force in $y$ direction is given by
 %
@@ -145,7 +145,7 @@ Inserting \cref{eq:sn_impulse_P} in Eqs.~(\ref{eq:sn_impulse_psi_Fy}) and (\ref{
 %
 \begin{equation}
     \label{eq:sn_impulse_psi_I}
-    \psi \approx \frac{Z_1 Z_2 e^2}{a_\mathrm{I}} \, \frac{I(P)}{E}
+    \psi_1 \approx \frac{Z_1 Z_2 e^2}{a_\mathrm{I}} \, \frac{I(P)}{E}
 \end{equation}
 %
 and
@@ -181,16 +181,16 @@ For other screening functions, the first integral on the right-hand side of \cre
 The impulse approximation can be used to estimated the maximum impact parameter that is necessary to to consider all collisions with scattering angles and energy transfers about some chosen limit.
 This is because the desired limit of the scattering angle usually is quite low, say $\sim 1\degree$.
 
-With a purely repulsive interatomic potential, increasing impact parameters $P$ result in decreasing scattering angles $\psi$, so according to \cref{eq:sn_impulse_psi_I}, $I(P)$ should be a monotonically decreasing function.%
+With a purely repulsive interatomic potential, increasing impact parameters $P$ result in decreasing scattering angles $\psi_1$, so according to \cref{eq:sn_impulse_psi_I}, $I(P)$ should be a monotonically decreasing function.%
 %
 \footnote{This could be violated when the impulse approximation fails.}
 %
 Then, according to \cref{eq:sn_impulse_dE_I}, also $\Delta E(P)$ is monotonically decreasing.
-Thus, if we want to guarantee that by choosing the impact parameter between $0$ and $P_\mathrm{max}$ we do not miss any collisions with either $\psi > \psi_\mathrm{min}$ or $\Delta E > \Delta E_\mathrm{min}$, both $\psi(P_\mathrm{max}) \le \psi_\mathrm{min}$ and $\Delta E(P_\mathrm{max}) \le \Delta E_\mathrm{min}$ must hold.
+Thus, if we want to guarantee that by choosing the impact parameter between $0$ and $P_\mathrm{max}$ we do not miss any collisions with either $\psi_1 > \psi_\mathrm{min}$ or $\Delta E > \Delta E_\mathrm{min}$, both $\psi_1(P_\mathrm{max}) \le \psi_\mathrm{min}$ and $\Delta E(P_\mathrm{max}) \le \Delta E_\mathrm{min}$ must hold.
 The minimum $P_\mathrm{max}$ for which both conditions are met is the one where the ``$\le$'' sign is replaced by the ``$=$'' sign in one of the conditions, whatever occurs first when $P_\mathrm{max}$ is decreased.
 
 As can be seen from Eqs.~(\ref{eq:sn_impulse_psi_I}) and (\ref{eq:sn_impulse_dE_I}), the resulting conditions for $P_\mathrm{max}$ depend on the projectile energy $E$.
-On the other hand, for a given $P_\mathrm{max}$, conditions for $E$ result from $\psi(P_\mathrm{max}) \le \psi_\mathrm{min}$ and $\Delta E(P_\mathrm{max}) \le \Delta E_\mathrm{min}$:
+On the other hand, for a given $P_\mathrm{max}$, conditions for $E$ result from $\psi_1(P_\mathrm{max}) \le \psi_\mathrm{min}$ and $\Delta E(P_\mathrm{max}) \le \Delta E_\mathrm{min}$:
 %
 \begin{equation}
     \label{eq:sn_cond_e_psimin}

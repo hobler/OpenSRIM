@@ -147,3 +147,4 @@ rp_table*.txt
 *.bbl
 *.blg
 *.toc
+*.synctex.gz

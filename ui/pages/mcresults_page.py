@@ -119,9 +119,9 @@ _MEASURE_META = {
     "y":   ("Lateral Distribution: Ion/Recoil",         "Lateral Position (Å)", "Counts"),
     "yn":  ("Lateral: Nuclear Energy Deposition",       "Lateral Position (Å)", "Energy (eV)"),
     "ye":  ("Lateral: Electronic Energy Deposition",    "Lateral Position (Å)", "Energy (eV)"),
-    "be":  ("Backscattered: Energy",                    "Energy (keV)",         "Counts"),
+    "be":  ("Backscattered: Energy",                    "Energy (eV)",          "Counts"),
     "ba":  ("Backscattered: Angle",                     "Angle (deg)",          "Counts"),
-    "te":  ("Transmitted: Energy",                      "Energy (keV)",         "Counts"),
+    "te":  ("Transmitted: Energy",                      "Energy (eV)",          "Counts"),
     "ta":  ("Transmitted: Angle",                       "Angle (deg)",          "Counts"),
 }
 
@@ -203,6 +203,15 @@ def _fmt_scaled(value: float, quantity: str) -> str:
             return f"{ev / 1e3:.3g} keV"
         return f"{ev / 1e6:.3g} MeV"
 
+    if quantity == "energy_ev":
+        # Value already in eV (e.g. backscattered/transmitted ion energy).
+        abs_ev = abs(v)
+        if abs_ev < 1e3:
+            return f"{v:.3g} eV"
+        if abs_ev < 1e6:
+            return f"{v / 1e3:.3g} keV"
+        return f"{v / 1e6:.3g} MeV"
+
     if quantity == "angle_deg":
         return f"{v:.3g} deg"
 
@@ -264,9 +273,9 @@ def _build_moment_rows(all_moments: Dict[str, dict]) -> List[Dict[str, Any]]:
         ("yn", "Lateral Nuclear Energy Deposition", "energy_kev"),
         ("xe", "Projected Electronic Energy Deposition", "energy_kev"),
         ("ye", "Lateral Electronic Energy Deposition", "energy_kev"),
-        ("be", "Backscattered Energy", "energy_kev"),
+        ("be", "Backscattered Energy", "energy_ev"),
         ("ba", "Backscattered Angle", "angle_deg"),
-        ("te", "Transmitted Energy", "energy_kev"),
+        ("te", "Transmitted Energy", "energy_ev"),
         ("ta", "Transmitted Angle", "angle_deg"),
     ]
 

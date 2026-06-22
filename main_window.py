@@ -6,7 +6,7 @@ import sys
 from typing import Optional, Callable
 
 from PyQt6.QtCore import Qt, QTimer, QObject, QEvent, pyqtSignal, QLocale
-from PyQt6.QtGui import QKeyEvent
+from PyQt6.QtGui import QIcon, QKeyEvent
 from PyQt6.QtWidgets import (
     QMainWindow,
     QTabWidget,
@@ -51,6 +51,68 @@ except ModuleNotFoundError:  # pragma: no cover
     from OpenSRIM.ui.logging import log as emit_log  # type: ignore
 
 
+APP_ID = "opensrim"
+APP_NAME = "OpenSRIM"
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+APP_ICON_PATH = os.path.join(APP_DIR, "design", "assets", "opensrim-icon-app-512.png")
+APP_DESKTOP_PATH = os.path.join(
+    os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share")),
+    "applications",
+    f"{APP_ID}.desktop",
+)
+
+
+def load_app_icon() -> QIcon:
+    return QIcon(APP_ICON_PATH) if os.path.exists(APP_ICON_PATH) else QIcon()
+
+
+def _desktop_quoted(path: str) -> str:
+    escaped = path.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def ensure_linux_desktop_entry() -> None:
+    if not sys.platform.startswith("linux") or not os.path.exists(APP_ICON_PATH):
+        return
+    desktop_content = "\n".join(
+        [
+            "[Desktop Entry]",
+            "Type=Application",
+            f"Name={APP_NAME}",
+            "Comment=Monte-Carlo ion transport simulation",
+            f"Exec=python3 {_desktop_quoted(os.path.join(APP_DIR, 'main_window.py'))}",
+            f"Icon={APP_ICON_PATH}",
+            "Terminal=false",
+            "Categories=Science;Education;",
+            "StartupNotify=true",
+            f"StartupWMClass={APP_NAME}",
+            "X-OpenSRIM-Generated=true",
+            "",
+        ]
+    )
+    try:
+        if os.path.exists(APP_DESKTOP_PATH):
+            with open(APP_DESKTOP_PATH, "r", encoding="utf-8") as existing:
+                current_content = existing.read()
+            if current_content == desktop_content:
+                return
+            if "X-OpenSRIM-Generated=true" not in current_content:
+                return
+        os.makedirs(os.path.dirname(APP_DESKTOP_PATH), exist_ok=True)
+        with open(APP_DESKTOP_PATH, "w", encoding="utf-8") as desktop_file:
+            desktop_file.write(desktop_content)
+        os.chmod(APP_DESKTOP_PATH, 0o644)
+    except OSError:
+        pass
+
+
+def configure_application(app: QApplication) -> None:
+    app.setApplicationName(APP_NAME)
+    app.setApplicationDisplayName(APP_NAME)
+    app.setDesktopFileName(APP_ID)
+    app.setWindowIcon(load_app_icon())
+
+
 class _LogBridge(QObject):
     message = pyqtSignal(str)
 
@@ -88,6 +150,7 @@ class MainWindow(QMainWindow):
         QLocale.setDefault(QLocale(QLocale.Language.C))
 
         self.setWindowTitle("OpenSRIM")
+        self.setWindowIcon(load_app_icon())
 
         self.state = AppState()
 
@@ -316,20 +379,26 @@ class MainWindow(QMainWindow):
         widget = self.tab_widget.widget(index)
         return isinstance(widget, MCResultsPage)
 
+    def _is_advanced_tab(self, widget) -> bool:
+        return isinstance(widget, AdvancedOptionsPage)
+
     def _update_tab_close_buttons(self) -> None:
-        """Show close buttons only on extra MC Results tabs and the temporary Advanced tab."""
+        """Show close buttons on MC Results tabs (as long as one stays open) and Advanced tabs."""
         bar = self.tab_widget.tabBar()
         if bar is None:
             return
-        results_count = 0
+        total_results = sum(
+            1 for i in range(self.tab_widget.count())
+            if isinstance(self.tab_widget.widget(i), MCResultsPage)
+        )
         for i in range(self.tab_widget.count()):
             widget = self.tab_widget.widget(i)
             closable = False
             if isinstance(widget, MCResultsPage):
-                results_count += 1
-                if results_count > 1:
-                    closable = True
-            elif widget is self.advanced_options_tab:
+                # Every results tab is closable as long as more than one exists,
+                # so at least one results tab always remains open.
+                closable = total_results > 1
+            elif self._is_advanced_tab(widget):
                 closable = True
             try:
                 btn_right = bar.tabButton(i, bar.ButtonPosition.RightSide)
@@ -362,25 +431,30 @@ class MainWindow(QMainWindow):
 
     def _on_tab_close_requested(self, index: int) -> None:
         widget = self.tab_widget.widget(index)
-        if widget is self.advanced_options_tab:
+        if self._is_advanced_tab(widget):
             self._close_advanced_options_tab(index)
             return
         if not isinstance(widget, MCResultsPage):
             return
-        # Refuse to close the very first MC Results tab.
-        first_index = -1
-        for i in range(self.tab_widget.count()):
-            if isinstance(self.tab_widget.widget(i), MCResultsPage):
-                first_index = i
-                break
-        if index == first_index:
+        # Keep at least one MC Results tab open at all times.
+        total_results = sum(
+            1 for i in range(self.tab_widget.count())
+            if isinstance(self.tab_widget.widget(i), MCResultsPage)
+        )
+        if total_results <= 1:
             return
         try:
             self.mc_results_tabs.remove(widget)
         except ValueError:
             pass
+        if getattr(self, "_last_live_target", None) is widget:
+            self._last_live_target = None
         self.tab_widget.removeTab(index)
         widget.deleteLater()
+        # Keep the backwards-compat reference pointing at a live results tab
+        # (at least one always remains, so the list is never empty here).
+        if self.mc_results_tab is widget and self.mc_results_tabs:
+            self.mc_results_tab = self.mc_results_tabs[0]
         self._update_tab_close_buttons()
 
     def _on_plot_open_in_single(self, plot_id: str, plot_info: object) -> None:
@@ -394,10 +468,38 @@ class MainWindow(QMainWindow):
         current = self.tab_widget.currentWidget()
         if current is not self.advanced_options_tab:
             self._advanced_previous_widget = current
+        # The page the Advanced Settings tab should sit next to.
+        anchor = current if current is not self.advanced_options_tab else self._advanced_previous_widget
+
+        # Always (re)position the Advanced Settings tab directly to the right of
+        # the tab the user came from: remove it from its current spot (if open)
+        # and re-insert next to the anchor page. This way clicking a gear on a
+        # different page moves the tab next to that page instead of leaving it
+        # where it was first opened.
         adv_index = self.tab_widget.indexOf(self.advanced_options_tab)
-        if adv_index < 0:
-            adv_index = self.tab_widget.addTab(self.advanced_options_tab, "Advanced Settings")
-            self._update_tab_close_buttons()
+        if adv_index >= 0:
+            self.tab_widget.removeTab(adv_index)
+        anchor_index = self.tab_widget.indexOf(anchor) if anchor is not None else -1
+        if anchor_index < 0:
+            anchor_index = self.tab_widget.count() - 1
+        self.tab_widget.insertTab(
+            anchor_index + 1, self.advanced_options_tab, "Advanced Settings"
+        )
+        self._update_tab_close_buttons()
+
+        # Show only the sections relevant to the originating page and label the
+        # tab accordingly (MC Setup vs MC Results vs KORAL).
+        context = self.advanced_options_tab.context_for_section(section_id)
+        self.advanced_options_tab.set_visible_context(context)
+        ctx_label = {
+            "mc_setup": "Advanced (Setup)",
+            "mc_results": "Advanced (Results)",
+            "koral": "Advanced (KORAL)",
+        }.get(context or "", "Advanced Settings")
+        self.tab_widget.setTabText(
+            self.tab_widget.indexOf(self.advanced_options_tab), ctx_label
+        )
+
         self.tab_widget.setCurrentWidget(self.advanced_options_tab)
         # Sync the correct angle when opening the relevant section.
         if section_id == "ion_selection_mc":
@@ -443,17 +545,24 @@ class MainWindow(QMainWindow):
             pass
 
     def _on_simulation_finished(self, results_dir: str) -> None:
-        """Load results into a *new* MC Results tab and switch to it.
+        """Load results into the run's MC Results tab and switch to it.
 
-        The first MC Results tab is reused only if it has never received
-        results before; otherwise a fresh tab is created so previous
-        simulation outputs remain visible for comparison.
+        Live updates during the run already populated a results tab (tracked in
+        ``_last_live_target``). Reuse that same tab on completion instead of
+        spawning a new one — otherwise the first simulation would fill
+        "MC Results 1" via live updates and then create a redundant
+        "MC Results 2" here. A fresh tab is only created if no live update ran
+        (e.g. update interval ≥ ion count). ``_last_live_target`` is reset so
+        the *next* simulation starts in a new tab.
         """
-        target = self._get_or_create_results_tab_for_new_run()
+        target = getattr(self, "_last_live_target", None)
+        if target is None or target not in self.mc_results_tabs:
+            target = self._get_or_create_results_tab_for_new_run()
         target.load_results_from_directory(results_dir)
-        self._last_live_target = target
         self.tab_widget.setCurrentWidget(target)
         emit_log(f"Results loaded from {results_dir}")
+        # Next run should target a fresh tab.
+        self._last_live_target = None
 
     def _on_results_update(self, results_dir: str) -> None:
         """Live-refresh the active MC Results page during simulation."""
@@ -596,8 +705,11 @@ def main():
     import signal
 
     QLocale.setDefault(QLocale(QLocale.Language.C))
+    if os.environ.get("OPENSRIM_CREATE_DESKTOP_ENTRY") == "1":
+        ensure_linux_desktop_entry()
 
     app = QApplication(sys.argv)
+    configure_application(app)
     win = MainWindow()
     win.show()
 

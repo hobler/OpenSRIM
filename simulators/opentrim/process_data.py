@@ -183,12 +183,31 @@ def write_stats(input_params, stats):
     return out_path
 
 
-def save_progress(input_params, ions_done, ions_total):
+def _resolve_out_path(input_params):
     workdir = input_params["simulation"]["workdir"]
-    out_path = Path(__file__).parent / workdir
+    return Path(__file__).parent / workdir
+
+
+def save_progress(input_params, ions_done, ions_total, status="running"):
+    out_path = _resolve_out_path(input_params)
     out_path.mkdir(parents=True, exist_ok=True)
     with open(out_path / "progress", "w") as f:
         f.write(f"{int(ions_done)} / {int(ions_total)}")
+    with open(out_path / "status", "w") as f:
+        f.write(str(status))
+
+
+def is_stop_requested(input_params):
+    """Return True if the UI has requested a cooperative stop.
+
+    The UI signals an abort by creating a ``stop_requested`` file inside the
+    working directory; the chunked simulation loop polls for it and exits
+    gracefully after the current chunk, leaving valid partial results.
+    """
+    try:
+        return (_resolve_out_path(input_params) / "stop_requested").exists()
+    except Exception:
+        return False
 
 # if __name__ == "__main__":
 #     with open(Path(__file__).parent / "pickle_dump.p", "rb") as f:

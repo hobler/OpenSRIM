@@ -987,3 +987,41 @@ class AdvancedOptionsPage(QWidget):
         if not item:
             return
         item.set_expanded(True, animate=True)
+
+    # Which page each advanced section belongs to. Used to show only the
+    # relevant sections depending on where the user opened Advanced Settings.
+    _SECTION_CONTEXT = {
+        "ion_selection_mc": "mc_setup",
+        "atoms_per_layer": "mc_setup",
+        "model_selection": "mc_setup",
+        "mc_setup_advanced": "mc_setup",
+        "cascade_options": "mc_setup",
+        "nuclear_stopping": "mc_setup",
+        "electronic_stopping": "mc_setup",
+        "histogram_settings": "mc_setup",
+        "koral_solver": "koral",
+        "display_settings": "mc_results",
+    }
+
+    def context_for_section(self, section_id: str) -> Optional[str]:
+        """Return the page context ('mc_setup', 'mc_results', 'koral') of a section."""
+        return self._SECTION_CONTEXT.get(section_id)
+
+    def _accordion_context(self, item: "AccordionItem") -> Optional[str]:
+        for sid, acc in self._accordion_by_id.items():
+            if acc is item:
+                return self._SECTION_CONTEXT.get(sid)
+        return None
+
+    def set_visible_context(self, context: Optional[str]) -> None:
+        """Show only the accordion sections relevant to *context*.
+
+        ``None`` shows every section. Sections with no known context are always
+        shown so nothing is accidentally hidden.
+        """
+        for item in self._all_accordions:
+            if context is None:
+                item.setVisible(True)
+                continue
+            ctx = self._accordion_context(item)
+            item.setVisible(ctx is None or ctx == context)

@@ -473,6 +473,120 @@ def plot_sn_ratio_at_e(e, p1, p2, Z1=None, Z2=None, krc=False):
         print(f"Saved figure to {fname}")
 
 
+def plot_sn_fit_error():
+    """Plot all RMS errors when fitting the NLHlin stopping cross sections
+    """
+    import matplotlib.pyplot as plt
+    import matplotlib as mpl    
+    from matplotlib.ticker import MultipleLocator
+    plt.rcParams.update({'font.size': 14})
+    cmap = plt.get_cmap('viridis', 92)
+    fig = plt.figure()
+
+    ticks = range(0, 100, 10)
+    bounds = np.linspace(1, 92, 92)
+    norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
+    Z_cmap_text = r'Z$_2$'
+    plt.colorbar(mpl.cm.ScalarMappable(norm=norm, cmap=cmap),
+                 ax=plt.gca(),
+                 label=f'atomic number {Z_cmap_text}', 
+                 ticks=ticks)
+    directory = os.path.join(os.path.dirname(__file__),
+                                "../../data/nuclear_scattering")
+    fname = f"{directory}/nlhlin/sn_fit_params_nlhlin.txt"
+    errors = []
+    with open(fname) as f:
+        for line in f:
+            if line[0] == '#':
+                continue
+            items = line.split()
+            Z1 = int(items[0])
+            Z2 = int(items[1])
+            error = float(items[6])
+            errors.append(error)
+            plt.plot(Z1, error, '.', 
+                     color=cmap((Z2-1)/92), zorder=Z2, markersize=3)
+            plt.plot(Z2, error, '.', 
+                     color=cmap((Z1-1)/92), zorder=Z1, markersize=3)
+
+    plt.text(0.95, 0.95, f'average RMS error = {np.mean(errors):.2f}%',
+             horizontalalignment='right', verticalalignment='top', 
+             transform=plt.gca().transAxes)
+    plt.xlim(0, 93)
+    plt.ylim(0, None)
+    plt.xlabel('Atomic number Z$_1$')
+    plt.ylabel(r'RMS error of $S_\mathrm{n}$ fit (%)')
+    plt.xticks(range(0, 100, 10))
+    plt.gca().xaxis.set_minor_locator(MultipleLocator(1))
+    plt.grid(True, which='major', ls='--')
+    plt.tight_layout()
+    plt.show()
+
+    fname = os.path.join(os.path.dirname(__file__), 
+                        f"figs/sn_fit_error_nlhlin.pdf")
+    fname = ask_if_save(fname)
+    if fname is not None:
+        fig.savefig(os.path.join(os.path.dirname(__file__), fname))
+        print(f"Saved figure to {fname}")
+
+
+def plot_qn_fit_error():
+    """Plot all RMS errors when fitting the NLHlin nuclear straggling
+    """
+    import matplotlib.pyplot as plt
+    import matplotlib as mpl    
+    from matplotlib.ticker import MultipleLocator
+    plt.rcParams.update({'font.size': 14})
+    cmap = plt.get_cmap('viridis', 92)
+    fig = plt.figure()
+
+    ticks = range(0, 100, 10)
+    bounds = np.linspace(1, 92, 92)
+    norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
+    Z_cmap_text = r'Z$_2$'
+    plt.colorbar(mpl.cm.ScalarMappable(norm=norm, cmap=cmap),
+                 ax=plt.gca(),
+                 label=f'atomic number {Z_cmap_text}', 
+                 ticks=ticks)
+    directory = os.path.join(os.path.dirname(__file__),
+                                "../../data/nuclear_scattering")
+    fname = f"{directory}/nlhlin/qn_fit_params_nlhlin.txt"
+    errors = []
+    with open(fname) as f:
+        for line in f:
+            if line[0] == '#':
+                continue
+            items = line.split()
+            Z1 = int(items[0])
+            Z2 = int(items[1])
+            error = float(items[6])
+            errors.append(error)
+            plt.plot(Z1, error, '.', 
+                     color=cmap((Z2-1)/92), zorder=Z2, markersize=3)
+            plt.plot(Z2, error, '.', 
+                     color=cmap((Z1-1)/92), zorder=Z1, markersize=3)
+
+    plt.text(0.95, 0.95, f'average RMS error = {np.mean(errors):.2f}%',
+             horizontalalignment='right', verticalalignment='top', 
+             transform=plt.gca().transAxes)
+    plt.xlim(0, 93)
+    plt.ylim(0, None)
+    plt.xlabel('Atomic number Z$_1$')
+    plt.ylabel(r'RMS error of $Q_\mathrm{n}$ fit (%)')
+    plt.xticks(range(0, 100, 10))
+    plt.gca().xaxis.set_minor_locator(MultipleLocator(1))
+    plt.grid(True, which='major', ls='--')
+    plt.tight_layout()
+    plt.show()
+
+    fname = os.path.join(os.path.dirname(__file__), 
+                        f"figs/qn_fit_error_nlhlin.pdf")
+    fname = ask_if_save(fname)
+    if fname is not None:
+        fig.savefig(os.path.join(os.path.dirname(__file__), fname))
+        print(f"Saved figure to {fname}")
+
+
 if __name__ == "__main__":
     Z1 = 12
     Z2 = 12
@@ -492,5 +606,8 @@ if __name__ == "__main__":
     #tab_qn_fit()
 
     energies = [10, 100, 1000, 10000]
-    plot_sn_ratio_at_e(energies, p1=1/2, p2=1/2)
+    #plot_sn_ratio_at_e(energies, p1=1/2, p2=1/2)
     #plot_sn_ratio_at_e(energies, p1=1/2, p2=1/2, krc=True)
+
+    #plot_sn_fit_error()
+    plot_qn_fit_error()

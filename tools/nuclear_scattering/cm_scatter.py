@@ -42,7 +42,7 @@ def calc_phi_chi(u, r0, screen_fun):
     return phi, chi
 
 
-def scatter_integrals(e, p, screen_fun):
+def scatter_integrals(e, p, screen_fun, relerr_apsis=1e-3):
     """Calculate scattering angle and time integral.
 
     The calculation uses Gauss-Legendre quadrature with a fixed number of
@@ -54,6 +54,7 @@ def scatter_integrals(e, p, screen_fun):
         p (float): Reduced impact parameter.
         screen_fun (callable): Function to calculate the screening function
             for given distance r (RNORM).
+        relerr_apsis: relative error for apsis calculation
     
     Returns:
         (float): Pi minus scattering angle (rad)
@@ -64,7 +65,7 @@ def scatter_integrals(e, p, screen_fun):
     #elif p == 0.0:
     #    return np.pi, 0.0
     
-    r0, _ = screen_fun.apsis(e, p)
+    r0, _ = screen_fun.apsis(e, p, relerr_apsis)
 
     def integrands(u):
         phi, chi = calc_phi_chi(u, r0, screen_fun)
@@ -244,19 +245,22 @@ def plot_theta_error(screen_fun):
     from zbl import magic
     plt.rcParams.update({'font.size': 13})
 
-    p_vals = (np.linspace(0.02, 30, 101), 
+    p_vals = (np.linspace(0.02, 50, 101), 
+              np.linspace(0.02, 30, 101), 
               np.linspace(0.02, 12, 101), 
               np.linspace(0.02, 4, 101))
 
     n_absc_vals = (1, 2, 3, 4, 5, 10)
 
-    for ie, e in enumerate((1e-4, 0.1, 100)):
+    for ie, e in enumerate((1e-7, 1e-4, 0.1, 100)):
+        print('e=', e)
         fig, ax = plt.subplots(1, 1, figsize=(6, 4), layout='constrained')
         theta_ref_vals = []
         theta_magic_vals = []
         setup(n_absc=32)
         for p in p_vals[ie]:
-            pi_minus_theta_ref, _ = scatter_integrals(e, p, screen_fun)
+            pi_minus_theta_ref, _ = scatter_integrals(e, p, screen_fun, 
+                                                      relerr_apsis=1e-6)
             theta_ref = np.pi - pi_minus_theta_ref
             theta_ref_vals.append(theta_ref)
             if type(screen_fun) is ZBL_screen:
@@ -268,7 +272,8 @@ def plot_theta_error(screen_fun):
             setup(n_absc)
             errors = []
             for ip, p in enumerate(p_vals[ie]):
-                pi_minus_theta, _ = scatter_integrals(e, p, screen_fun)
+                pi_minus_theta, _ = scatter_integrals(e, p, screen_fun, 
+                                                      relerr_apsis=1e-3)
                 theta = np.pi - pi_minus_theta
                 theta_ref = theta_ref_vals[ip]
                 err = np.abs(theta - theta_ref) / np.abs(theta_ref)
@@ -328,7 +333,7 @@ def plot_tau_error(screen_fun):
         tau_ref_vals = []
         setup(n_absc=32)
         for p in p_vals[ie]:
-            _, tau_ref = scatter_integrals(e, p, screen_fun)
+            _, tau_ref = scatter_integrals(e, p, screen_fun, relerr_apsis=1e-6)
             tau_ref_vals.append(tau_ref)
         tau_ref_vals = np.array(tau_ref_vals)
 
@@ -459,8 +464,8 @@ if __name__ == "__main__":
 
     #screen_fun = ZBL_screen()
 
-    Z1 = 33
-    Z2 = 14
+    Z1 = 74
+    Z2 = 74
     rnorm = 0.4685 / (np.sqrt(np.sqrt(Z1)) + np.sqrt(np.sqrt(Z2)))
     screen_fun = NLHlin_screen(Z1, Z2, rnorm)
     
@@ -470,8 +475,8 @@ if __name__ == "__main__":
     #plot_chi_near_zero(r0_vals, screen_fun)
     #plot_chi_near_one(r0_vals, screen_fun)
 
-    #plot_theta_error(screen_fun)
-    plot_tau_error(screen_fun)
+    plot_theta_error(screen_fun)
+    #plot_tau_error(screen_fun)
 
     #plot_tau_over_theta(screen_fun)
     #plot_sinhalftheta_over_p(screen_fun)

@@ -104,7 +104,7 @@ class ZBL_screen:
         
         return screen, dscreen
 
-    def impulse_integral_fast(self, p):
+    def impulse_integral(self, p):
         """Evaluate the integral that appears in the impulse approximation.
         
         This integral is defined as one half of the integral of 
@@ -134,7 +134,7 @@ class ZBL_screen:
 
         return integral
 
-    def impulse_integral(self, p):
+    def impulse_integral_slow(self, p):
         """Evaluate the integral that appears in the impulse approximation.
         
         This integral is defined as one half of the integral of 

@@ -1,7 +1,7 @@
-"""Define the NLHlin screening function.
+"""Define the NLH screening function.
 
 Available functions:
-    NLHlin_screen: Callable object for the NLHlin screening function. Also 
+    NLH_screen: Callable object for the NLH screening function. Also 
         defines a method impulse integral for calculating the integral that 
         appears in the impulse approximation.
     
@@ -11,16 +11,16 @@ Moreover, there are plotting functions for testing and visualization:
 """
 import os, sys
 import numpy as np
-from scipy.integrate import quad
+from scipy import special
 from apsis import Apsis
 from utils import atom, ask_if_save
 
 
-class NLHlin_screen:
-    """Defines the NLHlin screening function.
+class NLH_screen:
+    """Defines the NLH screening function.
     """
     def __init__(self, Z1, Z2, rnorm=None):
-        """Setup NLHlin screening function for given atomic numbers.
+        """Setup NLH screening function for given atomic numbers.
 
         Parameters:
             Z1: atomic number of atom 1
@@ -28,22 +28,21 @@ class NLHlin_screen:
             rnorm: screening length (A), None for the default value of
                 0.4685 / sqrt(sqrt(Z1) + sqrt(Z2))
         """
-        self.name = "NLHlin"
+        self.name = "NLH"
         self.Z1 = Z1
         self.Z2 = Z2
         
         fname = os.path.join(os.path.dirname(__file__), 
-                             #'../../data/NLHlin/NLHlin_1eV.dat')
-                             '../../data/NLHlin/NLHlin_3eV.dat')
+                             '../../data/NLH/nlh_coeffs.dat')
         if not os.path.exists(fname):
-            print(f'NLHlin_screen: Coefficients file {fname} not found')
+            print(f'NLH_screen: Coefficients file {fname} not found')
             sys.exit()
 
         with open(fname) as f:
             for line in f:
                 if line[0] == '#':
                     continue
-                z1, z2, a1, b1, a2, b2, a3, b3, rmax, error = line.split()
+                z1, z2, a1, b1, a2, b2, a3, b3, *error = line.split()
                 z1 = int(z1)
                 z2 = int(z2)
                 if min(z1,z2) == min(Z1, Z2) and max(z1, z2) == max(Z1, Z2):
@@ -57,51 +56,29 @@ class NLHlin_screen:
                    self.a[2]*self.b[2])
         self.rnorm = rnorm
 
-        self.rmax = float(rmax) / rnorm
-        #print(self.rnorm, self.rmax)
-        self.c = 1 - self.a[0] - self.a[1] - self.a[2]
-        self.d = (self.a[0]*np.exp(-self.b[0]*self.rmax) 
-                  + self.a[1]*np.exp(-self.b[1]*self.rmax) 
-                  + self.a[2]*np.exp(-self.b[2]*self.rmax)
-                  + self.c)
+        self.rmax = np.inf
+        
         self.apsis = Apsis(self)
 
     def __call__(self, r):
-        """Calculate the NLHlin screening function and its derivative.
+        """Calculate the NLH screening function and its derivative.
 
         Parameters:
             r (float or ndarray): Distance (RNORM)
 
         Returns:
-            (ndarray): NLHlin screening function at distance r
-            (ndarray): Derivative of NLHlin screening function at distance r
+            (ndarray): NLH screening function at distance r
+            (ndarray): Derivative of NLH screening function at distance r
                 (1/RNORM)
         """
         r = np.asarray(r, dtype=float)
         
-        if np.all(r < self.rmax):   # should always be true except for testing
-            exp0 = np.exp(-self.b[0]*r)
-            exp1 = np.exp(-self.b[1]*r)
-            exp2 = np.exp(-self.b[2]*r)
+        exp0 = np.exp(-self.b[0]*r)
+        exp1 = np.exp(-self.b[1]*r)
+        exp2 = np.exp(-self.b[2]*r)
 
-            screen = (self.a[0]*exp0 + self.a[1]*exp1 
-                            + self.a[2]*exp2 + self.c - self.d*r/self.rmax)
-            dscreen = (- self.ab[0]*exp0 - self.ab[1]*exp1 
-                            - self.ab[2]*exp2 - self.d/self.rmax)
-        else:
-            mask = np.asarray(r <= self.rmax)
-
-            exp0 = np.exp(-self.b[0]*r[mask])
-            exp1 = np.exp(-self.b[1]*r[mask])
-            exp2 = np.exp(-self.b[2]*r[mask])
-
-            screen = np.zeros_like(r)
-            screen[mask] = (self.a[0]*exp0 + self.a[1]*exp1 
-                            + self.a[2]*exp2 + self.c 
-                            - self.d*r[mask]/self.rmax)
-            dscreen = np.zeros_like(r)
-            dscreen[mask] = (- self.ab[0]*exp0 - self.ab[1]*exp1 
-                            - self.ab[2]*exp2 - self.d/self.rmax)
+        screen = self.a[0]*exp0 + self.a[1]*exp1 + self.a[2]*exp2
+        dscreen = - self.ab[0]*exp0 - self.ab[1]*exp1 - self.ab[2]*exp2
             
         return screen, dscreen
 
@@ -109,15 +86,16 @@ class NLHlin_screen:
         """Evaluate the integral that appears in the impulse approximation.
         
         This integral is defined as one half of the integral of 
-        
-            Phi(r) - r*Phi'(r)
-            ------------------ * p
-                    r^3
 
+             d   Phi(r)
+            -- * ------
+            dp     r
+        
         along a straight line which passes by the center of the potential at 
         a distance p.
 
-        The calculation uses quad from SciPy for numerical integration.
+        The calculation uses the modified Bessel function of the second kind 
+        and order 1 (scipy.special.kn).
         
         Parameters:
             p (float): impact parameter (RNORM)
@@ -125,53 +103,18 @@ class NLHlin_screen:
         Returns:
             (float): value of the integral
         """
-        if p >= self.rmax:
-            return 0.0
-        
-        def integrand(x, p):
-            r = np.sqrt(x**2 + p**2)
-            screen, dscreen = self(r)
-            return (screen - r*dscreen) * p / r**3
-        
-        xmax = np.sqrt(self.rmax**2 - p**2) if p < self.rmax else 0
-        integral, abserr = quad(integrand, 0, xmax, args=(p,))
-        #print(p, xmax, self.rmax, integral, abserr)
-        
-        return integral
+        k0 = special.kn(1, self.b[0] * p)
+        k1 = special.kn(1, self.b[1] * p)
+        k2 = special.kn(1, self.b[2] * p)
+        k3 = special.kn(1, self.b[3] * p)
 
-    def impulse_integral_other(self, p):
-        """Evaluate the integral that appears in the impulse approximation.
-        
-        This integral is defined as the integral of 
-        
-            Phi(r) - r*Phi'(r)
-            ------------------ * p
-            r^2*(r^2-p^2)^(1/2)
+        integral = self.ab[0]*k0 + self.ab[1]*k1 + self.ab[2]*k2 + self.ab[3]*k3
 
-        from p to rmax.
-
-        The calculation uses quad from SciPy for numerical integration and
-        should yield the same result as impulse_integral.
-        
-        Parameters:
-            p (float): impact parameter (RNORM)
-
-        Returns:
-            (float): value of the integral
-        """
-        def integrand(r):
-            screen, dscreen = self(r)
-            return (screen - r*dscreen) * p / (r**2 * np.sqrt(r**2 - p**2))
-        
-        xmax = np.sqrt(self.rmax**2 - p**2) if p < self.rmax else 0
-        #print(p, xmax)
-        integral, _ = quad(integrand, p, self.rmax)
-        
         return integral
 
 
-def post_plot(p1, p2, Z2, xmax=None, ymin=None):
-    """Do post-plot setup for NLHlin screening function plots.
+def post_plot(p1, p2, Z2, xmax=None, ymin=None, all=False, vmin=1):
+    """Do post-plot setup for NLH screening function plots.
     
     Parameters:
         p1 (float): exponent for atomic number scaling
@@ -179,11 +122,14 @@ def post_plot(p1, p2, Z2, xmax=None, ymin=None):
         Z2 (int or None): atomic number of second atom, or None for Z2=Z1
         xmax (float or None): maximum x value for plot
         ymin (float or None): minimum y value for plot
+        all (bool): whether to plot all Z1-Z2 combinations (overrides z2)
+        vmin (float): minimum potential value for plotting
     """
+    print(all)
     import matplotlib.pyplot as plt
     import matplotlib as mpl
 
-    plt.plot(0, 1, 'k:', label='V<1eV')
+    plt.plot(0, 1, 'k', label=f'V>{vmin}eV')
     plt.legend(loc=(0.635, 0.6),frameon=False)
 
     plt.yscale('log')
@@ -204,11 +150,12 @@ def post_plot(p1, p2, Z2, xmax=None, ymin=None):
             text += fr'(Z$_1^{{{round(p1, 2)}}}$+Z$_2^{{{round(p1, 2)}}}$)'
         if p2 != 1:
             text += fr'$^{{{round(p2, 2)}}}$'
+    if not all:
         text += '\n'
-    if Z2 is None:
-        text += f' Z$_2$=Z$_1$'
-    else:
-        text += f' Z$_2$={Z2}'
+        if Z2 is None:
+            text += f' Z$_2$=Z$_1$'
+        else:
+            text += f' Z$_2$={Z2}'
     plt.text(0.95, 0.95, text, 
              horizontalalignment='right', verticalalignment='top',
              transform=plt.gca().transAxes, fontsize='medium')
@@ -217,22 +164,32 @@ def post_plot(p1, p2, Z2, xmax=None, ymin=None):
         plt.xlabel(r'distance ($\rm\AA$)')
     else:
         plt.xlabel('reduced distance')
-    plt.ylabel('NLHlin screening function')
+    plt.ylabel('NLH screening function')
 
-    ticks = range(0, 100, 10)
-    bounds = np.linspace(1, 92, 92)
+    if all:
+        ticks = range(0, 200, 20)
+        bounds = np.linspace(1, 184, 184)
+    else:
+        ticks = range(0, 100, 10)
+        bounds = np.linspace(1, 92, 92)
     cmap = mpl.cm.viridis
+    #bounds = np.linspace(1, 10, 10)
+    #cmap = mpl.cm.jet
     norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
+    if all:
+        label = r'atomic numbers Z$_1$+Z$_2$'
+    else:
+        label = r'atomic number Z$_1$'
     plt.colorbar(mpl.cm.ScalarMappable(norm=norm, cmap=cmap), 
                  ax=plt.gca(),
-                 label=r'atomic number Z$_1$', 
+                 label=label, 
                  ticks=ticks)
 
     plt.tight_layout()
 
 
-def plot_screen(p1, p2, z2=None, xmax=None, ymin=None):
-    """Plot the NLHlin screening function for testing purposes.
+def plot_screen(p1, p2, z2=None, xmax=None, ymin=None, all=False, vmin=1):
+    """Plot the NLH screening function for testing purposes.
     
     Parameters:
         p1 (float): exponent for atomic number scaling
@@ -240,34 +197,46 @@ def plot_screen(p1, p2, z2=None, xmax=None, ymin=None):
         z2 (int or None): atomic number of second atom, or None for Z2=Z1
         xmax (float or None): maximum x value for plot
         ymin (float or None): minimum y value for plot
+        all (bool): whether to plot all Z1-Z2 combinations (overrides z2)
+        vmin (float): minimum potential value for plotting
     """
     import matplotlib.pyplot as plt
     import matplotlib as mpl
 
-    rmax_A  = 3.0
+    rmax_A  = 4.0
 
     fig = plt.figure()
     #cmap = plt.get_cmap('jet', 92)
-    cmap = plt.get_cmap('viridis', 92)
+    if all:
+        cmap = plt.get_cmap('viridis', 184)
+    else:
+        cmap = plt.get_cmap('viridis', 92)
     plt.rcParams.update({'font.size': 14})
     #plt.gca().set_facecolor('darkgray')
 
     for Z1 in range(1, 93):
-        if z2 is None:
-            Z2 = Z1
+        if all:
+            Z2_range = range(Z1, 93)
         else:
-            Z2 = z2
-        if (p1, p2) == (0, 0):
-            rnorm = 1.0
-        else:
-            rnorm = 0.4685 / (Z1**p1 + Z2**p1)**p2
-        rmax = rmax_A / rnorm
+            Z2_range = [Z1] if z2 is None else [z2]
+        for Z2 in Z2_range:
+            if (p1, p2) == (0, 0):
+                rnorm = 1.0
+            else:
+                rnorm = 0.4685 / (Z1**p1 + Z2**p1)**p2
+            rmax = rmax_A / rnorm
 
-        r = np.linspace(0.0, rmax, 101)
-        screen, _ = NLHlin_screen(Z1, Z2, rnorm)(r)
-        plt.plot(r, screen, ':', color=cmap((Z1-1)/92), zorder=Z1)
-        mask = (14.4 * Z1 * Z2 / np.maximum(1e-10, r*rnorm) * screen > 1)
-        plt.plot(r[mask], screen[mask], color=cmap((Z1-1)/92), zorder=Z1)
+            r = np.linspace(0.0, rmax, 101)
+            screen, _ = NLH_screen(Z1, Z2, rnorm)(r)
+            if all:
+                color = cmap((Z1+Z2-2)/184)
+                zorder = Z1 + Z2
+            else:
+                color = cmap((Z1-1)/92)
+                zorder = Z1
+            plt.plot(r, screen, ':', color=color, zorder=zorder)
+            mask = (14.4 * Z1 * Z2 / np.maximum(1e-10, r*rnorm) * screen > vmin)
+            plt.plot(r[mask], screen[mask], color=color, zorder=zorder)
 
     if (p1, p2) == (0.23, 1):
         screen, _ = ZBL_screen()(r)
@@ -278,21 +247,21 @@ def plot_screen(p1, p2, z2=None, xmax=None, ymin=None):
         plt.plot(r, screen, 'k--', label='KrC', zorder=100)
         #plt.legend(loc='right')
 
-    post_plot(p1, p2, Z2=z2, xmax=xmax, ymin=ymin)
+    post_plot(p1, p2, Z2=z2, xmax=xmax, ymin=ymin, all=all, vmin=vmin)
     plt.show()
 
     if (p1, p2) == (0, 0):
-        fname = f"figs/nlhlin_unscaled.pdf"
+        fname = f"figs/nlh_unscaled.pdf"
     elif z2 is None:
-        fname = f"figs/nlhlin_p{round(p1, 2)}_p{round(p2, 2)}.pdf"
+        fname = f"figs/nlh_p{round(p1, 2)}_p{round(p2, 2)}.pdf"
     else:
-        fname = f"figs/nlhlin_p{round(p1, 2)}_p{round(p2, 2)}_{atom[Z2]}.pdf"
+        fname = f"figs/nlh_p{round(p1, 2)}_p{round(p2, 2)}_{atom[Z2]}.pdf"
     fname = ask_if_save(fname)
     if fname is not None:
         fig.savefig(os.path.join(os.path.dirname(__file__), fname))
 
 
-def plot_ZBLscreen(p1, p2, z2=None, xmax=None, ymin=None):
+def plot_ZBLscreen(p1, p2, z2=None, xmax=None, ymin=None, vmin=1):
     """Plot the ZBL screening function for comparison.
     
     Parameters:
@@ -301,6 +270,7 @@ def plot_ZBLscreen(p1, p2, z2=None, xmax=None, ymin=None):
         z2 (int or None): atomic number of second atom, or None for Z2=Z1
         xmax (float or None): maximum x value for plot
         ymin (float or None): minimum y value for plot
+        vmin (float): minimum potential value for plotting
     """
     import matplotlib.pyplot as plt
     import matplotlib as mpl
@@ -308,7 +278,7 @@ def plot_ZBLscreen(p1, p2, z2=None, xmax=None, ymin=None):
     rmax_A  = 3.0
 
     fig = plt.figure()
-    #cmap = plt.get_cmap('jet', 92)
+    #cmap = plt.get_cmap('jet', 10)
     cmap = plt.get_cmap('viridis', 92)
     plt.rcParams.update({'font.size': 14})
     #plt.gca().set_facecolor('darkgray')
@@ -327,10 +297,10 @@ def plot_ZBLscreen(p1, p2, z2=None, xmax=None, ymin=None):
         r = np.linspace(0.0, rmax_A, 101)
         screen, _ = ZBL_screen()(r/a_ZBL)
         plt.plot(r/rnorm, screen, ':', color=cmap((Z1-1)/92), zorder=Z1)
-        mask = (14.4 * Z1 * Z2 / np.maximum(1e-10, r*rnorm) * screen > 1)
+        mask = (14.4 * Z1 * Z2 / np.maximum(1e-10, r*rnorm) * screen > vmin)
         plt.plot(r[mask]/rnorm, screen[mask], color=cmap((Z1-1)/92), zorder=Z1)
 
-    post_plot(p1, p2, Z2=r'Z$_1$', xmax=xmax, ymin=ymin)
+    post_plot(p1, p2, Z2=r'Z$_1$', xmax=xmax, ymin=ymin, vmin=vmin)
     plt.ylabel('ZBL screening function')
     plt.show()
 
@@ -346,18 +316,19 @@ def plot_ZBLscreen(p1, p2, z2=None, xmax=None, ymin=None):
 if __name__ == "__main__":
     from zbl import ZBL_screen
     from krc import KrC_screen
-    Z2 = 29
+    Z2 = 2
     #plot_screen(p1=0, p2=0)      # unscaled
-    #plot_screen(p1=1/2, p2=2/3)  # Firsov
     #plot_screen(p1=1/2, p2=2/3, xmax=14.0, ymin=0.01)  # Firsov
     #plot_screen(p1=2/3, p2=1/2)  # Lindhard
-    plot_screen(p1=0.23, p2=1)   # ZBL
     #plot_screen(p1=0.23, p2=1, xmax=14.0, ymin=0.01)   # ZBL
     #plot_screen(p1=1/4, p2=1)    # Suggested by M. Hou (AI generated, true?)
-    #plot_screen(p1=1/2, p2=1/2, xmax=10.0, ymin=0.01)  # New suggestion
+    #plot_screen(p1=1/2, p2=1/2, xmax=10.0, ymin=0.01, all=True)  # New suggestion
     #plot_screen(p1=1, p2=1/4, z2=Z2, xmax=10.0, ymin=0.01)    # Alternative suggestion   
-    #plot_screen(p1=1/2, p2=1/2, z2=Z2, xmax=10.0, ymin=0.01)  # New suggestion
+    #for Z2 in range(1, 93):
+    #    plot_screen(p1=1/2, p2=1/2, z2=Z2, xmax=30.0, ymin=1e-5)  # New suggestion
     #plot_screen(p1=1/4, p2=1, z2=Z2, xmax=10.0, ymin=0.01)    # Alternative suggestion   
+
+    plot_screen(p1=1/2, p2=1/2, all=True, vmin=2)      # New suggestion
 
     #plot_ZBLscreen(p1=0, p2=0)   # unscaled ZBL
     #plot_ZBLscreen(p1=0.23, p2=1) # ZBL

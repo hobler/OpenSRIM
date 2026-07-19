@@ -272,7 +272,8 @@ def plot_theta_error(screen_fun):
             setup(n_absc)
             errors = []
             for ip, p in enumerate(p_vals[ie]):
-                pi_minus_theta, _ = scatter_integrals(e, p, screen_fun)
+                pi_minus_theta, _ = scatter_integrals(e, p, screen_fun, 
+                                                      relerr_apsis=1e-3)
                 theta = np.pi - pi_minus_theta
                 theta_ref = theta_ref_vals[ip]
                 err = np.abs(theta - theta_ref) / np.abs(theta_ref)
@@ -461,12 +462,12 @@ if __name__ == "__main__":
     from zbl import ZBL_screen
     from nlhlin import NLHlin_screen
 
-    screen_fun = ZBL_screen()
+    #screen_fun = ZBL_screen()
 
     Z1 = 74
     Z2 = 74
     rnorm = 0.4685 / (np.sqrt(np.sqrt(Z1)) + np.sqrt(np.sqrt(Z2)))
-    #screen_fun = NLHlin_screen(Z1, Z2, rnorm)
+    screen_fun = NLHlin_screen(Z1, Z2, rnorm)
     
     r0_vals = [0.01, 0.1, 1, 10]
     #print(screen_fun(1.0))

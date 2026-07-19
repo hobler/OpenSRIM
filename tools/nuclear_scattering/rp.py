@@ -93,7 +93,7 @@ class Sn:
             self.d = d[idx]
             p1 = 0.5
             p2 = 0.5
-        print(f'{Z1=}, {Z2=}:', self.a, self.b, self.c, self.d)
+        #print(f'{Z1=}, {Z2=}:', self.a, self.b, self.c, self.d)
         self.rnorm = 0.4685 / (self.Z1**p1 + self.Z2**p1)**p2
         self.enorm = (M1+M2)/M2 * 14.4 * self.Z1 * self.Z2 / self.rnorm
     
@@ -630,7 +630,8 @@ def plot_sn_ratio_at_rp_homo(rp_lst, Z1=None, Z2=None, krc=False):
                     e = np.exp(np.interp(np.log(rp), np.log(rp_vals), 
                                         np.log(e_vals)))
 
-                # Sn(NLHlin) and Sn(ZBL or KrC) at e
+                # Sn(NLHlin) and Sn(ZBL or KrC) at max(e, 10eV)
+                e = max(e, 10)
                 M1 = get_mass(Z1)
                 M2 = get_mass(Z2)
                 sn_nlhlin = Sn(Z1, Z2, M1, M2)
@@ -700,6 +701,7 @@ def plot_sn_ratio_at_rp_all(rp, krc=False, plot_vs_Z1=True):
                                     np.log(e_vals)))
 
             # Sn(NLHlin) and Sn(ZBL or KrC) at e
+            e = max(e, 10)
             M1 = get_mass(Z1)
             M2 = get_mass(Z2)
             sn_nlhlin = Sn(Z1, Z2, M1, M2)
@@ -711,6 +713,8 @@ def plot_sn_ratio_at_rp_all(rp, krc=False, plot_vs_Z1=True):
             else:
                 plt.plot(Z2, sn_ratio, '.', 
                          color=cmap((Z1-1)/92), zorder=Z1, markersize=2)
+            if sn_ratio < 0.2:
+                print(f"Small ratio for Z1={Z1}, Z2={Z2}: {sn_ratio}, e={e}")
 
     plt.axhline(1, color='k', linestyle='--', zorder=100)
     plt.xlim(0, 93)
@@ -720,9 +724,9 @@ def plot_sn_ratio_at_rp_all(rp, krc=False, plot_vs_Z1=True):
     else:
         plt.xlabel('Atomic number Z$_2$')
     if krc:
-        plt.ylabel(fr'S$_n$(NLHlin)/S$_n$(KrC) at R$_p$={rp} A')
+        plt.ylabel(fr'S$_n$(NLHlin)/S$_n$(KrC) at R$_p$={rp} A (E>10eV)')
     else:
-        plt.ylabel(fr'S$_n$(NLHlin)/S$_n$(ZBL) at R$_p$={rp} A')
+        plt.ylabel(fr'S$_n$(NLHlin)/S$_n$(ZBL) at R$_p$={rp} A (E>10eV)')
     plt.xticks(range(0, 100, 10))
     plt.gca().xaxis.set_minor_locator(MultipleLocator(1))
     plt.grid(True, which='major', ls='--')
@@ -764,5 +768,8 @@ if __name__ == '__main__':
 
     #plot_sn_ratio_at_rp_homo([10, 100, 1000, 10000], krc=False)
     #plot_sn_ratio_at_rp_homo([10, 100, 1000, 10000], krc=True)
-    plot_sn_ratio_at_rp_all(100, krc=False, plot_vs_Z1=True)
+    #plot_sn_ratio_at_rp_all(10, krc=False, plot_vs_Z1=True)
+    #plot_sn_ratio_at_rp_all(10, krc=True, plot_vs_Z1=False)
+    #plot_sn_ratio_at_rp_all(100, krc=False, plot_vs_Z1=True)
+    plot_sn_ratio_at_rp_all(100, krc=True, plot_vs_Z1=False)
 

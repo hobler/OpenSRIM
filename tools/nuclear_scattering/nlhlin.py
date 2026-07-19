@@ -348,14 +348,16 @@ if __name__ == "__main__":
     from krc import KrC_screen
     Z2 = 29
     #plot_screen(p1=0, p2=0)      # unscaled
+    #plot_screen(p1=1/2, p2=2/3)  # Firsov
     #plot_screen(p1=1/2, p2=2/3, xmax=14.0, ymin=0.01)  # Firsov
     #plot_screen(p1=2/3, p2=1/2)  # Lindhard
+    plot_screen(p1=0.23, p2=1)   # ZBL
     #plot_screen(p1=0.23, p2=1, xmax=14.0, ymin=0.01)   # ZBL
     #plot_screen(p1=1/4, p2=1)    # Suggested by M. Hou (AI generated, true?)
     #plot_screen(p1=1/2, p2=1/2, xmax=10.0, ymin=0.01)  # New suggestion
     #plot_screen(p1=1, p2=1/4, z2=Z2, xmax=10.0, ymin=0.01)    # Alternative suggestion   
     #plot_screen(p1=1/2, p2=1/2, z2=Z2, xmax=10.0, ymin=0.01)  # New suggestion
-    plot_screen(p1=1/4, p2=1, z2=Z2, xmax=10.0, ymin=0.01)    # Alternative suggestion   
+    #plot_screen(p1=1/4, p2=1, z2=Z2, xmax=10.0, ymin=0.01)    # Alternative suggestion   
 
     #plot_ZBLscreen(p1=0, p2=0)   # unscaled ZBL
     #plot_ZBLscreen(p1=0.23, p2=1) # ZBL

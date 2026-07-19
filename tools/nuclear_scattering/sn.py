@@ -7,6 +7,7 @@ from scipy.special import roots_legendre
 from scipy.integrate import quad
 from zbl import ZBL_screen
 from krc import KrC_screen
+from nlh import NLH_screen
 from nlhlin import NLHlin_screen
 from cm_scatter import setup, scatter_integrals
 from utils import atom, ask_if_save
@@ -21,7 +22,8 @@ def calc_sn(e, screen_fun):
             for given distance r (RNORM).
     
     Returns:
-        (float): Nuclear stopping cross sectionS_n.
+        (float): Nuclear stopping cross section S_n.
+        (int): Number of function evaluations in the integration.
     """
     def func(p, e, screen_fun):
         pi_minus_theta, _ = scatter_integrals(e, p, screen_fun)
@@ -53,7 +55,8 @@ def calc_qn(e, screen_fun):
             for given distance r (RNORM).
     
     Returns:
-        (float): Nuclear stopping S_n.
+        (float): Nuclear straggling Q_n.
+        (int): Number of function evaluations in the integration.
     """
     def func(p, e, screen_fun):
         pi_minus_theta, _ = scatter_integrals(e, p, screen_fun)
@@ -84,6 +87,7 @@ def calc_sn_split(e, screen_fun):
     
     Returns:
         (float): Nuclear stopping S_n.
+        (int): Number of function evaluations in the integration.
     """
     def func(p, e, screen_fun):
         pi_minus_theta, _ = scatter_integrals(e, p, screen_fun)
@@ -164,6 +168,9 @@ def tab_sn_qn(screen_fun):
     elif type(screen_fun) is NLHlin_screen:
         fname = (f'../../data/nuclear_scattering/nlhlin/sn_qn_tables/'
                  f'sn_qn_table_nlhlin_{Z1:02d}_{Z2:02d}.txt')
+    elif type(screen_fun) is NLH_screen:
+        fname = (f'../../data/nuclear_scattering/nlh/sn_qn_tables/'
+                 f'sn_qn_table_nlh_{Z1:02d}_{Z2:02d}.txt')
     fname = os.path.join(os.path.dirname(__file__), fname)
     with open(fname, 'w') as f:
         f.write('#  epsilon       S_n          Q_n\n')
@@ -179,6 +186,15 @@ def tab_all_sn_qn():
     for Z1 in range(1, 93):
         for Z2 in range(Z1, 93):
             screen_fun = NLHlin_screen(Z1, Z2)
+            tab_sn_qn(screen_fun)
+
+def tab_all_sn_qn_nlh():
+    """Tabulate S_n and Q_n for all Z1-Z2 combinations using NLH.
+    """
+    for Z1 in range(1, 93):
+        for Z2 in range(Z1, 93):
+            print(f"Calculating S_n and Q_n for Z1={Z1}, Z2={Z2} using NLH...")
+            screen_fun = NLH_screen(Z1, Z2)
             tab_sn_qn(screen_fun)
 
 
@@ -677,6 +693,7 @@ if __name__ == "__main__":
     #start_time = time.time()
     #tab_sn_qn(screen_fun)
     #tab_all_sn_qn()
+    #tab_all_sn_qn_nlh()
     #print(f'Total time: {time.time() - start_time:.3f} s')
 
     #plot_sn(p1=0.5, p2=0.5)
@@ -685,6 +702,6 @@ if __name__ == "__main__":
     #plot_qn(p1=0.5, p2=0.5)
     #plot_qn(p1=0.23, p2=1)
     #plot_qn(p1=0.5, p2=2/3)
-    #plot_sn_at_e(0.01, p1=0.5, p2=0.5)
-    plot_sn_at_e(0.01, p1=0.23, p2=1)
+    plot_sn_at_e(0.01, p1=0.5, p2=0.5)
+    #plot_sn_at_e(0.01, p1=0.23, p2=1)
     #plot_sn_at_e(0.01, p1=0.5, p2=2/3)

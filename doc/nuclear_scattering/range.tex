@@ -32,7 +32,7 @@ It has been shown \cite{Bie82,Ash91}, that an approximation to the projected ran
     \label{eq:sn_rp_differential}
     \frac{ \mathrm{d} R_\mathrm{p} }{ \mathrm{d} E } =
         \frac{ 1 }{ N (S_\mathrm{n}(E) + S_\mathrm{e}(E))}
-        \left( 1 - \frac{ \mu N S_\mathrm{n} }{ 2 E } R_\mathrm{p} \right),
+        \left( 1 - \frac{ \mu N S_\mathrm{n}(E) }{ 2 E } R_\mathrm{p} \right),
         \quad \mu = \frac{ M_2 }{ M_1 }
 \end{equation}
 
@@ -66,10 +66,11 @@ The ratios of the projected ranges obtained with NLHlin and KrC potential is dep
 Very significant deviations between the NLHlin and the conventional potentials can be seen except for the noble gases ($Z=2,10,18,36,54,86$).
 Comparing Figs.~\ref{fig:sn_rp_ratio_homo_zbl} and \ref{fig:sn_rp_ratio_homo_krc}, KrC performs much better than ZBL for heavy atoms, while KrC performs poorer for lighter elements.
 
+The projected range ratios at 100~eV are shown for all atom pairs in \cref{fig:sn_rp_ratio_all}.
 \begin{figure}
     \centering
     \includegraphics[scale=0.5]{rp_ratio_all_zbl_at_e.pdf} ~~
     \includegraphics[scale=0.5]{rp_ratio_all_krc_at_e.pdf}
     \caption{Projected range ratio with respect to ZBL (left) and KrC (right) for all combinations of $Z_1$ and $Z_2$.}
-    \label{fig:sn_ratio_all}
+    \label{fig:sn_rp_ratio_all}
 \end{figure}

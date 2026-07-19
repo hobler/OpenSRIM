@@ -207,4 +207,24 @@ The values $a$, $b$, $c$, and $d$ have been fitted to energies between $\varepsi
     \label{fig:sn_fit_Z5_14}
 \end{figure}
 %
+\begin{figure}
+    \centering
+    \includegraphics[scale=0.5]{sn_fit_error_nlhlin.pdf} ~~
+    \includegraphics[scale=0.5]{qn_fit_error_nlhlin.pdf}
+    \caption{Root-mean-square fit errors of the nuclear stopping cross section (left) and nuclear straggling (right) for all atom pairs.}
+    \label{fig:sn_fit_error}
+\end{figure}
+%
 \Cref{fig:sn_fit_Z5_14} shows, as an example the data and fits for $Z_1 = 5$, $Z_2 = 14$.
+The root-mean-square fit errors for all atom pairs are shown in \cref{fig:sn_fit_error}.
+Most of the fit errors is between 1 and 2.5\% for the nuclear stopping cross section and between 1.5 and 4\% for the nuclear straggling, with a mean of 1.76\% and 2.95\%,respectively, and a few errors up to 6\% and 8\%, respectively.
+
+\begin{figure}
+    \centering
+    \includegraphics[scale=0.5]{sn_ratio_all_zbl_at_rp10.pdf} ~~
+    \includegraphics[scale=0.5]{sn_ratio_all_krc_at_rp10.pdf}
+    \caption{Ratio of nuclear stopping cross sections for all atom pair using the NLHlin potential and the ZBL potential (left) of KrC potential (right) at energies that lead to a projected range of 10~\AA, but at least 10~eV.}
+    \label{fig:sn_sn_ratio_at_rp}
+\end{figure}
+%
+As an application, stopping cross sections have been calculated for all atom pairs using the analytic expression \cref{eq:sn_sn_fit} at energies that cause a projected range of 10~\AA. For the calculation of the projected range, the algorithm described in the next section has been used. The ratio of the results using the NLHlin potential and the ZBL or KrC potential are shown in \cref{fig:sn_sn_ratio_at_rp}.

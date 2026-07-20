@@ -700,7 +700,7 @@ class MCSetupPage(QWidget):
         header_l = QHBoxLayout(header)
         header_l.setContentsMargins(0, 0, 0, 0)
         header_l.setSpacing(6)
-        title_lbl = QLabel("Target layer selection", header)
+        title_lbl = QLabel("Target layers", header)
         title_lbl.setStyleSheet("font-weight: 600;")
         header_l.addWidget(title_lbl)
         header_l.addWidget(self._hint_btn("target_layers", parent=header))
@@ -1399,6 +1399,14 @@ class MCSetupPage(QWidget):
         self._set_working_directory(path)
 
         directory = Path(path)
+
+        # If this directory belongs to a simulation that is still running
+        # (status file says "running"), attach to it: the Run button becomes
+        # a Stop button and progress is monitored from the files.
+        if not getattr(self, "_sim_running", False) and self._directory_run_active(directory):
+            self._attach_external_run(directory)
+            return
+
         toml_path = self._find_toml_in_directory(directory)
         if toml_path is not None:
             msg = QMessageBox(self)
@@ -2173,6 +2181,18 @@ class MCSetupPage(QWidget):
 
         # If a simulation is already running, this button acts as a Stop button.
         if getattr(self, "_sim_running", False):
+            if getattr(self, "_external_run", False) and getattr(self, "_stop_requested", False):
+                # Second click on an external run that never confirmed the
+                # stop (e.g. its process was killed): detach instead of
+                # waiting forever on a stale "running" status file.
+                if self._progress_timer:
+                    self._progress_timer.stop()
+                self._reset_run_button()
+                self.mc_progress.setFormat("Detached")
+                self.add_log_entry(
+                    f"Detached from unresponsive run in: {self._current_results_dir}"
+                )
+                return
             self._request_simulation_stop()
             return
 
@@ -2220,6 +2240,7 @@ class MCSetupPage(QWidget):
 
         # Switch the Run button into Stop mode for the duration of the run.
         self._sim_running = True
+        self._external_run = False
         self._stop_requested = False
         self.run_button.setText("Stop")
         self.run_button.setEnabled(True)
@@ -2260,6 +2281,51 @@ class MCSetupPage(QWidget):
             self._progress_timer.timeout.connect(self._poll_progress)
         self._progress_timer.start(500)
 
+    @staticmethod
+    def _read_run_status(directory: Path) -> str:
+        """Return the content of the status file in *directory* ('' if absent)."""
+        try:
+            status_file = directory / "status"
+            if status_file.is_file():
+                return status_file.read_text(encoding="utf-8").strip().lower()
+        except OSError:
+            pass
+        return ""
+
+    def _directory_run_active(self, directory: Path) -> bool:
+        """True if the status file marks a simulation in *directory* as running."""
+        return self._read_run_status(directory) == "running"
+
+    def _attach_external_run(self, directory: Path) -> None:
+        """Monitor a simulation started elsewhere: Run button becomes Stop.
+
+        The run is tracked purely through its progress/status files; stopping
+        works through the same "stop_requested" file as for own runs.
+        """
+        self._current_results_dir = str(directory)
+        toml_path = directory / "input.toml"
+        self._current_toml_path = toml_path if toml_path.is_file() else None
+
+        self._sim_running = True
+        self._external_run = True
+        self._stop_requested = False
+        self._sim_error = None
+        self._last_update_ions = 0
+
+        if self.run_button:
+            self.run_button.setText("Stop")
+            self.run_button.setEnabled(True)
+        if self.mc_progress:
+            self.mc_progress.setFormat("Running…")
+        self.add_log_entry(
+            f"Running simulation detected in: {directory} – Run button switched to Stop."
+        )
+
+        if not self._progress_timer:
+            self._progress_timer = QTimer(self)
+            self._progress_timer.timeout.connect(self._poll_progress)
+        self._progress_timer.start(500)
+
     def _request_simulation_stop(self):
         """Signal the running simulation to stop gracefully after the current chunk."""
         if not getattr(self, "_sim_running", False):
@@ -2271,13 +2337,16 @@ class MCSetupPage(QWidget):
             pass
         if self.run_button:
             self.run_button.setText("Stopping…")
-            self.run_button.setEnabled(False)
+            # External runs keep the button enabled: a second click detaches
+            # in case the monitored process no longer reacts.
+            self.run_button.setEnabled(getattr(self, "_external_run", False))
         if self.mc_progress:
             self.mc_progress.setFormat("Stopping…")
         self.add_log_entry("Stop requested – finishing current chunk…")
 
     def _reset_run_button(self):
         self._sim_running = False
+        self._external_run = False
         if self.run_button:
             self.run_button.setText("Run")
             self.run_button.setEnabled(True)
@@ -2286,8 +2355,18 @@ class MCSetupPage(QWidget):
         if not self.mc_progress:
             return
 
-        # Check if thread is still alive
-        thread_alive = hasattr(self, "_sim_thread") and self._sim_thread.is_alive()
+        # Check whether the run is still alive. Own runs are tracked via the
+        # worker thread; attached external runs via their status file.
+        if getattr(self, "_external_run", False):
+            status_text = self._read_run_status(Path(self._current_results_dir))
+            thread_alive = status_text == "running"
+            if status_text == "error":
+                self._sim_error = (
+                    "The simulation process reported an error "
+                    f"(status file in {self._current_results_dir})."
+                )
+        else:
+            thread_alive = hasattr(self, "_sim_thread") and self._sim_thread.is_alive()
 
         # Read progress file
         progress_file = Path(self._current_results_dir) / "progress"

@@ -711,7 +711,9 @@ _STYLE_DROP_AFTER = (
 def _apply_axes_font_size(ax, font_size: float) -> None:
     """Apply a consistent base font size to titles, labels, ticks and legends."""
     base = max(6.0, float(font_size))
-    ax.title.set_fontsize(base + 1.0)
+    # Keep the title at the same size as the axis labels (a noticeably larger
+    # title was reported as distracting on publication plots).
+    ax.title.set_fontsize(base)
     ax.xaxis.label.set_fontsize(base)
     ax.yaxis.label.set_fontsize(base)
     ax.tick_params(axis="both", labelsize=max(6.0, base - 1.0))
@@ -1859,6 +1861,9 @@ class SinglePlotPage(QWidget):
             "legend_loc": "best",
         }
         self._axes_user_overrides: set = set()
+        # View-preservation across re-renders (see _render_plot / _render_plot_keep_view).
+        self._preserve_view_once: bool = False
+        self._saved_view_limits = None
 
         root = QHBoxLayout(self)
         root.setContentsMargins(6, 6, 6, 6)
@@ -1935,6 +1940,23 @@ class SinglePlotPage(QWidget):
         list_btn_row.addWidget(self._btn_remove)
         list_btn_row.addWidget(self._btn_clear)
         cg_layout.addLayout(list_btn_row)
+
+        config_btn_row = QHBoxLayout()
+        self._btn_save_cfg = QPushButton("Save Config…")
+        self._btn_save_cfg.setToolTip(
+            "Save this single-plot configuration (curves, styles, axes) with "
+            "relative paths to the data sources"
+        )
+        self._btn_save_cfg.clicked.connect(self._save_plot_config)
+        self._btn_load_cfg = QPushButton("Load Config…")
+        self._btn_load_cfg.setToolTip(
+            "Load a saved single-plot configuration; missing data sources are "
+            "reported and skipped"
+        )
+        self._btn_load_cfg.clicked.connect(self._load_plot_config)
+        config_btn_row.addWidget(self._btn_save_cfg)
+        config_btn_row.addWidget(self._btn_load_cfg)
+        cg_layout.addLayout(config_btn_row)
 
         side_layout.addWidget(curves_group)
 
@@ -2220,6 +2242,31 @@ class SinglePlotPage(QWidget):
         self._btn_add_convolution_curve.clicked.connect(self._add_convolution_as_dataset)
         conv_layout.addWidget(self._btn_add_convolution_curve)
 
+        # Multi-σ comparison: convolve the same source data with several σ
+        # values at once and overlay them for direct comparison (per prof's
+        # idea). For 2-D curves the comparison is rendered as contour lines.
+        multi_sigma_row = QHBoxLayout()
+        multi_sigma_row.setContentsMargins(0, 0, 0, 0)
+        multi_sigma_row.setSpacing(4)
+        multi_sigma_row.addWidget(QLabel("Compare σ (Å):"))
+        self._multi_sigma_edit = QLineEdit()
+        self._multi_sigma_edit.setPlaceholderText("e.g. 10, 25, 50")
+        self._multi_sigma_edit.setToolTip(
+            "Enter several σ values separated by commas. Each value convolves "
+            "the selected curve's original data and is added as a separate "
+            "curve (2-D curves are added as contour lines)."
+        )
+        multi_sigma_row.addWidget(self._multi_sigma_edit, 1)
+        conv_layout.addLayout(multi_sigma_row)
+
+        self._btn_add_multi_sigma = QPushButton("Add σ comparison")
+        self._btn_add_multi_sigma.setToolTip(
+            "Convolve the selected curve with each σ value above and overlay "
+            "the results for comparison."
+        )
+        self._btn_add_multi_sigma.clicked.connect(self._add_multi_sigma_comparison)
+        conv_layout.addWidget(self._btn_add_multi_sigma)
+
         # "Apply convolution" toggle sits at the bottom of the panel, after the
         # σ and scan-area inputs, so the user sets parameters first and enables
         # the effect last.
@@ -2311,6 +2358,7 @@ class SinglePlotPage(QWidget):
 
         # ---- Reference image overlay ----
         ref_group = CollapsibleBox("Reference Image", hint_btn=self._hint_btn("reference"))
+        self._ref_group = ref_group
         ref_layout = QVBoxLayout(ref_group.content)
         ref_layout.setContentsMargins(0, 0, 0, 0)
         ref_layout.setSpacing(4)
@@ -2624,6 +2672,7 @@ class SinglePlotPage(QWidget):
             "id":          self._next_curve_id,
             "source_id":   str(dataset.get("id") or "loaded"),
             "source_name": tag,
+            "source_path": str(dataset.get("path") or ""),
             "series_idx":  0,
             "x":           x,
             "y_original":  y,
@@ -3011,6 +3060,40 @@ class SinglePlotPage(QWidget):
             return None
         return curve.get("scan_area")
 
+    # -----------------------------------------------------------------
+    # Reference-image availability
+    #
+    # A reference image overlay only makes physical sense where the axes
+    # carry a spatial meaning (2-D maps, depth/lateral profiles). For pure
+    # distribution histograms (energy / angle) the axis scaling is arbitrary
+    # and an underlaid image is misleading, so the feature is hidden there
+    # (per prof's note).
+    # -----------------------------------------------------------------
+    @staticmethod
+    def _curve_is_distribution_histogram(curve: Dict[str, Any]) -> bool:
+        if curve.get("is_2d"):
+            return False
+        label = str(curve.get("x_label", "")).strip().lower()
+        return any(
+            tok in label
+            for tok in ("energy", "angle", "(ev", "(kev", "(mev", "(deg", "(rad")
+        )
+
+    def _curve_supports_reference(self, curve: Dict[str, Any]) -> bool:
+        return not self._curve_is_distribution_histogram(curve)
+
+    def _reference_supported(self) -> bool:
+        visible = [c for c in self._curves if c.get("visible", True)]
+        if not visible:
+            # Nothing plotted yet — keep the panel available (neutral state).
+            return True
+        return any(self._curve_supports_reference(c) for c in visible)
+
+    def _update_reference_availability(self) -> None:
+        if not hasattr(self, "_ref_group"):
+            return
+        self._ref_group.setVisible(self._reference_supported())
+
     def _apply_curve_convolution_1d(
         self, curve: Dict[str, Any], x: np.ndarray, y: np.ndarray
     ) -> np.ndarray:
@@ -3099,6 +3182,264 @@ class SinglePlotPage(QWidget):
         self._refresh_curve_list()
         self._render_plot()
 
+    # =====================================================================
+    # Single-plot configuration save / load
+    # =====================================================================
+
+    # Style/state keys persisted per curve (data arrays and callables excluded).
+    _CONFIG_STYLE_KEYS = (
+        "label", "visible", "color", "drawstyle", "linestyle", "linewidth",
+        "marker", "markersize", "alpha", "zorder", "axis_x", "axis_y",
+        "bin_factor", "conv_enabled", "conv_sigma", "conv_sigma_depth",
+        "conv_sigma_lateral", "scan_area", "is_depth_profile", "render_mode",
+        "contour_levels", "label_contours", "x_label", "y_label",
+        "colorbar_label",
+    )
+
+    def _save_plot_config(self) -> None:
+        if not self._curves:
+            QMessageBox.information(self, "Save Plot Config",
+                                    "There are no curves to save.")
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save Single Plot Configuration", get_last_used_directory(),
+            "Single Plot Config (*.spc.json);;JSON Files (*.json);;All Files (*)",
+        )
+        if not path:
+            return
+        if not path.lower().endswith(".json"):
+            path += ".spc.json"
+        config_dir = os.path.dirname(os.path.abspath(path))
+
+        curves_out: List[Dict[str, Any]] = []
+        skipped: List[str] = []
+        for curve in self._curves:
+            entry: Dict[str, Any] = {k: curve[k] for k in self._CONFIG_STYLE_KEYS if k in curve}
+            entry["is_2d"] = bool(curve.get("is_2d"))
+            entry["source_id"] = str(curve.get("source_id", ""))
+            src = str(curve.get("source_path") or "")
+            if src and os.path.isdir(src):
+                # Reference the data source by a path relative to the config file.
+                try:
+                    entry["source_path_rel"] = os.path.relpath(src, config_dir)
+                except ValueError:
+                    entry["source_path_rel"] = src
+            elif curve.get("is_2d"):
+                # 2-D curves without an external directory (e.g. convolved
+                # overlays) cannot be re-read from disk and are skipped.
+                skipped.append(str(curve.get("label", "?")))
+                continue
+            else:
+                # No external source (derived/convolved 1-D curve): embed data.
+                entry["data"] = {
+                    "x": np.asarray(curve.get("x", []), dtype=float).tolist(),
+                    "y": np.asarray(curve.get("y_original", []), dtype=float).tolist(),
+                }
+            curves_out.append(entry)
+
+        payload = {
+            "format": "OpenSRIM.singleplot",
+            "version": 1,
+            "axes": dict(self._axes_state),
+            "font_size": float(self._font_size),
+            "beam_from_top": bool(getattr(self, "_beam_from_top", True)),
+            "curves": curves_out,
+        }
+        try:
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(payload, fh, indent=2)
+        except OSError as exc:
+            QMessageBox.warning(self, "Save Plot Config",
+                                f"Unable to save configuration:\n{exc}")
+            return
+        remember_last_used_path(path)
+        msg = f"Saved {len(curves_out)} curve(s) to {os.path.basename(path)}."
+        if skipped:
+            msg += "\n\nSkipped (no re-loadable data source):\n- " + "\n- ".join(skipped)
+        QMessageBox.information(self, "Save Plot Config", msg)
+
+    def _load_plot_config(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load Single Plot Configuration", get_last_used_directory(),
+            "Single Plot Config (*.spc.json);;JSON Files (*.json);;All Files (*)",
+        )
+        if not path:
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                payload = json.load(fh)
+        except (OSError, json.JSONDecodeError) as exc:
+            QMessageBox.warning(self, "Load Plot Config",
+                                f"Unable to read configuration:\n{exc}")
+            return
+        if not isinstance(payload, dict) or payload.get("format") != "OpenSRIM.singleplot":
+            QMessageBox.warning(self, "Load Plot Config",
+                                "This file is not a single-plot configuration.")
+            return
+
+        config_dir = os.path.dirname(os.path.abspath(path))
+        try:
+            from ui.pages.mcresults_page import _build_plots_from_directory
+        except ImportError:
+            from OpenSRIM.ui.pages.mcresults_page import _build_plots_from_directory  # type: ignore
+
+        self._curves = []
+        self._refresh_curve_list()
+
+        dir_cache: Dict[str, Any] = {}
+        missing: List[str] = []
+
+        for entry in payload.get("curves", []):
+            if not isinstance(entry, dict):
+                continue
+            is_2d = bool(entry.get("is_2d"))
+            source_id = str(entry.get("source_id", ""))
+            label = str(entry.get("label", "")) or source_id
+            dataset = None
+
+            rel = entry.get("source_path_rel")
+            if rel:
+                abs_dir = os.path.normpath(os.path.join(config_dir, rel))
+                if abs_dir not in dir_cache:
+                    if os.path.isdir(abs_dir):
+                        try:
+                            dir_cache[abs_dir] = _build_plots_from_directory(abs_dir)[0]
+                        except Exception:
+                            dir_cache[abs_dir] = None
+                    else:
+                        dir_cache[abs_dir] = None
+                plots = dir_cache[abs_dir]
+                if not plots:
+                    missing.append(f"{label}  ←  {rel}")
+                    continue
+                dataset = self._dataset_from_plots(plots, source_id, is_2d, abs_dir)
+                if dataset is None:
+                    missing.append(f"{label}  (series not found in {rel})")
+                    continue
+            elif "data" in entry and not is_2d:
+                d = entry["data"]
+                dataset = {
+                    "id": source_id or "loaded",
+                    "name": label,
+                    "x": np.asarray(d.get("x", []), dtype=float),
+                    "y": np.asarray(d.get("y", []), dtype=float),
+                    "x_label": str(entry.get("x_label", "")),
+                    "y_label": str(entry.get("y_label", "")),
+                    "is_depth_profile": bool(entry.get("is_depth_profile", True)),
+                }
+            else:
+                missing.append(label)
+                continue
+
+            if not self.add_dataset_as_curve(dataset, label=label):
+                missing.append(label)
+                continue
+            self._apply_curve_style(self._curves[-1], entry)
+
+        # Restore axes / global view state.
+        axes = payload.get("axes")
+        if isinstance(axes, dict):
+            self._axes_state.update(axes)
+            self._sync_axes_inputs()
+        try:
+            self.set_font_size(float(payload.get("font_size", self._font_size)))
+        except (TypeError, ValueError):
+            pass
+        if "beam_from_top" in payload:
+            self.set_beam_from_top(bool(payload.get("beam_from_top")))
+
+        self._refresh_curve_list()
+        self._render_plot()
+
+        if missing:
+            QMessageBox.warning(
+                self, "Load Plot Config",
+                "The following curves could not be loaded because their data "
+                "source is missing:\n\n- " + "\n- ".join(missing),
+            )
+
+    def _dataset_from_plots(self, plots: Dict[str, Any], source_id: str,
+                            is_2d: bool, path: str) -> Optional[Dict[str, Any]]:
+        """Reconstruct a dataset entry for *source_id* from freshly-read plots."""
+        if is_2d:
+            info = plots.get(source_id)
+            if not isinstance(info, dict):
+                return None
+            return {
+                "id": source_id,
+                "name": str(info.get("name", source_id)),
+                "path": path,
+                "is_2d": True,
+                "plot_info": dict(info),
+            }
+        plot_id, sep, idx_s = source_id.rpartition("__")
+        if not sep:
+            return None
+        try:
+            i = int(idx_s)
+        except ValueError:
+            return None
+        info = plots.get(plot_id)
+        if not isinstance(info, dict):
+            return None
+        cols = info.get("columns")
+        x_vals = info.get("x_values")
+        if cols is None or x_vals is None or i < 0 or i >= len(cols):
+            return None
+        labels = list(info.get("series_labels", []) or [])
+        series_label = labels[i] if i < len(labels) else f"Series {i}"
+        return {
+            "id": source_id,
+            "name": f"{info.get('name', plot_id)} — {series_label}",
+            "x": np.asarray(x_vals, dtype=float),
+            "y": np.asarray(cols[i], dtype=float),
+            "x_label": str(info.get("x_label", "")),
+            "y_label": str(info.get("y_label", "")),
+            "path": path,
+            "is_depth_profile": bool(info.get("is_depth_profile", False)),
+        }
+
+    def _apply_curve_style(self, curve: Dict[str, Any], entry: Dict[str, Any]) -> None:
+        """Apply persisted style/state values from *entry* onto *curve*."""
+        for key in self._CONFIG_STYLE_KEYS:
+            if key in entry:
+                curve[key] = entry[key]
+
+    def _sync_axes_inputs(self) -> None:
+        """Push the current ``_axes_state`` into the axes input widgets."""
+        text_widgets = {
+            "title": getattr(self, "_title_edit", None),
+            "xlabel": getattr(self, "_xlabel_edit", None),
+            "xlabel_top": getattr(self, "_xlabel_top_edit", None),
+            "ylabel": getattr(self, "_ylabel_edit", None),
+            "ylabel_right": getattr(self, "_ylabel_right_edit", None),
+        }
+        for key, widget in text_widgets.items():
+            if widget is not None:
+                widget.blockSignals(True)
+                widget.setText(str(self._axes_state.get(key, "")))
+                widget.blockSignals(False)
+        flag_widgets = {
+            "log_x": getattr(self, "_log_x_check", None),
+            "log_y": getattr(self, "_log_y_check", None),
+            "log_x_top": getattr(self, "_log_x_top_check", None),
+            "log_y_right": getattr(self, "_log_y_right_check", None),
+            "grid": getattr(self, "_grid_check", None),
+            "legend": getattr(self, "_legend_check", None),
+        }
+        for key, widget in flag_widgets.items():
+            if widget is not None:
+                widget.blockSignals(True)
+                widget.setChecked(bool(self._axes_state.get(key, False)))
+                widget.blockSignals(False)
+        loc_widget = getattr(self, "_legend_loc_cmb", None)
+        if loc_widget is not None:
+            idx = loc_widget.findText(str(self._axes_state.get("legend_loc", "best")))
+            if idx >= 0:
+                loc_widget.blockSignals(True)
+                loc_widget.setCurrentIndex(idx)
+                loc_widget.blockSignals(False)
+
     def _add_convolution_as_dataset(self) -> None:
         curve = self._ensure_curve_selected()
         if curve is None:
@@ -3134,14 +3475,17 @@ class SinglePlotPage(QWidget):
             new_curve["conv_sigma"] = 0.0
             new_curve["conv_sigma_depth"] = 0.0
             new_curve["conv_sigma_lateral"] = 0.0
-            new_curve["render_mode"] = "contour"
+            # The convolved copy inherits the source's render mode, so a
+            # colormesh source yields a colormesh result (switchable per curve
+            # via the "2D render" dropdown). Toggle the source's visibility to
+            # compare the two meshes, or set one to contour to overlay them.
+            new_curve["render_mode"] = curve.get("render_mode") or "mesh"
             new_curve["color"] = self._next_cycle_color()
             new_curve["zorder"] = int(curve.get("zorder", 2)) + 1
-            curve["render_mode"] = "contour"
             self._next_curve_id += 1
             self._curves.append(new_curve)
             self._refresh_curve_list(select_last=True)
-            self._render_plot()
+            self._render_plot_keep_view()
             return
 
         sigma = self._effective_curve_sigma(curve)
@@ -3183,7 +3527,120 @@ class SinglePlotPage(QWidget):
         self._next_curve_id += 1
         self._curves.append(new_curve)
         self._refresh_curve_list(select_last=True)
-        self._render_plot()
+        self._render_plot_keep_view()
+
+    @staticmethod
+    def _fmt_sigma(value: float) -> str:
+        return f"{float(value):g}"
+
+    @staticmethod
+    def _parse_sigma_list(text: str) -> List[float]:
+        """Parse a comma/space separated list of positive σ values, keeping
+        order and dropping duplicates / non-positive / unparsable tokens."""
+        cleaned = str(text).replace(";", " ").replace(",", " ")
+        values: List[float] = []
+        seen: set = set()
+        for tok in cleaned.split():
+            try:
+                v = float(tok)
+            except ValueError:
+                continue
+            if v <= 0.0:
+                continue
+            key = round(v, 9)
+            if key in seen:
+                continue
+            seen.add(key)
+            values.append(v)
+        return values
+
+    def _add_multi_sigma_comparison(self) -> None:
+        curve = self._ensure_curve_selected()
+        if curve is None:
+            QMessageBox.information(
+                self,
+                "σ Comparison",
+                "Load or select a curve first.",
+            )
+            return
+        sigmas = self._parse_sigma_list(self._multi_sigma_edit.text())
+        if not sigmas:
+            QMessageBox.information(
+                self,
+                "σ Comparison",
+                "Enter one or more positive σ values, e.g. 10, 25, 50.",
+            )
+            return
+        if curve.get("is_2d"):
+            added = self._add_multi_sigma_2d(curve, sigmas)
+        else:
+            added = self._add_multi_sigma_1d(curve, sigmas)
+        if added:
+            self._refresh_curve_list(select_last=True)
+            self._render_plot_keep_view()
+
+    def _add_multi_sigma_1d(self, curve: Dict[str, Any], sigmas: List[float]) -> int:
+        x = np.asarray(curve.get("x", []), dtype=float)
+        y = np.asarray(curve.get("y_original", []), dtype=float)
+        if x.size == 0 or y.size != x.size:
+            return 0
+        bf = int(curve.get("bin_factor", 1) or 1)
+        if bf > 1:
+            x, y = self._rebin_curve(x, y, bf)
+        scan_area = self._curve_scan_area(curve)
+        base_label = str(curve["label"])
+        base_zorder = int(curve.get("zorder", 2))
+        added = 0
+        for sigma in sigmas:
+            y_conv = self._gauss_convolve(x, y, sigma, scan_area=scan_area)
+            new_curve = dict(curve)
+            new_curve["id"] = self._next_curve_id
+            new_curve["label"] = f"{base_label} (σ={self._fmt_sigma(sigma)} Å)"
+            new_curve["x"] = x.copy()
+            new_curve["y_original"] = y_conv.copy()
+            new_curve["drawstyle"] = "default"
+            new_curve["linestyle"] = "--"
+            new_curve["conv_enabled"] = False
+            new_curve["conv_sigma"] = 0.0
+            new_curve["conv_sigma_depth"] = 0.0
+            new_curve["conv_sigma_lateral"] = 0.0
+            new_curve["bin_factor"] = 1
+            new_curve["color"] = self._next_cycle_color()
+            new_curve["zorder"] = base_zorder + 1 + added
+            self._next_curve_id += 1
+            self._curves.append(new_curve)
+            added += 1
+        return added
+
+    def _add_multi_sigma_2d(self, curve: Dict[str, Any], sigmas: List[float]) -> int:
+        x = np.asarray(curve.get("x_values_2d", []), dtype=float)
+        y = np.asarray(curve.get("y_values_2d", []), dtype=float)
+        z = np.asarray(curve.get("z_values_2d", []), dtype=float)
+        if x.size < 2 or y.size < 2 or z.size == 0:
+            return 0
+        scan_area = curve.get("scan_area")
+        base_label = str(curve["label"])
+        base_zorder = int(curve.get("zorder", 2))
+        # The source keeps its render mode (typically a colormesh, so the
+        # colour scale stays); each σ variant is overlaid as contour lines.
+        added = 0
+        for sigma in sigmas:
+            z_conv = self._gauss_convolve_2d(x, y, z, sigma, sigma, scan_area=scan_area)
+            new_curve = dict(curve)
+            new_curve["id"] = self._next_curve_id
+            new_curve["label"] = f"{base_label} (σ={self._fmt_sigma(sigma)} Å)"
+            new_curve["z_values_2d"] = z_conv
+            new_curve["conv_enabled"] = False
+            new_curve["conv_sigma"] = 0.0
+            new_curve["conv_sigma_depth"] = 0.0
+            new_curve["conv_sigma_lateral"] = 0.0
+            new_curve["render_mode"] = "contour"
+            new_curve["color"] = self._next_cycle_color()
+            new_curve["zorder"] = base_zorder + 1 + added
+            self._next_curve_id += 1
+            self._curves.append(new_curve)
+            added += 1
+        return added
 
     def _on_label_edited(self, text: str) -> None:
         curve = self._selected_curve()
@@ -3355,7 +3812,8 @@ class SinglePlotPage(QWidget):
                 target_spin.blockSignals(True)
                 target_spin.setValue(sigma_default)
                 target_spin.blockSignals(False)
-        self._render_plot()
+        # Toggling convolution must not snap the view back to autoscale.
+        self._render_plot_keep_view()
 
     def _on_sigma_changed(self, v: float) -> None:
         curve = self._ensure_curve_selected()
@@ -3364,7 +3822,7 @@ class SinglePlotPage(QWidget):
         curve["conv_sigma_lateral"] = float(v)
         curve["conv_sigma"] = float(v)
         if curve.get("conv_enabled"):
-            self._render_plot()
+            self._render_plot_keep_view()
 
     def _on_depth_sigma_changed(self, v: float) -> None:
         curve = self._ensure_curve_selected()
@@ -3376,7 +3834,7 @@ class SinglePlotPage(QWidget):
             self._sigma_2d_x_spin.setValue(float(v))
             self._sigma_2d_x_spin.blockSignals(False)
         if curve.get("conv_enabled"):
-            self._render_plot()
+            self._render_plot_keep_view()
 
     def _on_sigma_2d_changed(self, _v: float) -> None:
         curve = self._ensure_curve_selected()
@@ -3392,7 +3850,7 @@ class SinglePlotPage(QWidget):
         self._sigma_spin.setValue(curve["conv_sigma_lateral"])
         self._sigma_spin.blockSignals(False)
         if curve.get("conv_enabled"):
-            self._render_plot()
+            self._render_plot_keep_view()
 
     def _on_scan_area_changed(self, _v: float) -> None:
         curve = self._ensure_curve_selected()
@@ -3403,7 +3861,7 @@ class SinglePlotPage(QWidget):
             float(self._scan_area_max.value()),
         ]
         if curve.get("conv_enabled"):
-            self._render_plot()
+            self._render_plot_keep_view()
 
     def _on_twod_render_mode_changed(self, _idx: int) -> None:
         curve = self._selected_curve()
@@ -3682,6 +4140,26 @@ class SinglePlotPage(QWidget):
         return np.convolve(y, kernel, mode="same")
 
     def _render_plot(self) -> None:
+        # Keep the Reference Image panel hidden where it makes no sense
+        # (energy / angle histograms) and visible for spatial / 2-D curves.
+        self._update_reference_availability()
+
+        # Optionally preserve the current view (zoom/pan section) across this
+        # re-render. Set by operations that should not snap back to autoscale,
+        # e.g. applying a convolution after the user changed the plot section.
+        preserve_view = getattr(self, "_preserve_view_once", False)
+        self._preserve_view_once = False
+        self._saved_view_limits = None
+        if preserve_view:
+            try:
+                cur_xlim = self.ax.get_xlim()
+                cur_ylim = self.ax.get_ylim()
+                # Ignore the matplotlib default (0,1)x(0,1) of an empty axes.
+                if cur_xlim != (0.0, 1.0) or cur_ylim != (0.0, 1.0):
+                    self._saved_view_limits = (cur_xlim, cur_ylim)
+            except Exception:
+                self._saved_view_limits = None
+
         # Recreate axes from scratch every render — this is the cleanest way
         # to handle twin axes appearing / disappearing as curves change.
         self.figure.clf()
@@ -3706,10 +4184,13 @@ class SinglePlotPage(QWidget):
         visible_2d = [c for c in self._curves if c.get("is_2d") and c.get("visible", True)]
         if visible_2d:
             try:
-                use_contours = len(visible_2d) > 1 or any(
-                    (c.get("render_mode") or "mesh") == "contour" for c in visible_2d
-                )
+                # Each 2-D curve renders by its own mode: a "mesh" curve draws
+                # a filled colormesh (with colour scale), a "contour" curve
+                # draws overlaid contour lines. This lets several 2-D datasets
+                # coexist — e.g. one colormesh background plus convolved
+                # contour overlays — instead of collapsing everything to lines.
                 colorbar = None
+                colorbar_added = False
                 legend_lines: list = []
                 if self._ref_image_data is not None:
                     base = visible_2d[0]
@@ -3730,7 +4211,7 @@ class SinglePlotPage(QWidget):
                     data = self._current_2d_data(curve)
                     if x.size == 0 or y.size == 0 or data.size == 0:
                         continue
-                    if use_contours:
+                    if (curve.get("render_mode") or "mesh") == "contour":
                         levels_count = max(2, int(curve.get("contour_levels", 8) or 8))
                         vmax = float(np.max(data))
                         if vmax <= 0.0:
@@ -3775,9 +4256,13 @@ class SinglePlotPage(QWidget):
                             cmap="viridis",
                             alpha=float(curve.get("alpha", 1.0)),
                         )
-                        colorbar = self.figure.colorbar(mesh, ax=self.ax)
-                        if curve.get("colorbar_label"):
-                            colorbar.set_label(str(curve.get("colorbar_label")))
+                        # Only the first mesh owns the colour scale; further
+                        # meshes still draw but don't stack extra colorbars.
+                        if not colorbar_added:
+                            colorbar = self.figure.colorbar(mesh, ax=self.ax)
+                            if curve.get("colorbar_label"):
+                                colorbar.set_label(str(curve.get("colorbar_label")))
+                            colorbar_added = True
                 if getattr(self, "_beam_from_top", True):
                     self.ax.invert_yaxis()
                 self.ax.set_aspect("equal", adjustable="box")
@@ -3785,7 +4270,7 @@ class SinglePlotPage(QWidget):
                     self.ax.grid(True, alpha=0.25)
                 else:
                     self.ax.grid(False)
-                if use_contours and legend_lines and self._axes_state.get("legend"):
+                if legend_lines and self._axes_state.get("legend"):
                     self.ax.legend(
                         legend_lines,
                         [ln.get_label() for ln in legend_lines],
@@ -3823,6 +4308,7 @@ class SinglePlotPage(QWidget):
                 self.figure.tight_layout()
             except Exception:
                 pass
+            self._restore_saved_view(self.ax)
             self.canvas.draw_idle()
             sel = self._selected_curve()
             if sel is not None:
@@ -3883,7 +4369,9 @@ class SinglePlotPage(QWidget):
             any_plotted = True
 
         # Reference image: drawn under the curves, spanning the data extent.
-        if self._ref_image_data is not None and any_plotted:
+        # Only overlaid for spatial profiles — never under energy/angle
+        # distribution histograms, where axis scaling is arbitrary.
+        if self._ref_image_data is not None and any_plotted and self._reference_supported():
             try:
                 xlim = ax_BL.get_xlim()
                 ylim = ax_BL.get_ylim()
@@ -3961,12 +4449,31 @@ class SinglePlotPage(QWidget):
             self.figure.tight_layout()
         except Exception:
             pass
+        self._restore_saved_view(ax_BL)
         self.canvas.draw_idle()
 
         # Stats follow the currently selected curve (if any)
         sel = self._selected_curve()
         if sel is not None:
             self._populate_stats_for(sel)
+
+    def _restore_saved_view(self, ax) -> None:
+        """Re-apply the view limits captured before a preserve-view re-render."""
+        limits = getattr(self, "_saved_view_limits", None)
+        if not limits or ax is None:
+            return
+        xlim, ylim = limits
+        try:
+            ax.set_xlim(xlim)
+            ax.set_ylim(ylim)
+        except Exception:
+            pass
+        self._saved_view_limits = None
+
+    def _render_plot_keep_view(self) -> None:
+        """Re-render while preserving the current zoom/pan section."""
+        self._preserve_view_once = True
+        self._render_plot()
 
 
 # =====================================================================
@@ -3986,6 +4493,7 @@ class ResultsSidebar(QWidget):
     plot_bin_factor_changed = pyqtSignal(str, int)
     advanced_requested = pyqtSignal(str)
     load_directory_requested = pyqtSignal(str)  # emits the chosen directory path
+    unload_requested = pyqtSignal()             # clear the current results tab
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -4092,19 +4600,21 @@ class ResultsSidebar(QWidget):
         btn_row.addWidget(self._btn_none)
         multi_layout.addLayout(btn_row)
 
-        self._btn_load_data = QPushButton("Load Output Directory…")
+        load_row = QHBoxLayout()
+        self._btn_load_data = QPushButton("Load Directory…")
         self._btn_load_data.setToolTip("Pick a previous simulation output directory")
         self._btn_load_data.clicked.connect(self._open_load_data_dialog)
-        multi_layout.addWidget(self._btn_load_data)
+        load_row.addWidget(self._btn_load_data, 1)
+
+        self._btn_unload_data = QPushButton("Unload")
+        self._btn_unload_data.setToolTip("Clear the results currently shown in this tab")
+        self._btn_unload_data.clicked.connect(self.unload_requested)
+        load_row.addWidget(self._btn_unload_data)
+        multi_layout.addLayout(load_row)
 
         self._btn_display_settings = QToolButton()
+        self._btn_display_settings.setText("⚙")
         self._btn_display_settings.setToolTip("Open Advanced Options > Display Settings")
-        self._btn_display_settings.setAutoRaise(True)
-        self._btn_display_settings.setIconSize(QSize(18, 18))
-        icon = QIcon.fromTheme("preferences-system")
-        if icon.isNull():
-            icon = self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView)
-        self._btn_display_settings.setIcon(icon)
         self._btn_display_settings.setCursor(Qt.CursorShape.PointingHandCursor)
         self._btn_display_settings.clicked.connect(
             lambda: self.advanced_requested.emit("display_settings")
@@ -4756,6 +5266,8 @@ class MCResultsWidget(QWidget):
         self.sidebar.plot_bin_factor_changed.connect(self.plot_area.set_plot_bin_factor)
         # Sidebar "Load Output Directory" → bubble to parent page
         self.sidebar.load_directory_requested.connect(self.load_directory_requested)
+        # Sidebar "Unload" → clear this tab's results
+        self.sidebar.unload_requested.connect(self.unload_results)
 
         # Default mode: multiple plots
         self._on_mode_changed(True)
@@ -4820,6 +5332,10 @@ class MCResultsWidget(QWidget):
         self.sidebar.update_available_plots(plots)
         self.sidebar.update_numerical_values(numerical_values)
         self.plot_area.set_visible_plots(list(plots.keys()))
+
+    def unload_results(self) -> None:
+        """Clear all plots and numerical values shown in this results tab."""
+        self.set_results({}, {"rows": [], "atom_table": None})
 
 
 # =====================================================================

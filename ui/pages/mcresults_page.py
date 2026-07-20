@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 import numpy as np
 from PyQt6.QtCore import pyqtSignal
@@ -252,20 +252,21 @@ def _build_yields_rows(all_moments: Dict[str, dict], total_ions: float) -> List[
     return rows
 
 
-def _best_species_moments(moment_dict: Dict[str, Dict[str, float]]) -> Optional[Dict[str, float]]:
-    """Pick ion moments first, otherwise the first non-empty species."""
-    for species, vals in moment_dict.items():
-        _elem, kind = _parse_species(species)
-        if kind == "ion":
-            return vals
-    for vals in moment_dict.values():
-        if float(vals.get("total", 0.0) or 0.0) > 0.0:
-            return vals
-    return None
+def _ordered_species(moment_dict: Dict[str, Dict[str, float]]) -> List[str]:
+    """Species names with the ion first, remaining species in file order."""
+    return sorted(
+        moment_dict.keys(),
+        key=lambda s: 0 if _parse_species(s)[1] in ("ion", "") else 1,
+    )
 
 
 def _build_moment_rows(all_moments: Dict[str, dict]) -> List[Dict[str, Any]]:
-    """Build accordion-ready moment rows; groups are collapsed by default."""
+    """Build accordion-ready moment rows; groups are collapsed by default.
+
+    Every species found in the .mom file (ion, vacancies, interstitials, …)
+    gets its own accordion group. Statistical errors are shown inline as
+    ``value ± error``.
+    """
     groups = [
         ("x", "Projected Range", "length_a"),
         ("y", "Lateral Range", "length_a"),
@@ -281,44 +282,52 @@ def _build_moment_rows(all_moments: Dict[str, dict]) -> List[Dict[str, Any]]:
 
     rows: List[Dict[str, Any]] = []
     for key, title, quantity in groups:
-        best = _best_species_moments(all_moments.get(key, {}))
-        if not best:
-            continue
-        mean = float(best.get("mean", 0.0) or 0.0)
-        std = float(best.get("std", 0.0) or 0.0)
-        skew = float(best.get("skewness", 0.0) or 0.0)
-        kurt = float(best.get("kurtosis", 0.0) or 0.0)
-        if mean == 0.0 and std == 0.0 and skew == 0.0 and kurt == 0.0:
-            continue
+        moment_dict = all_moments.get(key, {})
+        species_names = _ordered_species(moment_dict)
 
-        group_id = f"mom::{key}"
-        rows.append({
-            "name": title,
-            "value": "",
-            "row_type": "group",
-            "group": group_id,
-            "collapsed": True,
-        })
-
-        child_rows = [
-            ("Mean", mean, float(best.get("mean_err", 0.0) or 0.0), quantity),
-            ("Standard Deviation", std, float(best.get("std_err", 0.0) or 0.0), quantity),
-            ("Skewness", skew, None, ""),
-            ("Kurtosis", kurt, None, ""),
-        ]
-        for label, val, err, row_quantity in child_rows:
-            if val == 0.0 and (err is None or err == 0.0):
+        # Collect the species that actually carry data so single-species
+        # groups keep their plain title (no species suffix).
+        blocks: List[tuple] = []
+        for species in species_names:
+            vals = moment_dict[species]
+            mean = float(vals.get("mean", 0.0) or 0.0)
+            std = float(vals.get("std", 0.0) or 0.0)
+            skew = float(vals.get("skewness", 0.0) or 0.0)
+            kurt = float(vals.get("kurtosis", 0.0) or 0.0)
+            if mean == 0.0 and std == 0.0 and skew == 0.0 and kurt == 0.0:
                 continue
-            tip = None
-            if err is not None and err > 0.0:
-                tip = f"Error: {_fmt_scaled(err, row_quantity)}"
+            blocks.append((species, mean, std, skew, kurt, vals))
+
+        for species, mean, std, skew, kurt, vals in blocks:
+            group_id = f"mom::{key}::{species}"
+            name = title if len(blocks) == 1 else f"{title} – {species}"
             rows.append({
-                "name": label,
-                "value": _fmt_scaled(val, row_quantity),
-                "row_type": "child",
+                "name": name,
+                "value": "",
+                "row_type": "group",
                 "group": group_id,
-                "tooltip": tip,
+                "collapsed": True,
             })
+
+            child_rows = [
+                ("Mean", mean, float(vals.get("mean_err", 0.0) or 0.0), quantity),
+                ("Standard Deviation", std, float(vals.get("std_err", 0.0) or 0.0), quantity),
+                ("Skewness", skew, float(vals.get("skewness_err", 0.0) or 0.0), ""),
+                ("Kurtosis", kurt, float(vals.get("kurtosis_err", 0.0) or 0.0), ""),
+            ]
+            for label, val, err, row_quantity in child_rows:
+                if val == 0.0 and err == 0.0:
+                    continue
+                value_text = _fmt_scaled(val, row_quantity)
+                if err > 0.0:
+                    value_text += f" ± {_fmt_scaled(err, row_quantity)}"
+                rows.append({
+                    "name": label,
+                    "value": value_text,
+                    "row_type": "child",
+                    "group": group_id,
+                    "tooltip": f"Statistical error: {_fmt_scaled(err, row_quantity)}" if err > 0.0 else None,
+                })
 
     return rows
 

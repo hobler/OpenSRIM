@@ -7,7 +7,7 @@ import numba as nb
 from . import cascade
 from .mytypes import Projectile, PROJ_DTYPE, PROJ_NUMBA_DTYPE
 from .stats import merge_stats, zero_stats
-from .process_data import write_stats, save_progress, is_stop_requested
+from .process_data import write_stats, save_progress
 
 
 empty_stats = None
@@ -139,7 +139,7 @@ def simulate_chunked(chunk_size, nion, params, stats, input_params=None, upd_cal
     def _process_chunks(chunk_size, sim_idx):
         if chunk_size == 0:
             return
-
+        
         simulate(
             chunk_size,
             params,
@@ -153,22 +153,11 @@ def simulate_chunked(chunk_size, nion, params, stats, input_params=None, upd_cal
         if upd_callback:
             upd_callback(sim_idx+chunk_size, nion, stats)
             # TODO: make use of callback to return user stop request; break
-
+        
     processed_count = 0
-    stopped = False
     while processed_count < nion:
         current_batch = min(chunk_size, nion - processed_count)
         _process_chunks(current_batch, processed_count)
         processed_count += current_batch
-        # Cooperative cancellation: the UI creates a "stop_requested" file in the
-        # working directory; finish the current chunk (already saved above) and
-        # exit gracefully, keeping the valid partial results.
-        if input_params and is_stop_requested(input_params):
-            stopped = True
-            break
-
-    if input_params:
-        save_progress(input_params, processed_count, nion,
-                      status="stopped" if stopped else "done")
 
     return

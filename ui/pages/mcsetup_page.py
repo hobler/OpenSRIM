@@ -700,7 +700,7 @@ class MCSetupPage(QWidget):
         header_l = QHBoxLayout(header)
         header_l.setContentsMargins(0, 0, 0, 0)
         header_l.setSpacing(6)
-        title_lbl = QLabel("Target layer selection", header)
+        title_lbl = QLabel("Target layers", header)
         title_lbl.setStyleSheet("font-weight: 600;")
         header_l.addWidget(title_lbl)
         header_l.addWidget(self._hint_btn("target_layers", parent=header))
@@ -745,6 +745,9 @@ class MCSetupPage(QWidget):
         self.density_unit_combo.addItems(["g/cm³", "kg/m³", "atoms/cm³"])
         self.density_unit_combo.setCurrentText("g/cm³")
         self.density_unit_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        # Remember the active unit so a unit switch can convert displayed values.
+        self._density_unit_prev = "g/cm³"
+        self.density_unit_combo.currentTextChanged.connect(self._on_density_unit_changed)
         layers_hdr.set_header_widget(4, self.density_unit_combo)  # "Density" column
 
         self.seed_layer_row(0)
@@ -1396,6 +1399,14 @@ class MCSetupPage(QWidget):
         self._set_working_directory(path)
 
         directory = Path(path)
+
+        # If this directory belongs to a simulation that is still running
+        # (status file says "running"), attach to it: the Run button becomes
+        # a Stop button and progress is monitored from the files.
+        if not getattr(self, "_sim_running", False) and self._directory_run_active(directory):
+            self._attach_external_run(directory)
+            return
+
         toml_path = self._find_toml_in_directory(directory)
         if toml_path is not None:
             msg = QMessageBox(self)
@@ -1644,11 +1655,14 @@ class MCSetupPage(QWidget):
         btn_row.addWidget(clear_btn)
 
         btn_row.addStretch(1)
-        layout.addLayout(btn_row)
 
+        # Close shares the same row as Copy Selected / Clear Logs, aligned to
+        # the right edge.
         button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         button_box.rejected.connect(dialog.reject)
-        layout.addWidget(button_box)
+        btn_row.addWidget(button_box)
+
+        layout.addLayout(btn_row)
 
         self._logs_dialog = dialog
         self._logs_list_widget = list_widget
@@ -2004,6 +2018,14 @@ class MCSetupPage(QWidget):
         if angle_max <= angle_min:
             angle_min, angle_max = -90.0, 90.0
 
+        # The beam energy is entered in keV but the simulator works internally in
+        # eV (init_params multiplies the beam energy by 1000). The backscattered/
+        # transmitted energy histograms therefore have to use eV limits, otherwise
+        # virtually every scored ion lands in the overflow bin and only a few
+        # isolated "needle" counts survive near 0. Convert keV → eV here.
+        energy_min_ev = energy_min * 1000.0
+        energy_max_ev = energy_max * 1000.0
+
         try:
             nbins = int(hs.get("nbins", 120)) if hs.get("enabled") else 120
         except (TypeError, ValueError):
@@ -2054,7 +2076,7 @@ class MCSetupPage(QWidget):
             "[output.backscattered_atoms.energy]",
             f"score = {'true' if out.get('backscattered_energy') else 'false'}",
             f"nbins = {nbins}",
-            f"limits = [{energy_min}, {energy_max}]",
+            f"limits = [{energy_min_ev}, {energy_max_ev}]",
             "",
             "[output.backscattered_atoms.angle]",
             f"score = {'true' if out.get('backscattered_angle') else 'false'}",
@@ -2064,7 +2086,7 @@ class MCSetupPage(QWidget):
             "[output.transmitted_atoms.energy]",
             f"score = {'true' if out.get('transmitted_energy') else 'false'}",
             f"nbins = {nbins}",
-            f"limits = [{energy_min}, {energy_max}]",
+            f"limits = [{energy_min_ev}, {energy_max_ev}]",
             "",
             "[output.transmitted_atoms.angle]",
             f"score = {'true' if out.get('transmitted_angle') else 'false'}",
@@ -2157,6 +2179,23 @@ class MCSetupPage(QWidget):
         if not self.mc_progress or not self.run_button:
             return
 
+        # If a simulation is already running, this button acts as a Stop button.
+        if getattr(self, "_sim_running", False):
+            if getattr(self, "_external_run", False) and getattr(self, "_stop_requested", False):
+                # Second click on an external run that never confirmed the
+                # stop (e.g. its process was killed): detach instead of
+                # waiting forever on a stale "running" status file.
+                if self._progress_timer:
+                    self._progress_timer.stop()
+                self._reset_run_button()
+                self.mc_progress.setFormat("Detached")
+                self.add_log_entry(
+                    f"Detached from unresponsive run in: {self._current_results_dir}"
+                )
+                return
+            self._request_simulation_stop()
+            return
+
         # Validate
         err = self._validate_before_run()
         if err:
@@ -2187,11 +2226,24 @@ class MCSetupPage(QWidget):
         toml_content = self._build_input_toml(str(base_dir))
         toml_path.write_text(toml_content, encoding="utf-8")
 
+        # Remove stale control files from a previous run so the new run is not
+        # cancelled immediately and not misreported as stopped.
+        for control_name in ("stop_requested", "status"):
+            try:
+                (base_dir / control_name).unlink()
+            except OSError:
+                pass
+
         self._current_results_dir = str(base_dir)
         self._current_toml_path = toml_path
         self._current_nions = int(self.no_of_ions_spin.value()) if self.no_of_ions_spin else 10000
 
-        self.run_button.setEnabled(False)
+        # Switch the Run button into Stop mode for the duration of the run.
+        self._sim_running = True
+        self._external_run = False
+        self._stop_requested = False
+        self.run_button.setText("Stop")
+        self.run_button.setEnabled(True)
         self.mc_progress.setValue(0)
         self.mc_progress.setFormat("0% – Starting…")
         self.add_log_entry(f"Simulation started. Config: {toml_path}")
@@ -2229,12 +2281,92 @@ class MCSetupPage(QWidget):
             self._progress_timer.timeout.connect(self._poll_progress)
         self._progress_timer.start(500)
 
+    @staticmethod
+    def _read_run_status(directory: Path) -> str:
+        """Return the content of the status file in *directory* ('' if absent)."""
+        try:
+            status_file = directory / "status"
+            if status_file.is_file():
+                return status_file.read_text(encoding="utf-8").strip().lower()
+        except OSError:
+            pass
+        return ""
+
+    def _directory_run_active(self, directory: Path) -> bool:
+        """True if the status file marks a simulation in *directory* as running."""
+        return self._read_run_status(directory) == "running"
+
+    def _attach_external_run(self, directory: Path) -> None:
+        """Monitor a simulation started elsewhere: Run button becomes Stop.
+
+        The run is tracked purely through its progress/status files; stopping
+        works through the same "stop_requested" file as for own runs.
+        """
+        self._current_results_dir = str(directory)
+        toml_path = directory / "input.toml"
+        self._current_toml_path = toml_path if toml_path.is_file() else None
+
+        self._sim_running = True
+        self._external_run = True
+        self._stop_requested = False
+        self._sim_error = None
+        self._last_update_ions = 0
+
+        if self.run_button:
+            self.run_button.setText("Stop")
+            self.run_button.setEnabled(True)
+        if self.mc_progress:
+            self.mc_progress.setFormat("Running…")
+        self.add_log_entry(
+            f"Running simulation detected in: {directory} – Run button switched to Stop."
+        )
+
+        if not self._progress_timer:
+            self._progress_timer = QTimer(self)
+            self._progress_timer.timeout.connect(self._poll_progress)
+        self._progress_timer.start(500)
+
+    def _request_simulation_stop(self):
+        """Signal the running simulation to stop gracefully after the current chunk."""
+        if not getattr(self, "_sim_running", False):
+            return
+        self._stop_requested = True
+        try:
+            (Path(self._current_results_dir) / "stop_requested").touch()
+        except OSError:
+            pass
+        if self.run_button:
+            self.run_button.setText("Stopping…")
+            # External runs keep the button enabled: a second click detaches
+            # in case the monitored process no longer reacts.
+            self.run_button.setEnabled(getattr(self, "_external_run", False))
+        if self.mc_progress:
+            self.mc_progress.setFormat("Stopping…")
+        self.add_log_entry("Stop requested – finishing current chunk…")
+
+    def _reset_run_button(self):
+        self._sim_running = False
+        self._external_run = False
+        if self.run_button:
+            self.run_button.setText("Run")
+            self.run_button.setEnabled(True)
+
     def _poll_progress(self):
         if not self.mc_progress:
             return
 
-        # Check if thread is still alive
-        thread_alive = hasattr(self, "_sim_thread") and self._sim_thread.is_alive()
+        # Check whether the run is still alive. Own runs are tracked via the
+        # worker thread; attached external runs via their status file.
+        if getattr(self, "_external_run", False):
+            status_text = self._read_run_status(Path(self._current_results_dir))
+            thread_alive = status_text == "running"
+            if status_text == "error":
+                self._sim_error = (
+                    "The simulation process reported an error "
+                    f"(status file in {self._current_results_dir})."
+                )
+        else:
+            thread_alive = hasattr(self, "_sim_thread") and self._sim_thread.is_alive()
 
         # Read progress file
         progress_file = Path(self._current_results_dir) / "progress"
@@ -2263,9 +2395,19 @@ class MCSetupPage(QWidget):
             if self._progress_timer:
                 self._progress_timer.stop()
 
-            # Re-enable button BEFORE any modal dialog
-            if self.run_button:
-                self.run_button.setEnabled(True)
+            # Restore the Run button (also disables Stop mode) BEFORE any dialog.
+            self._reset_run_button()
+
+            stopped = getattr(self, "_stop_requested", False)
+            if not stopped:
+                # The simulator marks a cooperative stop in the status file even
+                # if the request raced the final chunk.
+                try:
+                    status_file = Path(self._current_results_dir) / "status"
+                    if status_file.exists() and status_file.read_text(encoding="utf-8").strip() == "stopped":
+                        stopped = True
+                except OSError:
+                    pass
 
             if self._sim_error:
                 self.mc_progress.setFormat("Error")
@@ -2276,6 +2418,13 @@ class MCSetupPage(QWidget):
                 QTimer.singleShot(0, lambda: QMessageBox.warning(
                     self, "Simulation Error",
                     f"OpenTRIM failed:\n{err_msg[:500]}"))
+            elif stopped:
+                self.mc_progress.setFormat(f"Stopped – {done} ions")
+                self.add_log_entry(
+                    f"Simulation stopped by user after {done} ions. "
+                    f"Partial results saved in: {self._current_results_dir}"
+                )
+                self.simulation_finished.emit(self._current_results_dir)
             else:
                 self.mc_progress.setValue(100)
                 self.mc_progress.setFormat("Complete")
@@ -2523,6 +2672,79 @@ class MCSetupPage(QWidget):
         self._updating_layers_table = True
         item.setText(f"{display_val:.4f}")
         self._updating_layers_table = False
+
+    def _elements_for_row(self, row: int) -> list[dict]:
+        """Build a {symbol, ratio, mass} element list for a layer row."""
+        entries = self.layer_elements[row] if 0 <= row < len(self.layer_elements) else []
+        elements = []
+        for e in entries:
+            elem = e.get("element", {})
+            elements.append({
+                "symbol": elem.get("symbol", ""),
+                "ratio": e.get("ratio", 1.0),
+                "mass": elem.get("atomic_mass", 0.0),
+            })
+        return elements
+
+    def _convert_density(self, value: float, from_unit: str, to_unit: str,
+                         elements: list[dict]) -> float:
+        """Convert a density value between g/cm³, kg/m³ and atoms/cm³.
+
+        g/cm³ ↔ atoms/cm³ requires the layer's average atomic mass; if it is
+        unavailable the value is returned unchanged.
+        """
+        if from_unit == to_unit:
+            return value
+        # Normalize to g/cm³.
+        if from_unit == "g/cm³":
+            g = value
+        elif from_unit == "kg/m³":
+            g = value * 1e-3
+        elif from_unit == "atoms/cm³":
+            m = self._avg_atomic_mass(elements) if elements else 0.0
+            if m <= 0:
+                return value
+            g = value * m / self._N_A
+        else:
+            return value
+        # g/cm³ → target.
+        if to_unit == "g/cm³":
+            return g
+        if to_unit == "kg/m³":
+            return g * 1e3
+        if to_unit == "atoms/cm³":
+            m = self._avg_atomic_mass(elements) if elements else 0.0
+            if m <= 0:
+                return value
+            return g * self._N_A / m
+        return value
+
+    def _on_density_unit_changed(self, new_unit: str) -> None:
+        """Convert the displayed density values when the unit selection changes."""
+        prev = getattr(self, "_density_unit_prev", "g/cm³")
+        if new_unit == prev or not hasattr(self, "layers_table"):
+            self._density_unit_prev = new_unit
+            return
+        data_rows = max(self.layers_table.rowCount() - 1, 0)
+        self._updating_layers_table = True
+        try:
+            for row in range(data_rows):
+                item = self.layers_table.item(row, 4)
+                if item is None:
+                    continue
+                text = item.text().strip()
+                if not text:
+                    continue
+                try:
+                    val = float(text)
+                except ValueError:
+                    continue
+                new_val = self._convert_density(val, prev, new_unit, self._elements_for_row(row))
+                item.setText(f"{new_val:.4f}")
+        finally:
+            self._updating_layers_table = False
+        self._density_unit_prev = new_unit
+        self._emit_histogram_default_settings()
 
     def _handle_layer_item_changed(self, item):
         """Track manual edits to the density column (col 4)."""

@@ -483,13 +483,17 @@ class KoralPage(QWidget):
 
         layout.addWidget(list_widget)
 
+        # Clear Logs and Close share one row (same layout as MC Setup).
+        btn_row = QHBoxLayout()
         clear_btn = QPushButton("Clear Logs")
         clear_btn.clicked.connect(lambda: self._clear_logs(list_widget))
-        layout.addWidget(clear_btn)
+        btn_row.addWidget(clear_btn)
+        btn_row.addStretch(1)
 
         button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         button_box.rejected.connect(dialog.reject)
-        layout.addWidget(button_box)
+        btn_row.addWidget(button_box)
+        layout.addLayout(btn_row)
 
         self._logs_dialog = dialog
         self._logs_list_widget = list_widget

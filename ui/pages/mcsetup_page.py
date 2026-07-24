@@ -31,6 +31,7 @@ class _AdaptiveDecimalSpinBox(QDoubleSpinBox):
         suffix = self.suffix()
         return f"{prefix}{text}{suffix}"
 from ui.widgets.periodic_table_picker import PeriodicTableButton, PeriodicTableDialog
+from ui.widgets.advanced_settings_button import AdvancedSettingsButton
 
 try:
     from simulators.opentrim.read_params import read_params as _read_opentrim_params
@@ -165,6 +166,16 @@ class MCSetupPage(QWidget):
         self._n_absc = 4
         self._electronic_stopping_model = "SRIM"
         self._loaded_model_correction: dict[str, float] = {}
+        # NOTE: these cascade parameters are round-tripped through the UI and
+        # the generated input TOML, but simulators/opentrim does not yet read
+        # them (pending backend work) -- see [cascade] in _build_input_toml.
+        self._pmax_min = 0.0
+        self._pmax_max = 4.0
+        self._psi_min = 5.0
+        self._de_min = 15.0
+        self._psi_min_surface = 5.0
+        self._de_min_surface = 15.0
+        self._replacement_collisions = False
 
         if _read_opentrim_params is not None:
             try:
@@ -172,11 +183,19 @@ class MCSetupPage(QWidget):
                 _sim = _defaults.get("simulation", {})
                 _model = _defaults.get("models", {})
                 _scatter = _model.get("scattering_integrals", {})
+                _cascade = _defaults.get("cascade", {})
                 self._follow_recoils = bool(_sim.get("follow_recoils", self._follow_recoils))
                 self._rng_seed = int(_sim.get("rng_seed", self._rng_seed))
                 self._scattering_algorithm = str(_scatter.get("algorithm", self._scattering_algorithm))
                 self._n_absc = int(_scatter.get("n_absc", self._n_absc))
                 self._electronic_stopping_model = str(_model.get("electronic_stopping", self._electronic_stopping_model))
+                self._pmax_min = float(_cascade.get("pmax_min", self._pmax_min))
+                self._pmax_max = float(_cascade.get("pmax_max", self._pmax_max))
+                self._psi_min = float(_cascade.get("psi_min", self._psi_min))
+                self._de_min = float(_cascade.get("de_min", self._de_min))
+                self._psi_min_surface = float(_cascade.get("psi_min_surface", self._psi_min_surface))
+                self._de_min_surface = float(_cascade.get("de_min_surface", self._de_min_surface))
+                self._replacement_collisions = bool(_cascade.get("replacement_collisions", self._replacement_collisions))
             except Exception:
                 pass
 
@@ -416,6 +435,34 @@ class MCSetupPage(QWidget):
             self.set_rng_seed(int(simulation_meta.get("rng_seed", self._rng_seed)))
         except Exception:
             self._rng_seed = int(simulation_meta.get("rng_seed", self._rng_seed))
+        try:
+            self.set_pmax_min(float(simulation_meta.get("pmax_min", self._pmax_min)))
+        except Exception:
+            self._pmax_min = float(simulation_meta.get("pmax_min", self._pmax_min))
+        try:
+            self.set_pmax_max(float(simulation_meta.get("pmax_max", self._pmax_max)))
+        except Exception:
+            self._pmax_max = float(simulation_meta.get("pmax_max", self._pmax_max))
+        try:
+            self.set_psi_min(float(simulation_meta.get("psi_min", self._psi_min)))
+        except Exception:
+            self._psi_min = float(simulation_meta.get("psi_min", self._psi_min))
+        try:
+            self.set_de_min(float(simulation_meta.get("de_min", self._de_min)))
+        except Exception:
+            self._de_min = float(simulation_meta.get("de_min", self._de_min))
+        try:
+            self.set_psi_min_surface(float(simulation_meta.get("psi_min_surface", self._psi_min_surface)))
+        except Exception:
+            self._psi_min_surface = float(simulation_meta.get("psi_min_surface", self._psi_min_surface))
+        try:
+            self.set_de_min_surface(float(simulation_meta.get("de_min_surface", self._de_min_surface)))
+        except Exception:
+            self._de_min_surface = float(simulation_meta.get("de_min_surface", self._de_min_surface))
+        try:
+            self.set_replacement_collisions(bool(simulation_meta.get("replacement_collisions", self._replacement_collisions)))
+        except Exception:
+            self._replacement_collisions = bool(simulation_meta.get("replacement_collisions", self._replacement_collisions))
         workdir = simulation_meta.get("workdir")
         if isinstance(workdir, str) and workdir:
             self._set_working_directory(workdir)
@@ -650,9 +697,7 @@ class MCSetupPage(QWidget):
         for _w in (self.ion_name, self.ion_z, self.ion_mass, self.ion_energy, self.ion_angle):
             _w.setFixedHeight(_target_h)
 
-        ion_settings_btn = QToolButton(box)
-        ion_settings_btn.setText("⚙")
-        ion_settings_btn.setToolTip("Open ion advanced options")
+        ion_settings_btn = AdvancedSettingsButton("Open ion advanced options", box)
         ion_settings_btn.clicked.connect(lambda: self.advanced_requested.emit("ion_selection_mc"))
         grid.addWidget(ion_settings_btn, 1, 6, Qt.AlignmentFlag.AlignLeft)
 
@@ -1009,9 +1054,7 @@ class MCSetupPage(QWidget):
         dict_btn.clicked.connect(self._open_compound_dictionary)
         header_l.addWidget(dict_btn)
 
-        settings_btn = QToolButton()
-        settings_btn.setText("⚙")
-        settings_btn.setToolTip("Open advanced options")
+        settings_btn = AdvancedSettingsButton("Open advanced options")
         settings_btn.clicked.connect(lambda: self.advanced_requested.emit("atoms_per_layer"))
         header_l.addWidget(settings_btn)
 
@@ -1022,7 +1065,7 @@ class MCSetupPage(QWidget):
         self.elem_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.elem_table.setHorizontalHeaderLabels([
             "", "Symbol", "Name", "Atomic No.", "Weight\n(amu)",
-            "Atom Stoich", "Atom Stoich\n(%)", "Disp", "Latt", "Surf"
+            "Atom Stoich", "Atom Stoich\n(%)", "Disp", "Bulk\nB.E.", "Surf.\nB.E."
         ])
         elem_hdr = _WrapHeaderView(self.elem_table)
         elem_hdr.set_group_header("Damage Energy (eV)", 7, 9)
@@ -1106,9 +1149,7 @@ class MCSetupPage(QWidget):
             combo = QComboBox()
             combo.addItems(items)
             combo.setMinimumWidth(120)
-            btn = QToolButton(box)
-            btn.setText("\u2699")
-            btn.setToolTip(f"Open {signal_id.replace('_', ' ')} advanced options")
+            btn = AdvancedSettingsButton(f"Open {signal_id.replace('_', ' ')} advanced options", box)
             btn.clicked.connect(lambda: self.advanced_requested.emit(signal_id))
             container = QWidget(box)
             h = QHBoxLayout(container)
@@ -1169,9 +1210,7 @@ class MCSetupPage(QWidget):
         title_lbl.setStyleSheet("font-weight: 600;")
         header_l.addWidget(title_lbl)
         header_l.addWidget(self._hint_btn("output", parent=header))
-        output_settings_btn = QToolButton(header)
-        output_settings_btn.setText("⚙")
-        output_settings_btn.setToolTip("Open histogram limits in Advanced Options")
+        output_settings_btn = AdvancedSettingsButton("Open histogram limits in Advanced Options", header)
         output_settings_btn.clicked.connect(lambda: self.advanced_requested.emit("histogram_settings"))
         header_l.addWidget(output_settings_btn)
         header_l.addStretch(1)
@@ -1481,6 +1520,12 @@ class MCSetupPage(QWidget):
                     continue
                 display_mass = element.get("M", element.get("mass", 0.0))
                 display_disp = element.get("displacement_energy", element.get("disp", 25.0))
+                display_latt = element.get(
+                    "lattice_binding_energy",
+                    element.get("latt", self.state.energy_defaults.get("latt", "3")))
+                display_surf = element.get(
+                    "surface_binding_energy",
+                    element.get("surf", self.state.energy_defaults.get("surf", "3")))
                 elements.append({
                     "Z": element.get("Z", element.get("number", 0)),
                     "symbol": element.get("symbol", ""),
@@ -1489,8 +1534,8 @@ class MCSetupPage(QWidget):
                     "ratio": element.get("stoichiometry", element.get("ratio", 1.0)),
                     "damage": display_disp,
                     "disp": display_disp,
-                    "latt": self.state.energy_defaults.get("latt", "3"),
-                    "surf": self.state.energy_defaults.get("surf", "3"),
+                    "latt": display_latt,
+                    "surf": display_surf,
                 })
 
             display_density = layer.get("density", 0.0)
@@ -1540,6 +1585,13 @@ class MCSetupPage(QWidget):
                 "nions_update": simulation.get("nions_update", 0),
                 "rng_seed": simulation.get("rng_seed", 12345),
                 "workdir": simulation.get("workdir", ""),
+                "pmax_min": (params.get("cascade") or {}).get("pmax_min", 0.0),
+                "pmax_max": (params.get("cascade") or {}).get("pmax_max", 4.0),
+                "psi_min": (params.get("cascade") or {}).get("psi_min", 5.0),
+                "de_min": (params.get("cascade") or {}).get("de_min", 15.0),
+                "psi_min_surface": (params.get("cascade") or {}).get("psi_min_surface", 5.0),
+                "de_min_surface": (params.get("cascade") or {}).get("de_min_surface", 15.0),
+                "replacement_collisions": (params.get("cascade") or {}).get("replacement_collisions", False),
             },
             "layers": payload_layers,
             "selection": {
@@ -1829,6 +1881,13 @@ class MCSetupPage(QWidget):
             "scattering_algorithm": str(self._scattering_algorithm),
             "n_absc": int(self._n_absc),
             "lindhard_correction": dict(self._loaded_model_correction),
+            "pmax_min": float(self._pmax_min),
+            "pmax_max": float(self._pmax_max),
+            "psi_min": float(self._psi_min),
+            "de_min": float(self._de_min),
+            "psi_min_surface": float(self._psi_min_surface),
+            "de_min_surface": float(self._de_min_surface),
+            "replacement_collisions": bool(self._replacement_collisions),
         })
 
     def get_advanced_simulation_settings(self) -> dict:
@@ -1839,6 +1898,13 @@ class MCSetupPage(QWidget):
             "scattering_algorithm": str(self._scattering_algorithm),
             "n_absc": int(self._n_absc),
             "lindhard_correction": dict(self._loaded_model_correction),
+            "pmax_min": float(self._pmax_min),
+            "pmax_max": float(self._pmax_max),
+            "psi_min": float(self._psi_min),
+            "de_min": float(self._de_min),
+            "psi_min_surface": float(self._psi_min_surface),
+            "de_min_surface": float(self._de_min_surface),
+            "replacement_collisions": bool(self._replacement_collisions),
         }
 
     def set_follow_recoils(self, value: bool) -> None:
@@ -1867,6 +1933,52 @@ class MCSetupPage(QWidget):
             self._n_absc = max(1, int(value))
         except (TypeError, ValueError):
             self._n_absc = 4
+        self._emit_advanced_simulation_settings()
+
+    def set_pmax_min(self, value: float) -> None:
+        try:
+            self._pmax_min = float(value)
+        except (TypeError, ValueError):
+            self._pmax_min = 0.0
+        self._emit_advanced_simulation_settings()
+
+    def set_pmax_max(self, value: float) -> None:
+        try:
+            self._pmax_max = float(value)
+        except (TypeError, ValueError):
+            self._pmax_max = 4.0
+        self._emit_advanced_simulation_settings()
+
+    def set_psi_min(self, value: float) -> None:
+        try:
+            self._psi_min = float(value)
+        except (TypeError, ValueError):
+            self._psi_min = 5.0
+        self._emit_advanced_simulation_settings()
+
+    def set_de_min(self, value: float) -> None:
+        try:
+            self._de_min = float(value)
+        except (TypeError, ValueError):
+            self._de_min = 15.0
+        self._emit_advanced_simulation_settings()
+
+    def set_psi_min_surface(self, value: float) -> None:
+        try:
+            self._psi_min_surface = float(value)
+        except (TypeError, ValueError):
+            self._psi_min_surface = 5.0
+        self._emit_advanced_simulation_settings()
+
+    def set_de_min_surface(self, value: float) -> None:
+        try:
+            self._de_min_surface = float(value)
+        except (TypeError, ValueError):
+            self._de_min_surface = 15.0
+        self._emit_advanced_simulation_settings()
+
+    def set_replacement_collisions(self, value: bool) -> None:
+        self._replacement_collisions = bool(value)
         self._emit_advanced_simulation_settings()
 
     def set_lindhard_correction(self, value: dict) -> None:
@@ -1954,6 +2066,14 @@ class MCSetupPage(QWidget):
                     disp_e = float(elem.get("disp", 25.0))
                 except (TypeError, ValueError):
                     disp_e = 25.0
+                try:
+                    latt_e = float(elem.get("latt", 3.0))
+                except (TypeError, ValueError):
+                    latt_e = 3.0
+                try:
+                    surf_e = float(elem.get("surf", 3.0))
+                except (TypeError, ValueError):
+                    surf_e = 3.0
                 lines += [
                     "    [[layer.element]]",
                     f'    symbol = "{elem["symbol"]}"',
@@ -1962,6 +2082,8 @@ class MCSetupPage(QWidget):
                     f"    M = {elem.get('mass', 0.0)}",
                     f"    stoichiometry = {elem.get('ratio', 1.0)}",
                     f"    displacement_energy = {disp_e}",
+                    f"    lattice_binding_energy = {latt_e}",
+                    f"    surface_binding_energy = {surf_e}",
                     "",
                 ]
 
@@ -1986,6 +2108,19 @@ class MCSetupPage(QWidget):
             for key, value in self._loaded_model_correction.items():
                 lines.append(f'"{key}" = {value}')
             lines.append("")
+
+        # NOTE: not yet consumed by simulators/opentrim (pending backend work).
+        lines += [
+            "[cascade]",
+            f"pmax_min = {float(self._pmax_min)}",
+            f"pmax_max = {float(self._pmax_max)}",
+            f"psi_min = {float(self._psi_min)}",
+            f"de_min = {float(self._de_min)}",
+            f"psi_min_surface = {float(self._psi_min_surface)}",
+            f"de_min_surface = {float(self._de_min_surface)}",
+            f"replacement_collisions = {'true' if self._replacement_collisions else 'false'}",
+            "",
+        ]
 
         # Output section
         energy_kev = ion["energy"]

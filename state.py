@@ -24,8 +24,9 @@ def _resolve_app_config_dir() -> Path:
     return Path.home() / ".config" / "opensrim"
 
 
-def _resolve_app_config_path() -> Path:
-    return _resolve_app_config_dir() / "settings.toml"
+def _resolve_app_config_path(scope: str = "global") -> Path:
+    filename = "settings.toml" if scope == "global" else f"{scope}.toml"
+    return _resolve_app_config_dir() / filename
 
 
 def _load_toml_module():
@@ -40,8 +41,8 @@ def _load_toml_module():
             return None
 
 
-def _load_app_settings() -> Dict[str, Any]:
-    path = _resolve_app_config_path()
+def _load_app_settings(scope: str = "global") -> Dict[str, Any]:
+    path = _resolve_app_config_path(scope)
     if not path.is_file():
         return {}
     toml_module = _load_toml_module()
@@ -89,8 +90,8 @@ def _write_toml_lines(prefix: str, payload: Dict[str, Any], lines: List[str]) ->
             lines.append("")
 
 
-def _save_app_settings(payload: Dict[str, Any]) -> None:
-    path = _resolve_app_config_path()
+def _save_app_settings(payload: Dict[str, Any], scope: str = "global") -> None:
+    path = _resolve_app_config_path(scope)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         lines: List[str] = []
@@ -120,7 +121,7 @@ def _coerce_directory(path_value: str | Path | None) -> Optional[str]:
 
 
 def get_last_used_directory(fallback: str | Path | None = None) -> str:
-    payload = _load_app_settings()
+    payload = _load_app_settings("global")
     stored = _coerce_directory(payload.get("last_directory"))
     if stored:
         return stored
@@ -134,25 +135,40 @@ def remember_last_used_path(path_value: str | Path | None) -> None:
     directory = _coerce_directory(path_value)
     if not directory:
         return
-    payload = _load_app_settings()
+    payload = _load_app_settings("global")
     payload["last_directory"] = directory
-    _save_app_settings(payload)
+    _save_app_settings(payload, "global")
 
 
 def get_persisted_display_settings() -> Dict[str, Any]:
-    payload = _load_app_settings()
+    payload = _load_app_settings("mc_results")
     display = payload.get("display_settings")
     return dict(display) if isinstance(display, dict) else {}
 
 
 def set_persisted_display_settings(settings: Dict[str, Any]) -> None:
-    payload = _load_app_settings()
+    payload = _load_app_settings("mc_results")
     payload["display_settings"] = {
         str(key): value
         for key, value in settings.items()
         if isinstance(value, (str, int, float, bool))
     }
-    _save_app_settings(payload)
+    _save_app_settings(payload, "mc_results")
+
+
+def load_scoped_settings(scope: str) -> Dict[str, Any]:
+    """Read a page-scoped settings file (e.g. "koral", "mc_setup", "single_plot").
+
+    Each page/simulator gets its own <scope>.toml under the app config dir,
+    so a user (or an editor) can see at a glance which file holds which
+    page's persisted preferences, instead of one shared settings.toml.
+    """
+    return _load_app_settings(scope)
+
+
+def save_scoped_settings(payload: Dict[str, Any], scope: str) -> None:
+    """Write a page-scoped settings file. See load_scoped_settings()."""
+    _save_app_settings(payload, scope)
 
 
 def _resolve_periodic_table_json() -> Optional[Path]:

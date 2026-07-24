@@ -202,6 +202,13 @@ class MainWindow(QMainWindow):
             self.advanced_options_tab.apply_mc_setup_advanced_config
         )
         self.advanced_options_tab.mc_follow_recoils_changed.connect(self.mc_setup_tab.set_follow_recoils)
+        self.advanced_options_tab.mc_replacement_collisions_changed.connect(self.mc_setup_tab.set_replacement_collisions)
+        self.advanced_options_tab.mc_pmax_min_changed.connect(self.mc_setup_tab.set_pmax_min)
+        self.advanced_options_tab.mc_pmax_max_changed.connect(self.mc_setup_tab.set_pmax_max)
+        self.advanced_options_tab.mc_psi_min_changed.connect(self.mc_setup_tab.set_psi_min)
+        self.advanced_options_tab.mc_de_min_changed.connect(self.mc_setup_tab.set_de_min)
+        self.advanced_options_tab.mc_psi_min_surface_changed.connect(self.mc_setup_tab.set_psi_min_surface)
+        self.advanced_options_tab.mc_de_min_surface_changed.connect(self.mc_setup_tab.set_de_min_surface)
         self.advanced_options_tab.mc_rng_seed_changed.connect(self.mc_setup_tab.set_rng_seed)
         self.advanced_options_tab.mc_electronic_stopping_changed.connect(self.mc_setup_tab.set_electronic_stopping_model)
         self.advanced_options_tab.mc_scattering_algorithm_changed.connect(self.mc_setup_tab.set_scattering_algorithm)

@@ -1,0 +1,6 @@
+PyQt6>=6.4
+numpy>=2.0        # simulators/koral uses np.pow(), added in NumPy 2.0
+scipy>=1.10
+matplotlib>=3.7
+numba>=0.59
+tomli>=2.0; python_version < "3.11"

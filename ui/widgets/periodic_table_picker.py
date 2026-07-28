@@ -10,11 +10,16 @@ class PeriodicTableDialog(QDialog):
     """Dialog for selecting elements from the periodic table"""
     element_selected = pyqtSignal(dict)
     
-    def __init__(self, parent=None, compact=True, show_hover_info=True, bordered=False):
+    def __init__(self, parent=None, compact=True, show_hover_info=True, bordered=False,
+                 allowed_symbols: set[str] | None = None):
         super().__init__(parent)
         self.compact = compact
         self.show_hover_info = show_hover_info
         self.bordered = bordered
+        # When set, only these element symbols can be picked -- others are
+        # shown disabled/greyed rather than removed, so the table's shape
+        # stays intact.
+        self.allowed_symbols = set(allowed_symbols) if allowed_symbols else None
         self.setObjectName("periodicTableDialog")
         self.setWindowTitle("Periodic Table of Elements")
         self.setModal(True)
@@ -498,19 +503,29 @@ class PeriodicTableDialog(QDialog):
         """Create an element tile button"""
         group = self._get_element_group(element)
         color = self._get_group_colors()[group]
-        
+        allowed = self.allowed_symbols is None or element['symbol'] in self.allowed_symbols
+
         # Determine text color based on background brightness
-        text_color = self._get_text_color(color)
-        
+        text_color = self._get_text_color(color) if allowed else "#9CA3AF"
+        if not allowed:
+            color = "#E9ECEF"
+
         btn = QPushButton()
         size = 40 if self.compact else 80
         btn.setFixedSize(size, size)
-        btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        
+        btn.setEnabled(allowed)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor if allowed else Qt.CursorShape.ArrowCursor)
+
         # Enable mouse tracking to ensure hover events work
         btn.setMouseTracking(True)
-        
+
         border_radius = 4 if self.compact else 8
+        hover_style = f"""
+            QPushButton:hover {{
+                background-color: {self._lighten_color(color, 1.05)};
+                border: 2px solid #0066CC;
+            }}
+        """ if allowed else ""
         btn.setStyleSheet(f"""
             QPushButton {{
                 background-color: {color};
@@ -518,10 +533,7 @@ class PeriodicTableDialog(QDialog):
                 border: 1px solid rgba(0, 0, 0, 0.1);
                 padding: 0px;
             }}
-            QPushButton:hover {{
-                background-color: {self._lighten_color(color, 1.05)};
-                border: 2px solid #0066CC;
-            }}
+            {hover_style}
         """)
         
         # Create layout for tile content
@@ -674,18 +686,21 @@ class PeriodicTableButton(QPushButton):
     """Button that opens periodic table dialog when clicked"""
     element_selected = pyqtSignal(dict)
     
-    def __init__(self, text="Select Element", parent=None, compact=True, show_hover_info=True, bordered=False, update_button_text=True):
+    def __init__(self, text="Select Element", parent=None, compact=True, show_hover_info=True, bordered=False,
+                 update_button_text=True, allowed_symbols: set[str] | None = None):
         super().__init__(text, parent)
         self.selected_element = None
         self.compact = compact
         self.show_hover_info = show_hover_info
         self.bordered = bordered
         self.update_button_text = update_button_text
+        self.allowed_symbols = set(allowed_symbols) if allowed_symbols else None
         self.clicked.connect(self._open_periodic_table)
-        
+
     def _open_periodic_table(self):
         """Open periodic table dialog"""
-        dialog = PeriodicTableDialog(self, compact=self.compact, show_hover_info=self.show_hover_info, bordered=self.bordered)
+        dialog = PeriodicTableDialog(self, compact=self.compact, show_hover_info=self.show_hover_info,
+                                      bordered=self.bordered, allowed_symbols=self.allowed_symbols)
         dialog.element_selected.connect(self._on_element_selected)
         dialog.exec()
     

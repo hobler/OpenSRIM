@@ -33,6 +33,11 @@ try:
 except ModuleNotFoundError:  # pragma: no cover
     from OpenSRIM.ui.widgets.hints_popup import HintSystem  # type: ignore
 
+try:
+    from ui.widgets.advanced_settings_button import AdvancedSettingsButton
+except ModuleNotFoundError:  # pragma: no cover
+    from OpenSRIM.ui.widgets.advanced_settings_button import AdvancedSettingsButton  # type: ignore
+
 
 # =====================================================================
 #  HARDCODED DEFINITIONS — replace these with real simulation results
@@ -4612,10 +4617,7 @@ class ResultsSidebar(QWidget):
         load_row.addWidget(self._btn_unload_data)
         multi_layout.addLayout(load_row)
 
-        self._btn_display_settings = QToolButton()
-        self._btn_display_settings.setText("⚙")
-        self._btn_display_settings.setToolTip("Open Advanced Options > Display Settings")
-        self._btn_display_settings.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_display_settings = AdvancedSettingsButton("Open Advanced Options > Display Settings")
         self._btn_display_settings.clicked.connect(
             lambda: self.advanced_requested.emit("display_settings")
         )

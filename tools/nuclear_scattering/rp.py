@@ -4,7 +4,7 @@ from matplotlib.ticker import MultipleLocator
 from table1d import Table1D
 from sn_fit import sn_fit_func
 from scipy.integrate import solve_ivp
-from utils import atom, ask_if_save
+from utils import atom, ask_if_save, get_mass, get_density
 
 
 class Se:
@@ -134,54 +134,6 @@ def sn_zbl(e, Z1, Z2, M1, M2):
     #print(f"ZBL: {e=}, {e_norm=} {sn_zbl_norm=}")
     return (4*M1/(M1+M2) * np.pi * Z1 * Z2 * 14.4 * rnorm) * sn_zbl_norm
         
-
-def get_mass(Z):
-    """Get the mass of an atom given its atomic number.
-
-    Parameters:
-        Z (int): atomic number of the atom
-
-    Returns:
-        (float): mass of the atom in amu
-    """
-    fname = os.path.join(os.path.dirname(__file__), 
-                         '../../data/atom_data/ATOMDATA')
-    with open(fname, 'r') as f:
-        for line in f:
-            if line.startswith('#'):
-                continue
-            items = line.split()
-            Z_val = int(items[0])
-            M_val = float(items[4])
-            if Z_val == Z:
-                return M_val
-            
-    raise ValueError(f"Atomic number {Z} not found in atomic masses data.")
-
-
-def get_density(Z):
-    """Get the density of an atom given its atomic number.
-
-    Parameters:
-        Z (int): atomic number of the atom
-
-    Returns:
-        (float): density of the atom in 1/Å^3
-    """
-    fname = os.path.join(os.path.dirname(__file__), 
-                         '../../data/atom_data/ATOMDATA')
-    with open(fname, 'r') as f:
-        for line in f:
-            if line.startswith('#'):
-                continue
-            items = line.split()
-            Z_val = int(items[0])
-            dens_val = float(items[7]) * 1e-24
-            if Z_val == Z:
-                return dens_val
-            
-    raise ValueError(f"Atomic number {Z} not found in atomic densities data.")
-
 
 def projected_range(emax, Z1, Z2, e_vals=None, zbl=False, krc=False):
     """Calculate the projected range of a projectile in a target.

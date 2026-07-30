@@ -27,6 +27,7 @@ from matplotlib.figure import Figure
 from state import AppState
 from ui.widgets.toggle_switch import ToggleSwitch
 from ui.widgets.periodic_table_picker import PeriodicTableButton, PeriodicTableDialog
+from ui.widgets.advanced_settings_button import AdvancedSettingsButton
 from ui.dialogs.compound_dictionary_dialog import CompoundDictionaryDialog
 
 try:
@@ -157,6 +158,21 @@ except ModuleNotFoundError:  # pragma: no cover
 
 class KoralPage(QWidget):
     advanced_requested = pyqtSignal(str)
+
+    # Stopping-power display units, in the order offered to the user. Not
+    # naturally size-ordered (mixes linear, mass-normalized and dimensionless
+    # units) but kept as a fixed list so "smallest selected unit" for the
+    # combined plot axis can be resolved deterministically by list position.
+    _STOP_UNITS = [
+        "eV/Å",
+        "keV/µm",
+        "MeV/mm",
+        "keV/(µg/cm²)",
+        "MeV/(mg/cm²)",
+        "keV/(mg/cm²)",
+        "eV/(10¹⁵ atoms/cm²)",
+        "L.S.S. reduced units",
+    ]
 
     def __init__(self, state: AppState, on_log: Optional[Callable[[str], None]] = None, parent=None):
         super().__init__(parent)
@@ -1333,13 +1349,16 @@ class KoralPage(QWidget):
         # Plot
         if hasattr(self, "figure"):
             self.figure.clear()
-            ax = self.figure.add_subplot(111)
-            ax.set_title("KORAL results")
-            ax.set_xlabel("Energy (eV)")
-            ax.set_xscale("log")
-            ax.set_yscale("log")
+            ax_left = self.figure.add_subplot(111)
+            ax_left.set_title("KORAL results")
+            ax_left.set_xlabel("Energy (eV)")
+            ax_left.set_xscale("log")
+            ax_left.set_yscale("log")
 
-            # Use the same units as the table/export (UI converts from SI base units)
+            # Use the same units as the table/export (UI converts from SI base units).
+            # These stay per-quantity for the table/export; the plot below
+            # consolidates each axis group to a single (smallest) unit so
+            # traces sharing an axis are visually comparable.
             range_unit = "Ång"
             if isinstance(self._last_request, dict):
                 range_unit = str(self._last_request.get("output", {}).get("units", {}).get("prange") or range_unit)
@@ -1370,66 +1389,113 @@ class KoralPage(QWidget):
                 except (TypeError, ValueError):
                     density_g_cm3 = 0.0
 
-            plotted_any = False
-            plotted_stop_units: list[str] = []
-            plotted_range_units: list[str] = []
-            for res in norm:
-                mid = str(res.get("model_id", "model"))
-                energies = [e * 1e3 for e in (res.get("energies_keV") or [])]  # keV -> eV
-                outputs = res.get("outputs")
-                if not isinstance(energies, list) or not isinstance(outputs, dict):
-                    continue
-                for key, vals in outputs.items():
+            _LENGTH_KEYS = ("prange", "range_csda", "long_strag", "lat_strag")
+            _STOP_KEYS = ("elec_stop", "nucl_stop")
+            # Output Options order (top to bottom) so the legend lists traces
+            # in the same order the user sees the checkboxes, regardless of
+            # whatever order the results dict happens to iterate in.
+            _CANONICAL_ORDER = ("prange", "long_strag", "lat_strag", "nucl_stop", "elec_stop")
+            per_key_range_unit = {
+                "prange": range_unit,
+                "range_csda": range_unit,
+                "long_strag": range_unit_long,
+                "lat_strag": range_unit_lat,
+            }
+            per_key_stop_unit = {"nucl_stop": stop_unit_nucl, "elec_stop": stop_unit_elec}
+
+            # Collect (key, label, energies, raw_vals) in canonical order first,
+            # then append any unrecognized keys at the end.
+            series: list[tuple[str, str, list, list]] = []
+            seen_keys: list[str] = []
+            for key in _CANONICAL_ORDER:
+                for res in norm:
+                    outputs = res.get("outputs")
+                    if not isinstance(outputs, dict) or key not in outputs:
+                        continue
+                    vals = outputs[key]
                     if not isinstance(vals, list):
                         continue
-                    label = f"{mid}: {key}"
+                    mid = str(res.get("model_id", "model"))
+                    energies = [e * 1e3 for e in (res.get("energies_keV") or [])]
+                    series.append((key, f"{mid}: {key}", energies, vals))
+                    if key not in seen_keys:
+                        seen_keys.append(key)
+            for res in norm:
+                outputs = res.get("outputs")
+                if not isinstance(outputs, dict):
+                    continue
+                mid = str(res.get("model_id", "model"))
+                energies = [e * 1e3 for e in (res.get("energies_keV") or [])]
+                for key, vals in outputs.items():
+                    if key in _CANONICAL_ORDER or not isinstance(vals, list):
+                        continue
+                    series.append((key, f"{mid}: {key}", energies, vals))
+                    if key not in seen_keys:
+                        seen_keys.append(key)
 
-                    # Convert for plotting
-                    plot_vals = vals
-                    if key in ("elec_stop", "nucl_stop"):
-                        try:
-                            unit_for_stop = stop_unit_elec if key == "elec_stop" else stop_unit_nucl
-                            plot_vals = [
-                                self._convert_stopping(
-                                    float(v),
-                                    unit_for_stop,
-                                    number_density_atoms_cm3=number_density_atoms_cm3,
-                                    density_g_cm3=density_g_cm3,
-                                )
-                                for v in vals
-                            ]
-                            if unit_for_stop not in plotted_stop_units:
-                                plotted_stop_units.append(unit_for_stop)
-                        except Exception:
-                            plot_vals = vals
-                    elif key in ("prange", "range_csda", "long_strag", "lat_strag"):
-                        try:
-                            unit_for_key = range_unit
-                            if key == "long_strag":
-                                unit_for_key = range_unit_long
-                            elif key == "lat_strag":
-                                unit_for_key = range_unit_lat
-                            plot_vals = [self._length_from_m(float(v), unit_for_key) for v in vals]
-                            if unit_for_key not in plotted_range_units:
-                                plotted_range_units.append(unit_for_key)
-                        except Exception:
-                            plot_vals = vals
+            # Pick one shared unit per axis group: the smallest of the units
+            # individually selected for the quantities actually being plotted
+            # (by position in the reference unit list -- lower index = smaller).
+            plotted_length_units = [per_key_range_unit[k] for k in seen_keys if k in per_key_range_unit]
+            plotted_stop_units = [per_key_stop_unit[k] for k in seen_keys if k in per_key_stop_unit]
 
-                    ax.plot(energies, plot_vals, linewidth=1.0, label=label)
-                    plotted_any = True
-
-            # Build ylabel from plotted quantities
-            ylabel_parts: list[str] = []
-            if plotted_range_units:
-                units_str = " / ".join(plotted_range_units)
-                ylabel_parts.append(f"Range / Straggling ({units_str})")
+            length_axis_unit = None
+            if plotted_length_units:
+                length_axis_unit = min(
+                    plotted_length_units,
+                    key=lambda u: self.state.unit_options.index(u) if u in self.state.unit_options else len(self.state.unit_options),
+                )
+            stop_axis_unit = None
             if plotted_stop_units:
-                units_str = " / ".join(plotted_stop_units)
-                ylabel_parts.append(f"Stopping power ({units_str})")
-            ax.set_ylabel(" | ".join(ylabel_parts) if ylabel_parts else "Value")
+                stop_axis_unit = min(
+                    plotted_stop_units,
+                    key=lambda u: self._STOP_UNITS.index(u) if u in self._STOP_UNITS else len(self._STOP_UNITS),
+                )
+
+            # Only split into two axes when both kinds of quantity are being
+            # plotted together; a single-kind plot keeps today's single-axis look.
+            ax_right = None
+            if length_axis_unit is not None and stop_axis_unit is not None:
+                ax_right = ax_left.twinx()
+                ax_right.set_yscale("log")
+
+            plotted_any = False
+            for key, label, energies, vals in series:
+                if key in _LENGTH_KEYS and length_axis_unit is not None:
+                    plot_vals = [self._length_from_m(float(v), length_axis_unit) for v in vals]
+                    target_ax = ax_left
+                elif key in _STOP_KEYS and stop_axis_unit is not None:
+                    plot_vals = [
+                        self._convert_stopping(
+                            float(v), stop_axis_unit,
+                            number_density_atoms_cm3=number_density_atoms_cm3,
+                            density_g_cm3=density_g_cm3,
+                        )
+                        for v in vals
+                    ]
+                    target_ax = ax_right if ax_right is not None else ax_left
+                else:
+                    plot_vals = vals
+                    target_ax = ax_left
+                target_ax.plot(energies, plot_vals, linewidth=1.0, label=label)
+                plotted_any = True
+
+            if length_axis_unit is not None:
+                ax_left.set_ylabel(f"Range / Straggling ({length_axis_unit})")
+            elif stop_axis_unit is not None:
+                ax_left.set_ylabel(f"Stopping power ({stop_axis_unit})")
+            else:
+                ax_left.set_ylabel("Value")
+            if ax_right is not None:
+                ax_right.set_ylabel(f"Stopping power ({stop_axis_unit})")
 
             if plotted_any:
-                ax.legend()
+                handles, labels = ax_left.get_legend_handles_labels()
+                if ax_right is not None:
+                    h2, l2 = ax_right.get_legend_handles_labels()
+                    handles += h2
+                    labels += l2
+                ax_left.legend(handles, labels)
             self.figure.tight_layout()
             self.canvas.draw_idle()
 
@@ -2059,8 +2125,7 @@ class KoralPage(QWidget):
         self.selected_models_label = QLabel("Selected Model:\nNone")
         self.selected_models_label.setWordWrap(True)
 
-        solver_settings_btn = QPushButton("⚙ Solver Settings")
-        solver_settings_btn.setToolTip("Open KORAL solver settings in Advanced Options")
+        solver_settings_btn = AdvancedSettingsButton("Open KORAL solver settings in Advanced Options")
         solver_settings_btn.clicked.connect(lambda: self.advanced_requested.emit("koral_solver"))
 
         layout.addWidget(self.model_button)
@@ -3077,21 +3142,10 @@ class KoralPage(QWidget):
         self._output_option_widgets["lat_strag"] = [self.chk_lat_strag, self.cmb_lat_strag]
 
         # --- right column: nuclear / electron stopping ---
-        _STOP_UNITS = [
-            "eV/Å",
-            "keV/µm",
-            "MeV/mm",
-            "keV/(µg/cm²)",
-            "MeV/(mg/cm²)",
-            "keV/(mg/cm²)",
-            "eV/(10¹⁵ atoms/cm²)",
-            "L.S.S. reduced units",
-        ]
-
         self.chk_nucl_strag = QCheckBox("Nuclear Stopping")
         self.cmb_nucl_stop_unit = QComboBox()
         self.cmb_nucl_stop_unit.setFixedWidth(_CMB_W)
-        self.cmb_nucl_stop_unit.addItems(_STOP_UNITS)
+        self.cmb_nucl_stop_unit.addItems(self._STOP_UNITS)
         opt_grid.addWidget(self.chk_nucl_strag, 0, 3)
         opt_grid.addWidget(self.cmb_nucl_stop_unit, 0, 4)
         self._output_option_widgets["nucl_stop"] = [self.chk_nucl_strag, self.cmb_nucl_stop_unit]
@@ -3099,7 +3153,7 @@ class KoralPage(QWidget):
         self.chk_elec_hop = QCheckBox("Electron Stopping")
         self.cmb_elec_stop_unit = QComboBox()
         self.cmb_elec_stop_unit.setFixedWidth(_CMB_W)
-        self.cmb_elec_stop_unit.addItems(_STOP_UNITS)
+        self.cmb_elec_stop_unit.addItems(self._STOP_UNITS)
         opt_grid.addWidget(self.chk_elec_hop, 1, 3)
         opt_grid.addWidget(self.cmb_elec_stop_unit, 1, 4)
         self._output_option_widgets["elec_stop"] = [self.chk_elec_hop, self.cmb_elec_stop_unit]

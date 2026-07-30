@@ -162,6 +162,13 @@ class AdvancedOptionsPage(QWidget):
     mc_scattering_algorithm_changed = pyqtSignal(str)
     mc_n_absc_changed = pyqtSignal(int)
     mc_lindhard_correction_changed = pyqtSignal(dict)
+    mc_pmax_min_changed = pyqtSignal(float)
+    mc_pmax_max_changed = pyqtSignal(float)
+    mc_psi_min_changed = pyqtSignal(float)
+    mc_de_min_changed = pyqtSignal(float)
+    mc_psi_min_surface_changed = pyqtSignal(float)
+    mc_de_min_surface_changed = pyqtSignal(float)
+    mc_replacement_collisions_changed = pyqtSignal(bool)
     toolbar_visibility_changed = pyqtSignal(bool)
     columns_changed = pyqtSignal(int)        # 0=auto, 1, 2, 3
     borders_visibility_changed = pyqtSignal(bool)
@@ -244,6 +251,34 @@ class AdvancedOptionsPage(QWidget):
         self.chk_follow_recoils = QCheckBox("Follow recoils")
         self.chk_follow_recoils.setChecked(True)
         cascade_opts_l.addWidget(self.chk_follow_recoils)
+
+        self.chk_replacement_collisions = QCheckBox("Replacement collisions")
+        self.chk_replacement_collisions.setChecked(False)
+        self.chk_replacement_collisions.setToolTip(
+            "Allow a slow recoil of the same species as the struck lattice atom "
+            "to replace it in place, instead of creating a separate interstitial."
+        )
+        cascade_opts_l.addWidget(self.chk_replacement_collisions)
+
+        def _cascade_param_row(label: str, minimum: float, maximum: float,
+                                value: float, decimals: int = 3) -> QDoubleSpinBox:
+            row = QHBoxLayout()
+            row.addWidget(QLabel(label))
+            spin = QDoubleSpinBox()
+            spin.setRange(minimum, maximum)
+            spin.setDecimals(decimals)
+            spin.setValue(value)
+            row.addWidget(spin)
+            row.addStretch(1)
+            cascade_opts_l.addLayout(row)
+            return spin
+
+        self.spin_pmax_max = _cascade_param_row("Maximum impact parameter (Å):", 0.0, 1.0e6, 4.0)
+        self.spin_pmax_min = _cascade_param_row("Minimum impact parameter (Å):", 0.0, 1.0e6, 0.0)
+        self.spin_de_min = _cascade_param_row("Minimum energy transfer (eV):", 0.0, 1.0e9, 15.0)
+        self.spin_psi_min = _cascade_param_row("Minimum scattering angle (°):", 0.0, 180.0, 5.0)
+        self.spin_psi_min_surface = _cascade_param_row("Minimum scattering angle above surface (°):", 0.0, 180.0, 5.0)
+        self.spin_de_min_surface = _cascade_param_row("Minimum energy transfer above surface (eV):", 0.0, 1.0e9, 15.0)
 
         seed_row = QHBoxLayout()
         seed_row.addWidget(QLabel("RNG Seed:"))
@@ -540,6 +575,13 @@ class AdvancedOptionsPage(QWidget):
         self.le_koral_rtol.textChanged.connect(self._emit_koral_solver)
         self.le_koral_atol.textChanged.connect(self._emit_koral_solver)
         self.chk_follow_recoils.toggled.connect(self._emit_mc_setup_advanced)
+        self.chk_replacement_collisions.toggled.connect(self._emit_mc_setup_advanced)
+        self.spin_pmax_max.valueChanged.connect(self._emit_mc_setup_advanced)
+        self.spin_pmax_min.valueChanged.connect(self._emit_mc_setup_advanced)
+        self.spin_de_min.valueChanged.connect(self._emit_mc_setup_advanced)
+        self.spin_psi_min.valueChanged.connect(self._emit_mc_setup_advanced)
+        self.spin_psi_min_surface.valueChanged.connect(self._emit_mc_setup_advanced)
+        self.spin_de_min_surface.valueChanged.connect(self._emit_mc_setup_advanced)
         self.spin_rng_seed.valueChanged.connect(self._emit_mc_setup_advanced)
         self.cmb_electronic_stopping.currentIndexChanged.connect(self._emit_mc_setup_advanced)
         self.cmb_scattering_algorithm.currentIndexChanged.connect(self._emit_mc_setup_advanced)
@@ -595,6 +637,13 @@ class AdvancedOptionsPage(QWidget):
         self._suppress_incoming_mc_setup_apply = True
         try:
             self.mc_follow_recoils_changed.emit(bool(self.chk_follow_recoils.isChecked()))
+            self.mc_replacement_collisions_changed.emit(bool(self.chk_replacement_collisions.isChecked()))
+            self.mc_pmax_min_changed.emit(float(self.spin_pmax_min.value()))
+            self.mc_pmax_max_changed.emit(float(self.spin_pmax_max.value()))
+            self.mc_psi_min_changed.emit(float(self.spin_psi_min.value()))
+            self.mc_de_min_changed.emit(float(self.spin_de_min.value()))
+            self.mc_psi_min_surface_changed.emit(float(self.spin_psi_min_surface.value()))
+            self.mc_de_min_surface_changed.emit(float(self.spin_de_min_surface.value()))
             self.mc_rng_seed_changed.emit(int(self.spin_rng_seed.value()))
             self.mc_electronic_stopping_changed.emit(str(self.cmb_electronic_stopping.currentText()))
             self.mc_scattering_algorithm_changed.emit(str(self.cmb_scattering_algorithm.currentText()))
@@ -818,6 +867,13 @@ class AdvancedOptionsPage(QWidget):
     def _collect_mc_setup_advanced(self) -> dict:
         return {
             "follow_recoils": bool(self.chk_follow_recoils.isChecked()),
+            "replacement_collisions": bool(self.chk_replacement_collisions.isChecked()),
+            "pmax_min": float(self.spin_pmax_min.value()),
+            "pmax_max": float(self.spin_pmax_max.value()),
+            "psi_min": float(self.spin_psi_min.value()),
+            "de_min": float(self.spin_de_min.value()),
+            "psi_min_surface": float(self.spin_psi_min_surface.value()),
+            "de_min_surface": float(self.spin_de_min_surface.value()),
             "rng_seed": int(self.spin_rng_seed.value()),
             "electronic_stopping": str(self.cmb_electronic_stopping.currentText()),
             "scattering_algorithm": str(self.cmb_scattering_algorithm.currentText()),
@@ -951,6 +1007,27 @@ class AdvancedOptionsPage(QWidget):
             self.chk_follow_recoils.blockSignals(True)
             self.chk_follow_recoils.setChecked(bool(payload.get("follow_recoils", self.chk_follow_recoils.isChecked())))
             self.chk_follow_recoils.blockSignals(False)
+        if "replacement_collisions" in payload:
+            self.chk_replacement_collisions.blockSignals(True)
+            self.chk_replacement_collisions.setChecked(
+                bool(payload.get("replacement_collisions", self.chk_replacement_collisions.isChecked())))
+            self.chk_replacement_collisions.blockSignals(False)
+        for key, widget in (
+            ("pmax_min", self.spin_pmax_min),
+            ("pmax_max", self.spin_pmax_max),
+            ("psi_min", self.spin_psi_min),
+            ("de_min", self.spin_de_min),
+            ("psi_min_surface", self.spin_psi_min_surface),
+            ("de_min_surface", self.spin_de_min_surface),
+        ):
+            if key in payload:
+                try:
+                    widget.blockSignals(True)
+                    widget.setValue(float(payload[key]))
+                except (TypeError, ValueError):
+                    pass
+                finally:
+                    widget.blockSignals(False)
         if "rng_seed" in payload:
             try:
                 self.spin_rng_seed.blockSignals(True)

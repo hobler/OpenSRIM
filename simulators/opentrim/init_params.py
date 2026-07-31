@@ -184,6 +184,8 @@ def _get_elements_and_materials_params(input_params):
         ("atomic_fraction", np.float64, (NELEM,)),
         ("cumulative_fraction", np.float64, (NELEM,)),
         ("displacement_energy", np.float64, (NELEM,)),
+        ("surface_binding_energy", np.float64, (NELEM,)),
+        ("bulk_binding_energy", np.float64, (NELEM,)),
     ], align=True)
 
     materials_params = np.recarray(NMAT, dtype=MATERIALS_PARAMS_DTYPE)
@@ -201,6 +203,10 @@ def _get_elements_and_materials_params(input_params):
                 np.sum(mat["atomic_fractions"][:ielem+1]))
             materials_params[imat].displacement_energy[ielem] = (
                 mat["element"][ielem]["displacement_energy"])
+            materials_params[imat].surface_binding_energy[ielem] = (
+                mat["element"][ielem]["surface_binding_energy"])
+            materials_params[imat].bulk_binding_energy[ielem] = (
+                mat["element"][ielem]["lattice_binding_energy"])
 #    print(f"materials_params={materials_params}")
 
     return nelem_target, nelem, elements_params, materials_params

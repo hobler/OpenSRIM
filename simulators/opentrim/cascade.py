@@ -85,7 +85,9 @@ def cascade(initial_proj, params, stats):
             imat = recoil["ilayer"]
             ielem = params.materials[imat].ielem[recoil["ielem"]]
             ed = params.materials[imat].displacement_energy[ielem]
+            eb = params.materials[imat].bulk_binding_energy[ielem]
         if (params.cascade.follow_recoils and recoil["e"] > ed):
+            recoil["e"] -= eb
             proj_stack.append(recoil)
             score_start(stats, recoil, params.nelem_target)
         else:

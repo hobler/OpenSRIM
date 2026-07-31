@@ -56,7 +56,39 @@
       {
         "id": "output",
         "title": "Output Options",
-        "content": "# Output Options\n\nSelect which results are calculated and stored.\n\n## Common outputs\n- Trajectory start/end points\n- Collision events\n- Range / lateral distributions\n- Backscattered / transmitted energy and angle\n\n> Hint: Enabling fewer outputs can reduce runtime and file size." 
+        "content": "# Output Options\n\nSelect which results are calculated and stored.\n\n## Common outputs\n- Trajectory start/end points\n- Collision events\n- Range / lateral distributions\n- Backscattered / transmitted energy and angle\n\n> Hint: Enabling fewer outputs can reduce runtime and file size."
+      }
+    ],
+    "Single Plot": [
+      {
+        "id": "curves",
+        "title": "Curves",
+        "content": "# Curves\n\nThe overlay shows one or more curves; each can be styled independently.\n\n## Loading curves\n- **Double-click a plot tile** on the MC Results tab to append all of its visible series here. Existing curves stay.\n- Or use **Load Output Directory** to read a previous simulation.\n\n## Managing the list\n- Tick/untick a curve to toggle its **visibility**.\n- **Remove** drops the selected curve; **Clear All** empties the list.\n- Select a curve to edit its style, convolution and stats on the right.\n\n> Hint: The selected curve is the target for the Selected Curve, Gaussian Convolution and Stats panels."
+      },
+      {
+        "id": "load_directory",
+        "title": "Load Output Directory",
+        "content": "# Load Output Directory\n\nLoad curves directly from a previous simulation output directory instead of the MC Results tab.\n\n## Steps\n- Click **Load Output Directory…** and pick a folder.\n- All `.his` series found there are listed in the **Dataset** dropdown.\n- Choose a dataset to append its curves to the plot.\n\n> Hint: Use this to compare results from earlier runs side by side."
+      },
+      {
+        "id": "selected_curve",
+        "title": "Selected Curve",
+        "content": "# Selected Curve\n\nPer-curve matplotlib styling for the curve selected in the Curves list.\n\n## Options\n- **Label**: legend text for the curve.\n- **Color**: line/marker color.\n- **Line style & width**, **marker** and **opacity**.\n- **Z-order**: drawing order (higher is on top).\n\n> Hint: Styling applies only to the currently selected curve."
+      },
+      {
+        "id": "convolution",
+        "title": "Gaussian Convolution",
+        "content": "# Gaussian Convolution\n\nFolds the selected curve with a Gaussian to mimic finite beam/detector resolution.\n\n## Depth profiles\n- **Beam σ (Å)**: Gaussian width in plot units. The curve is convolved with `exp(−x²/2σ²)`.\n- When you first enable convolution with σ still at 0, a default of **~3 % of the curve's x-range** is filled in so the effect is immediately visible.\n\n## Lateral / 2-D curves\n- **Scan area** (min–max) applies a rectangular scan along the lateral axis, convolved with the Gaussian via an error-function kernel.\n- Negative bounds are allowed, since the lateral axis is symmetric around 0.\n\n## Applying\n- Set σ (and scan area) first, then tick **Apply convolution** at the bottom of the panel.\n\n> Hint: Load and select a curve before enabling convolution."
+      },
+      {
+        "id": "axes",
+        "title": "Axes & Legend",
+        "content": "# Axes & Legend\n\nGlobal axis and legend settings for the whole plot.\n\n## Options\n- **Title** and **X / Y labels** (including secondary top/right axes).\n- **Log X / Log Y** scaling (primary and secondary axes).\n- **Grid** and **Legend** toggles, plus legend **position**.\n\n> Hint: Labels are auto-filled from the loaded data but can be overridden; your edits take precedence."
+      },
+      {
+        "id": "reference",
+        "title": "Reference Image",
+        "content": "# Reference Image\n\nOverlay a bitmap under the curves to compare against an external figure (e.g. a micrograph or a plot from an earlier run).\n\n## Options\n- **Load Image…**: pick a JPEG/PNG to draw beneath the curves.\n- **Opacity**: blend the image with the plot background.\n- **Clear Image**: remove the overlay.\n\n> Hint: Align the image by matching the axis ranges to the image extent."
       }
     ]
   }

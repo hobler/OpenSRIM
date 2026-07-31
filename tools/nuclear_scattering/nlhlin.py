@@ -79,7 +79,7 @@ class NLHlin_screen:
         """
         r = np.asarray(r, dtype=float)
         
-        if np.all(r < self.rmax):   # should always be true except for testing
+        if np.all(r <= self.rmax):   # should always be true except for testing
             exp0 = np.exp(-self.b[0]*r)
             exp1 = np.exp(-self.b[1]*r)
             exp2 = np.exp(-self.b[2]*r)

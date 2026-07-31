@@ -1,7 +1,7 @@
 """Handle moments and histograms.
 
 In order to allow JIT compilation of the scoring functions, we need to define 
-a structured array "stats" the may be passed through the Python-nopython
+a structured array "stats" that may be passed through the Python-nopython
 interface.
 
 Available functions:

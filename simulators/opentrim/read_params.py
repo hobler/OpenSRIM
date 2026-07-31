@@ -2,7 +2,7 @@ import tomllib
 from pathlib import Path
 
 
-def read_params(toml_path = None) -> dict:
+def read_params(toml_path: str | Path = None) -> dict:
     """Read input parameters from a TOML file.
 
     Args:

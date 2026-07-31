@@ -10,28 +10,31 @@ from krc import KrC_screen
 from nlh import NLH_screen
 from nlhlin import NLHlin_screen
 from cm_scatter import setup, scatter_integrals
-from utils import atom, ask_if_save
+from utils import atom, ask_if_save, get_mass, get_density
 
 
-def calc_sn(e, screen_fun):
+def calc_sn(e, screen_fun, pmax=None):
     """Calculate nuclear stopping cross section S_n.
 
     Parameters:
         e (float): Reduced energy.
         screen_fun (callable): Function to calculate the screening function
             for given distance r (RNORM).
+        (float): Maximum impact parameter used in the integration (RNORM).
     
     Returns:
         (float): Nuclear stopping cross section S_n.
         (int): Number of function evaluations in the integration.
     """
+    pmax = screen_fun.rmax if pmax is None else pmax
+
     def func(p, e, screen_fun):
         pi_minus_theta, _ = scatter_integrals(e, p, screen_fun)
         #print(f'{p=}, {theta=}')
         return 2*e*p*np.cos(pi_minus_theta / 2)**2
     
     setup(n_absc=4)
-    sn, err, infodict, *rest = quad(func, 0, screen_fun.rmax, 
+    sn, err, infodict, *rest = quad(func, 0, pmax, 
                                     args=(e, screen_fun),
                                     limit=100, epsabs=0, epsrel=1e-3, 
                                     full_output=True)
@@ -446,6 +449,91 @@ def plot_sn_at_e(e, p1, p2):
         print(f"Saved figure to {fname}")
 
 
+def plot_sn_cutoff(energies, Z1_list, Z2_list):
+    """Calculate S_n for ZBL with and without cutoff impact parameter.
+    
+    The cutoff impact parameter is calculated from the target density.
+
+    Parameters:
+        energies (list): List of reduced energies to calculate S_n.
+        Z1_list (int or list of int): Atomic numbers of projectiles.
+        Z2_list (int or list of int): Atomic numbers of targets.
+    """
+    import matplotlib.pyplot as plt
+    plt.rcParams.update({'font.size': 14})
+
+    # convert Z1 and Z2 to lists if they are not already
+    if not isinstance(Z1_list, list):
+            Z1_list = [Z1_list]
+    if not isinstance(Z2_list, list):
+            Z2_list = [Z2_list]
+
+    lines = []
+    for i, (Z1, Z2) in enumerate(zip(Z1_list, Z2_list)):
+        # screening function
+        screen_fun = ZBL_screen(Z1, Z2)
+        print('rnorm=', screen_fun.rnorm)
+
+        # Convert energies and pmax to reduced units
+        M1 = get_mass(Z1)
+        M2 = get_mass(Z2)
+        enorm = (M1 + M2) / M2 * 14.4 * Z1 * Z2 / screen_fun.rnorm
+        eps_vals = np.array(energies) / enorm
+        print('eps=', eps_vals)
+
+        if Z2 == 6:
+            density = 0.176
+        else:
+            density = get_density(Z2)
+        pmax_A = np.pi**(-1/2) * density**(-1/3)  # in Angstroms
+        pmax = pmax_A / screen_fun.rnorm
+        print('pmax= ', pmax)
+
+        # Calculate S_n without cutoff
+        sn_vals = []
+        for eps in eps_vals:
+            sn, _ = calc_sn(eps, screen_fun)
+            sn_vals.append(sn)
+
+        # Calculate S_n with cutoff
+        sn_cutoff_vals = []
+        for eps in eps_vals:
+            sn_cutoff, _ = calc_sn(eps, screen_fun, pmax=pmax)
+            sn_cutoff_vals.append(sn_cutoff)
+
+        # Convert S_n back to physical units
+        unscale = np.pi * 4*M1*M2/(M1+M2)**2 * enorm * screen_fun.rnorm**2
+        sn_vals = np.array(sn_vals)
+        sn_vals *= unscale
+        sn_cutoff_vals = np.array(sn_cutoff_vals)
+        sn_cutoff_vals *= unscale
+
+        line, = plt.loglog(energies, sn_vals, f'C{i}', 
+                   label=f'{atom[Z1]} in {atom[Z2]}')
+        lines.append(line)
+        plt.loglog(energies, sn_cutoff_vals, f'C{i}--')
+
+    first_legend = plt.gca().legend(handles=lines, loc='upper left')
+
+    lines = []
+    line, = plt.plot(energies[0], sn_vals[0], 'k-', 
+                     label=r'p$_\mathrm{max} \rightarrow \infty$', zorder=0)
+    lines.append(line)
+    line, = plt.plot(energies[0], sn_cutoff_vals[0], 'k--', 
+                     label=r'p$_\mathrm{max}=\pi^{-1/2}N^{-1/3}$', zorder=0)
+    lines.append(line)
+    plt.legend(handles=lines, loc='lower right')
+
+    plt.gca().add_artist(first_legend)
+
+    plt.ylim(10, 1e4)
+    plt.xlabel('Energy (eV)')
+    plt.ylabel(r'Nuclear stopping cross section (eVÅ$^2$)')
+    plt.title(f'{screen_fun.name} potential', fontsize='medium')
+    plt.tight_layout()
+    plt.show()
+
+
 def plot_qn(p1, p2):
     """Plot Q_n for homonuclear pairs.
     """
@@ -678,12 +766,12 @@ if __name__ == "__main__":
     #screen_fun = ZBL_screen()
     #screen_fun = KrC_screen()
 
-    Z1 = 4
-    Z2 = 70
+    #Z1 = 4
+    #Z2 = 70
     #aZBL = 0.4685 / (Z1**0.23 + Z2**0.23)**1
     #aNLHlin = 0.4685 / (Z1**0.5 + Z2**0.5)**0.5
     #a = aZBL
-    screen_fun = NLHlin_screen(Z1, Z2)#, a)
+    #screen_fun = NLHlin_screen(Z1, Z2)#, a)
     #print(calc_sn(0.3*aNLHlin/a, screen_fun))
     
     #print(calc_sn(1e-5, screen_fun))
@@ -702,6 +790,11 @@ if __name__ == "__main__":
     #plot_qn(p1=0.5, p2=0.5)
     #plot_qn(p1=0.23, p2=1)
     #plot_qn(p1=0.5, p2=2/3)
-    plot_sn_at_e(0.01, p1=0.5, p2=0.5)
+    #plot_sn_at_e(0.01, p1=0.5, p2=0.5)
     #plot_sn_at_e(0.01, p1=0.23, p2=1)
     #plot_sn_at_e(0.01, p1=0.5, p2=2/3)
+
+    energies = np.logspace(1, 4, 7)
+    Z1 = [7, 79, 74]
+    Z2 = [6, 14, 74]
+    plot_sn_cutoff(energies, Z1, Z2)

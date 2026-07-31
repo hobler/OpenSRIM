@@ -1,0 +1,46 @@
+# =============================================================================
+# OpenSRIM / OpenTRIM Input Parameters
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+[simulation]
+# -----------------------------------------------------------------------------
+
+follow_recoils = true
+nions = 10000
+nions_update = 100
+rng_seed = 12345
+workdir = "./"
+
+# -----------------------------------------------------------------------------
+[beam]
+# -----------------------------------------------------------------------------
+
+symbol = "As"
+name = "Arsenic"
+Z = 33
+M = 74.9215956
+energy = 10.0
+tilt = 0.0
+
+# -----------------------------------------------------------------------------
+# Layers are defined as an array of tables.
+# Add more [[layer]] blocks to define additional layers (in order).
+# Each layer may contain multiple [[layer.element]] entries.
+# -----------------------------------------------------------------------------
+
+[[layer]]
+name = "Layer 1"
+width = 10000.0
+density = 1.0
+compound_correction = 1.0
+gas = false
+
+    [[layer.element]]
+    symbol = "Si"
+    name = "Silicon"
+    Z = 14
+    M = 0.0
+    stoichiometry = 1.0
+    displacement_energy = 25.0
+

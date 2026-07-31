@@ -46,6 +46,8 @@ gas                 = false     # treat layer as gas
     M                  = 28.086
     stoichiometry      = 1
     displacement_energy = 15.0  # displacement threshold energy (eV)
+    lattice_binding_energy = 3.0
+    surface_binding_energy = 4.7
 
 # [[layer]]
 # name                = "Layer 2"
@@ -78,6 +80,16 @@ n_absc    = 4        # number of abscissas (Gauss-Legendre only)
 "B->Si"  = 1.5
 "Si->Si" = 1.0
 
+# -----------------------------------------------------------------------------
+[cascade]
+# -----------------------------------------------------------------------------
+pmax_min = 0.0
+pmax_max = 4.0
+psi_min = 5.0
+de_min = 15.0
+psi_min_surface = 5.0
+de_min_surface = 15.0
+replacement_collisions = false
 
 # -----------------------------------------------------------------------------
 [output]

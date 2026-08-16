@@ -183,9 +183,9 @@ def _get_elements_and_materials_params(input_params):
         ("ielem", np.int32, (NELEM,)),
         ("atomic_fraction", np.float64, (NELEM,)),
         ("cumulative_fraction", np.float64, (NELEM,)),
-        ("displacement_energy", np.float64, (NELEM,)),
-        ("surface_binding_energy", np.float64, (NELEM,)),
-        ("bulk_binding_energy", np.float64, (NELEM,)),
+        ("edisp", np.float64, (NELEM,)),
+        ("esurf", np.float64, (NELEM,)),
+        ("ebulk", np.float64, (NELEM,)),
     ], align=True)
 
     materials_params = np.recarray(NMAT, dtype=MATERIALS_PARAMS_DTYPE)
@@ -201,11 +201,11 @@ def _get_elements_and_materials_params(input_params):
                 mat["atomic_fractions"][ielem])
             materials_params[imat].cumulative_fraction[ielem] = (
                 np.sum(mat["atomic_fractions"][:ielem+1]))
-            materials_params[imat].displacement_energy[ielem] = (
+            materials_params[imat].edisp[ielem] = (
                 mat["element"][ielem]["displacement_energy"])
-            materials_params[imat].surface_binding_energy[ielem] = (
+            materials_params[imat].esurf[ielem] = (
                 mat["element"][ielem]["surface_binding_energy"])
-            materials_params[imat].bulk_binding_energy[ielem] = (
+            materials_params[imat].ebulk[ielem] = (
                 mat["element"][ielem]["lattice_binding_energy"])
 #    print(f"materials_params={materials_params}")
 
@@ -380,6 +380,7 @@ def _get_cascade_params(input_params, nelem, elements_params, materials_params,
         ("follow_recoils", np.int64),  # stored as int for better compatibility with Numba
         ("emin", np.float64),
         ("ed", np.float64),
+        ("pmax_max", np.float64),
         ("pmax", np.float64, (NMAT,)),
         ("mean_free_path", np.float64, (NMAT,)),
         ("pmax_vals", np.float64, (NPMAX,)),
@@ -403,12 +404,15 @@ def _get_cascade_params(input_params, nelem, elements_params, materials_params,
 
     # TODO: get pmaxmin and pmaxmax from input_params
     pmaxmax = 4.0
+    cascade_params[0].pmax_max = pmaxmax  # needed for surface layer
+
     pmaxmin = 0
     #pmaxmax = 1.53
     #pmaxmin = pmaxmax
     pmaxmin = max(pmaxmin, pmaxmax / NPMAX)
     pmax_vals = np.linspace(pmaxmin, pmaxmax, NPMAX)
     cascade_params[0].pmax_vals = pmax_vals[::-1]
+
 
     nmat = len(input_params["layer"])
 

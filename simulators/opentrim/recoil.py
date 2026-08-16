@@ -87,8 +87,8 @@ def select_recoil(proj, recoil, params):
 
     # recoil position
     recoil["pos"] = collision_pos[:] + p * dirp[:]
-    recoil["ilayer"] = get_layer_index(recoil["pos"], params.geometry)
-    recoil["ielem"] = get_element_index(recoil, params.materials)
-    recoil["is_inside"] = is_inside_target(recoil["pos"], params.geometry)
+    recoil["ilayer"] = get_layer_index(recoil["pos"], params)
+    recoil["ielem"] = get_element_index(recoil, params)
+    recoil["is_inside"] = is_inside_target(recoil["pos"], params)
 
     return free_path, p, dirp[:]

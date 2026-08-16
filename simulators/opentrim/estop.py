@@ -6,10 +6,11 @@ a correction factor is implemented.
 Available functions:
     eloss: calculate the electronic energy loss.
 """
-from math import sqrt
+from math import dist, sqrt
 import numpy as np
 from numba import jit
 from . import config
+from .target import get_distance_from_surface
 
 
 @jit(debug=config.DEBUG)
@@ -27,14 +28,16 @@ def estop_lindhard(e, fac_lindhard):
 
 
 @jit(inline = "always", debug=config.DEBUG)
-def eloss(proj, free_path, estop_params, materials_params):
+def eloss(proj, free_path, params):
     """Calculate the electronic energy loss over a given free path length.
+
+    No electronic stopping is applied outside the target.
+    TODO: Consider different stopping powers when layer boundaries are crossed.
 
     Parameters:
         proj (Projectile): state of the projectile before the free flight path
         free_path (float): free path length (A)
-        estop_params (ESTOP_PARAMS_DTYPE): Electronic stopping parameters
-        materials_params (MATERIALS_PARAMS_DTYPE): Material parameters
+        params (PARAMS_DTYPE): Simulation parameters
 
     Returns:
         (float): energy loss (eV)
@@ -43,18 +46,35 @@ def eloss(proj, free_path, estop_params, materials_params):
     imat = proj["ilayer"]
     ielem1 = proj["ielem"]
 
+    # No electronic stopping outside the target
+    dist_beg, beamside_beg = get_distance_from_surface(proj["pos"], params)
+    pos_end = proj["pos"] + free_path * proj["dir"]
+    dist_end, beamside_end = get_distance_from_surface(pos_end, params)
+
+    if (dist_beg > 0.0) and (dist_end > 0.0):
+        pass
+    elif dist_beg > 0.0:
+        free_path *= dist_beg / (dist_beg - dist_end)
+    elif dist_end > 0.0:
+        free_path *= dist_end / (dist_end - dist_beg)
+    elif beamside_end == beamside_beg:
+        return 0.0
+    else:
+        dist = abs(proj["pos"][0] - pos_end[0])
+        free_path *= (dist + dist_beg + dist_end) / dist
+
     weighted_se = 0.0
-    for i in range(materials_params.nelem[imat]):
-        ielem2 = materials_params.ielem[imat, i]
-        if estop_params.model == "Lindhard":
-            se = estop_lindhard(e, estop_params.fac_lindhard[ielem1, ielem2])
+    for i in range(params.materials.nelem[imat]):
+        ielem2 = params.materials.ielem[imat, i]
+        if params.estop.model == "Lindhard":
+            se = estop_lindhard(e, params.estop.fac_lindhard[ielem1, ielem2])
         else:
-            se = np.interp(e, estop_params.srim_energies, 
-                           estop_params.srim_table[ielem1, ielem2])
-        atomic_fraction = materials_params.atomic_fraction[imat, i]
+            se = np.interp(e, params.estop.srim_energies, 
+                           params.estop.srim_table[ielem1, ielem2])
+        atomic_fraction = params.materials.atomic_fraction[imat, i]
         weighted_se += atomic_fraction * se
     
-    dee = weighted_se * materials_params.density[imat] * free_path
+    dee = weighted_se * params.materials.density[imat] * free_path
 
     if dee > proj["e"]:
         dee = proj["e"]

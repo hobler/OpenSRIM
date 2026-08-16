@@ -57,13 +57,17 @@ def _simulate(nion, params, stats_per_thread, sim_idx):
         stats_per_thread: (ndarray[STATS_DTYPE]) Array of stats for each thread
         sim_idx: (int) Simulation index (for chunked simulations)
     """
-    # Initial conditions of the projectile
+    # Initial conditions of the projectile, starting outside target
+    dirx = np.cos(np.radians(params[0].beam.tilt))
+    diry = np.sin(np.radians(params[0].beam.tilt))
+    dirz = 0.0
+    xinit = params[0].geometry.x_intf[0] - params[0].cascade.pmax_max
+    yinit = xinit * diry / dirx
+    zinit = xinit * dirz / dirx
     proj_init = Projectile(
         params[0].beam.energy,  # energy (eV)
-        np.array([0.0, 0.0, 0.0]),  # position (A)
-        np.array([np.cos(np.radians(params[0].beam.tilt)), 
-                      np.sin(np.radians(params[0].beam.tilt)), 0.0])
-                      # direction (unit vector)
+        np.array([xinit, yinit, zinit]),  # position (A)
+        np.array([dirx, diry, dirz])  # direction (unit vector)
     )
     proj_dummy_list = typed.List.empty_list(PROJ_NUMBA_DTYPE)
     proj_sim = [proj_dummy_list for _ in range(nion)]
@@ -125,7 +129,8 @@ def simulate_adaptive(avg_chunk_time, nion, params, stats, input_params=None, up
     return
 
 
-def simulate_chunked(chunk_size, nion, params, stats, input_params=None, upd_callback=None):
+def simulate_chunked(chunk_size, nion, params, stats, input_params=None, 
+                     upd_callback=None):
     """Chunked simulation for nion projectiles
     
     Parameters:

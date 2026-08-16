@@ -375,16 +375,19 @@ def score_start(stats, proj, nelem_target):
 
 
 @jit(debug=config.DEBUG)
-def score_end(stats, proj):
-    """Score a projectile that has stopped or left the target."""
-    if proj["is_inside"]:
-        score_ned(stats, proj)
-        _score_stop(stats, proj)
+def score_stop(stats, proj):
+    """Score a projectile that has stopped inside the target."""
+    score_ned(stats, proj)
+    _score_stop(stats, proj)
+
+
+@jit(debug=config.DEBUG)
+def score_exit(stats, proj):
+    """Score a projectile that has exited the target."""
+    if proj["dir"][0] < 0:
+        _score_backscattered(stats, proj)
     else:
-        if proj["dir"][0] < 0:
-            _score_backscattered(stats, proj)
-        else:
-            _score_transmitted(stats, proj)
+        _score_transmitted(stats, proj)
 
 
 def standardize_moments(stats, ivar):

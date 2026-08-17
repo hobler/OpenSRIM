@@ -90,7 +90,8 @@ def check_exit_and_move(proj, free_path, params):
         e_perp = proj["e"] * cos_alpha**2
         imat = 0 if is_on_beamside else params.geometry.nlayers - 1
         proj["ilayer"] = imat
-        e_surf = params.materials[imat].esurf[proj["ielem"]]
+        ielem_mat = params.materials[imat].ielem_mat[proj["ielem"]]
+        e_surf = params.materials[imat].esurf[ielem_mat]
         if e_perp > e_surf:
             # refraction
             cos_beta = np.sqrt((e_perp - e_surf) / (proj["e"] - e_perp))
@@ -152,12 +153,12 @@ def get_element_index(proj, params):
         (int): element index
     """
     imat = proj["ilayer"]
-    nelem_mat = params.materials.nelem[imat]
+    nelem_mat = params.materials[imat].nelem_mat
 
     r = np.random.rand() * sum(
-        params.materials.atomic_fraction[imat, :nelem_mat])
-    for ielem in range(nelem_mat - 1):
-        if r < params.materials.cumulative_fraction[imat, ielem]:
-            return params.materials.ielem[imat, ielem]
+        params.materials[imat].atomic_fraction[:nelem_mat])
+    for ielem_mat in range(nelem_mat - 1):
+        if r < params.materials[imat].cumulative_fraction[ielem_mat]:
+            return params.materials[imat].ielem[ielem_mat]
 
-    return params.materials.ielem[imat, nelem_mat - 1]
+    return params.materials[imat].ielem[nelem_mat - 1]

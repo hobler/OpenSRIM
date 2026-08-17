@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+try:
+    import tomllib  # type: ignore
+except ImportError:  # pragma: no cover
+    import tomli as tomllib  # type: ignore
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
@@ -33,22 +37,21 @@ class HintItem:
 
 class HintRepository:
     """
-    JSON schema (minimal):
-    {
-      "pages": {
-        "KORAL": [
-          {"id": "ion", "title": "Ion Selection", "content": "# ...markdown..."},
-          ...
-        ],
-        "MC Setup": [...]
-      }
-    }
+    TOML schema (minimal):
+    [[pages.KORAL]]
+    id = "ion"
+    title = "Ion Selection"
+    content = '''# ...markdown...'''
+
+    [[pages."MC Setup"]]
+    ...
     """
-    def __init__(self, json_path: str | Path):
-        self.json_path = Path(json_path)
+    def __init__(self, toml_path: str | Path):
+        self.toml_path = Path(toml_path)
 
     def load(self) -> Dict[str, List[HintItem]]:
-        raw = json.loads(self.json_path.read_text(encoding="utf-8"))
+        with open(self.toml_path, "rb") as fh:
+            raw = tomllib.load(fh)
         pages = raw.get("pages", {})
         out: Dict[str, List[HintItem]] = {}
         for page_id, items in pages.items():
@@ -200,7 +203,7 @@ def main():
 
     # assumes this file lives at app/ui/hints/hints_popup.py
     root = Path(__file__).resolve().parents[2]  # .../app
-    hints_path = "hints.json"
+    hints_path = "hints.toml"
 
     hs = HintSystem(repo_path=hints_path)
 

@@ -217,7 +217,7 @@ def load_elements_by_number() -> Dict[int, Dict[str, Any]]:
 
 @dataclass
 class AppState:
-    unit_options: List[str] = field(default_factory=lambda: ["Ång", "nm", "µm", "mm", "cm", "m", "km"])
+    unit_options: List[str] = field(default_factory=lambda: ["Å", "nm", "µm", "mm", "cm", "m", "km"])
     energy_defaults: Dict[str, str] = field(default_factory=lambda: {"damage": "25", "disp": "25", "latt": "3", "surf": "3"})
     elements_by_number: Dict[int, Dict[str, Any]] = field(default_factory=load_elements_by_number)
 

@@ -3,6 +3,14 @@ import json
 import os
 import sys
 import numpy as np
+
+try:
+    import tomllib  # type: ignore
+except ImportError:  # pragma: no cover
+    try:
+        import tomli as tomllib  # type: ignore
+    except ImportError:
+        tomllib = None  # type: ignore
 from pathlib import Path
 from typing import List, Dict, Any, Callable, Optional
 
@@ -1715,6 +1723,62 @@ def _color_icon(color: str, size: int = 14) -> QIcon:
     return QIcon(pix)
 
 
+def _toml_inline_value(value: Any) -> str:
+    """Render a scalar or a flat list of scalars as an inline TOML value."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return repr(value) if isinstance(value, float) else str(value)
+    if isinstance(value, (list, tuple)):
+        return "[" + ", ".join(_toml_inline_value(v) for v in value) + "]"
+    return json.dumps(str(value), ensure_ascii=False)
+
+
+def _plot_config_to_toml(payload: Dict[str, Any]) -> str:
+    """Serialize a Single Plot config payload to TOML text.
+
+    Shape: top-level scalars, an "axes" table, and a "curves" array of
+    tables. A curve's own values are scalars or short flat lists (e.g.
+    scan_area) except for "data" (embedded x/y arrays for derived curves
+    with no external source), which becomes its own [curves.data] subtable.
+    """
+    lines: List[str] = []
+    axes = payload.get("axes") or {}
+    curves = payload.get("curves") or []
+
+    for key, value in payload.items():
+        if key in ("axes", "curves") or value is None:
+            continue
+        lines.append(f"{key} = {_toml_inline_value(value)}")
+    lines.append("")
+
+    if axes:
+        lines.append("[axes]")
+        for key, value in axes.items():
+            if value is None:
+                continue
+            lines.append(f"{key} = {_toml_inline_value(value)}")
+        lines.append("")
+
+    for curve in curves:
+        lines.append("[[curves]]")
+        data = curve.get("data") if isinstance(curve.get("data"), dict) else None
+        for key, value in curve.items():
+            if key == "data" or value is None:
+                continue
+            lines.append(f"{key} = {_toml_inline_value(value)}")
+        if data:
+            lines.append("")
+            lines.append("[curves.data]")
+            for key, value in data.items():
+                if value is None:
+                    continue
+                lines.append(f"{key} = {_toml_inline_value(value)}")
+        lines.append("")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
 class CollapsibleBox(QGroupBox):
     """A bordered box whose body collapses/expands via a clickable header.
 
@@ -1789,7 +1853,7 @@ class SinglePlotPage(QWidget):
     def _init_hints(self) -> None:
         """Initialize hint system and lock it to this page."""
         try:
-            hints_path = Path(__file__).resolve().parents[2] / "widgets" / "hints.json"
+            hints_path = Path(__file__).resolve().parents[2] / "widgets" / "hints.toml"
             self._hint_system = HintSystem(repo_path=hints_path, parent=self)
             self._hint_system.set_current_page("Single Plot")
         except Exception:
@@ -3208,12 +3272,12 @@ class SinglePlotPage(QWidget):
             return
         path, _ = QFileDialog.getSaveFileName(
             self, "Save Single Plot Configuration", get_last_used_directory(),
-            "Single Plot Config (*.spc.json);;JSON Files (*.json);;All Files (*)",
+            "Single Plot Config (*.spc.toml);;TOML Files (*.toml);;All Files (*)",
         )
         if not path:
             return
-        if not path.lower().endswith(".json"):
-            path += ".spc.json"
+        if not path.lower().endswith(".toml"):
+            path += ".spc.toml"
         config_dir = os.path.dirname(os.path.abspath(path))
 
         curves_out: List[Dict[str, Any]] = []
@@ -3252,7 +3316,7 @@ class SinglePlotPage(QWidget):
         }
         try:
             with open(path, "w", encoding="utf-8") as fh:
-                json.dump(payload, fh, indent=2)
+                fh.write(_plot_config_to_toml(payload))
         except OSError as exc:
             QMessageBox.warning(self, "Save Plot Config",
                                 f"Unable to save configuration:\n{exc}")
@@ -3266,17 +3330,28 @@ class SinglePlotPage(QWidget):
     def _load_plot_config(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self, "Load Single Plot Configuration", get_last_used_directory(),
-            "Single Plot Config (*.spc.json);;JSON Files (*.json);;All Files (*)",
+            "Single Plot Config (*.spc.toml *.spc.json);;TOML Files (*.toml);;"
+            "JSON Files (*.json);;All Files (*)",
         )
         if not path:
             return
-        try:
-            with open(path, "r", encoding="utf-8") as fh:
-                payload = json.load(fh)
-        except (OSError, json.JSONDecodeError) as exc:
-            QMessageBox.warning(self, "Load Plot Config",
-                                f"Unable to read configuration:\n{exc}")
-            return
+        payload = None
+        # Try TOML first (the current format); fall back to JSON so configs
+        # saved by older versions of OpenSRIM still load.
+        if tomllib is not None and not path.lower().endswith(".json"):
+            try:
+                with open(path, "rb") as fh:
+                    payload = tomllib.load(fh)
+            except (OSError, tomllib.TOMLDecodeError):
+                payload = None
+        if payload is None:
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    payload = json.load(fh)
+            except (OSError, json.JSONDecodeError) as exc:
+                QMessageBox.warning(self, "Load Plot Config",
+                                    f"Unable to read configuration:\n{exc}")
+                return
         if not isinstance(payload, dict) or payload.get("format") != "OpenSRIM.singleplot":
             QMessageBox.warning(self, "Load Plot Config",
                                 "This file is not a single-plot configuration.")
@@ -3306,18 +3381,25 @@ class SinglePlotPage(QWidget):
             if rel:
                 abs_dir = os.path.normpath(os.path.join(config_dir, rel))
                 if abs_dir not in dir_cache:
-                    if os.path.isdir(abs_dir):
+                    resolved_dir = abs_dir
+                    if not os.path.isdir(resolved_dir):
+                        resolved_dir = self._prompt_relocate_directory(abs_dir, label)
+                    if resolved_dir and os.path.isdir(resolved_dir):
                         try:
-                            dir_cache[abs_dir] = _build_plots_from_directory(abs_dir)[0]
+                            dir_cache[abs_dir] = (_build_plots_from_directory(resolved_dir)[0], resolved_dir)
                         except Exception:
                             dir_cache[abs_dir] = None
                     else:
                         dir_cache[abs_dir] = None
-                plots = dir_cache[abs_dir]
+                cached = dir_cache[abs_dir]
+                if not cached:
+                    missing.append(f"{label}  ←  {rel}")
+                    continue
+                plots, resolved_dir = cached
                 if not plots:
                     missing.append(f"{label}  ←  {rel}")
                     continue
-                dataset = self._dataset_from_plots(plots, source_id, is_2d, abs_dir)
+                dataset = self._dataset_from_plots(plots, source_id, is_2d, resolved_dir)
                 if dataset is None:
                     missing.append(f"{label}  (series not found in {rel})")
                     continue
@@ -3362,6 +3444,29 @@ class SinglePlotPage(QWidget):
                 "The following curves could not be loaded because their data "
                 "source is missing:\n\n- " + "\n- ".join(missing),
             )
+
+    def _prompt_relocate_directory(self, original_dir: str, label: str) -> Optional[str]:
+        """Ask the user to locate a saved curve's simulation-results directory
+        that no longer exists at its recorded (relative) location.
+
+        Returns the new directory if the user picks one, otherwise None. The
+        caller re-derives the curve's source path from whatever directory is
+        actually used, so a subsequent Save automatically writes the
+        corrected relative path -- no separate "fix-up" step is needed.
+        """
+        choice = QMessageBox.question(
+            self, "Locate Simulation Results",
+            f'Could not find the data for "{label}":\n\n{original_dir}\n\n'
+            "Locate its new folder?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if choice != QMessageBox.StandardButton.Yes:
+            return None
+        new_dir = QFileDialog.getExistingDirectory(
+            self, f'Locate results for "{label}"', get_last_used_directory(),
+        )
+        return new_dir or None
 
     def _dataset_from_plots(self, plots: Dict[str, Any], source_id: str,
                             is_2d: bool, path: str) -> Optional[Dict[str, Any]]:
@@ -4611,7 +4716,8 @@ class ResultsSidebar(QWidget):
         self._btn_load_data.clicked.connect(self._open_load_data_dialog)
         load_row.addWidget(self._btn_load_data, 1)
 
-        self._btn_unload_data = QPushButton("Unload")
+        self._btn_unload_data = QPushButton("Clear")
+        self._btn_unload_data.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_TrashIcon))
         self._btn_unload_data.setToolTip("Clear the results currently shown in this tab")
         self._btn_unload_data.clicked.connect(self.unload_requested)
         load_row.addWidget(self._btn_unload_data)

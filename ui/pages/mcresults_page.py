@@ -171,11 +171,19 @@ def _parse_species(label: str) -> tuple:
     return text, ""
 
 
-def _fmt_scaled(value: float, quantity: str) -> str:
-    """Format value with a human-friendly unit scale."""
+def _pick_scale(value: float, quantity: str) -> tuple[float, str]:
+    """Pick a human-friendly (scale_factor, unit) pair for `value` in `quantity`.
+
+    `value * scale_factor` gives the number to display alongside `unit`.
+    Callers that show several related values together (e.g. a mean and its
+    own standard deviation) should call this once and reuse the same
+    (scale_factor, unit) for all of them, instead of letting each value pick
+    its own scale independently -- otherwise a mean and its error, or a mean
+    and a standard deviation, can silently end up in different units.
+    """
     v = float(value)
     if not np.isfinite(v):
-        return "—"
+        return 1.0, ""
 
     if quantity == "length_a":
         meters = v * 1e-10
@@ -187,35 +195,49 @@ def _fmt_scaled(value: float, quantity: str) -> str:
             (1.0, "m"),
         ]
         abs_m = abs(meters)
-        unit_scale, unit = scales[1]
+        unit_scale_m, unit = scales[1]
         for s, u in scales:
             if abs_m < 1000.0 * s:
-                unit_scale, unit = s, u
+                unit_scale_m, unit = s, u
                 break
-        return f"{meters / unit_scale:.3g} {unit}"
+        return 1e-10 / unit_scale_m, unit
 
     if quantity == "energy_kev":
-        ev = v * 1e3
-        abs_ev = abs(ev)
+        abs_ev = abs(v * 1e3)
         if abs_ev < 1e3:
-            return f"{ev:.3g} eV"
+            return 1e3, "eV"
         if abs_ev < 1e6:
-            return f"{ev / 1e3:.3g} keV"
-        return f"{ev / 1e6:.3g} MeV"
+            return 1.0, "keV"
+        return 1e-3, "MeV"
 
     if quantity == "energy_ev":
         # Value already in eV (e.g. backscattered/transmitted ion energy).
         abs_ev = abs(v)
         if abs_ev < 1e3:
-            return f"{v:.3g} eV"
+            return 1.0, "eV"
         if abs_ev < 1e6:
-            return f"{v / 1e3:.3g} keV"
-        return f"{v / 1e6:.3g} MeV"
+            return 1e-3, "keV"
+        return 1e-6, "MeV"
 
     if quantity == "angle_deg":
-        return f"{v:.3g} deg"
+        return 1.0, "deg"
 
-    return f"{v:.3g}"
+    return 1.0, ""
+
+
+def _fmt_with_scale(value: float, scale_factor: float, unit: str) -> str:
+    """Format `value` using a (scale_factor, unit) pair from _pick_scale."""
+    v = float(value)
+    if not np.isfinite(v):
+        return "—"
+    scaled = v * scale_factor
+    return f"{scaled:.3g} {unit}" if unit else f"{scaled:.3g}"
+
+
+def _fmt_scaled(value: float, quantity: str) -> str:
+    """Format a single, standalone value with a human-friendly unit scale."""
+    scale_factor, unit = _pick_scale(value, quantity)
+    return _fmt_with_scale(value, scale_factor, unit)
 
 
 def _build_yields_rows(all_moments: Dict[str, dict], total_ions: float) -> List[Dict[str, Any]]:
@@ -309,24 +331,31 @@ def _build_moment_rows(all_moments: Dict[str, dict]) -> List[Dict[str, Any]]:
                 "collapsed": True,
             })
 
+            # Pick one shared (scale_factor, unit) for this group -- based on
+            # the mean's magnitude -- so Mean/Standard Deviation and their
+            # own error values all display in the same unit, instead of each
+            # picking its own scale independently.
+            group_scale, group_unit = _pick_scale(mean, quantity)
+            dimensionless_scale, dimensionless_unit = _pick_scale(skew, "")
+
             child_rows = [
-                ("Mean", mean, float(vals.get("mean_err", 0.0) or 0.0), quantity),
-                ("Standard Deviation", std, float(vals.get("std_err", 0.0) or 0.0), quantity),
-                ("Skewness", skew, float(vals.get("skewness_err", 0.0) or 0.0), ""),
-                ("Kurtosis", kurt, float(vals.get("kurtosis_err", 0.0) or 0.0), ""),
+                ("Mean", mean, float(vals.get("mean_err", 0.0) or 0.0), group_scale, group_unit),
+                ("Standard Deviation", std, float(vals.get("std_err", 0.0) or 0.0), group_scale, group_unit),
+                ("Skewness", skew, float(vals.get("skewness_err", 0.0) or 0.0), dimensionless_scale, dimensionless_unit),
+                ("Kurtosis", kurt, float(vals.get("kurtosis_err", 0.0) or 0.0), dimensionless_scale, dimensionless_unit),
             ]
-            for label, val, err, row_quantity in child_rows:
+            for label, val, err, scale_factor, unit in child_rows:
                 if val == 0.0 and err == 0.0:
                     continue
-                value_text = _fmt_scaled(val, row_quantity)
+                value_text = _fmt_with_scale(val, scale_factor, unit)
                 if err > 0.0:
-                    value_text += f" ± {_fmt_scaled(err, row_quantity)}"
+                    value_text += f" ± {_fmt_with_scale(err, scale_factor, unit)}"
                 rows.append({
                     "name": label,
                     "value": value_text,
                     "row_type": "child",
                     "group": group_id,
-                    "tooltip": f"Statistical error: {_fmt_scaled(err, row_quantity)}" if err > 0.0 else None,
+                    "tooltip": f"Statistical error: {_fmt_with_scale(err, scale_factor, unit)}" if err > 0.0 else None,
                 })
 
     return rows

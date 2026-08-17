@@ -25,6 +25,7 @@ except Exception:  # pragma: no cover
 from matplotlib.figure import Figure
 
 from state import AppState
+from version import __version__
 from ui.widgets.toggle_switch import ToggleSwitch
 from ui.widgets.periodic_table_picker import PeriodicTableButton, PeriodicTableDialog
 from ui.widgets.advanced_settings_button import AdvancedSettingsButton
@@ -1252,9 +1253,9 @@ class KoralPage(QWidget):
 
     def _length_from_m(self, value_m: float, unit: str) -> float:
         u = str(unit)
-        # AppState.unit_options default: ["Ång", "nm", "µm", "mm", "cm", "m", "km"]
+        # AppState.unit_options default: ["Å", "nm", "µm", "mm", "cm", "m", "km"]
         factors = {
-            "Ång": 1.0e10,
+            "Å": 1.0e10,
             "nm": 1.0e9,
             "µm": 1.0e6,
             "mm": 1.0e3,
@@ -1286,7 +1287,7 @@ class KoralPage(QWidget):
     def _format_length(self, v_m: float, unit: str, *, use_comma: bool = False) -> str:
         val = self._length_from_m(v_m, unit)
         u = str(unit)
-        if u == "Ång":
+        if u == "Å":
             s = f"{int(round(val))} A"
         else:
             s = f"{val:.1f} {u}"
@@ -1359,11 +1360,11 @@ class KoralPage(QWidget):
             # These stay per-quantity for the table/export; the plot below
             # consolidates each axis group to a single (smallest) unit so
             # traces sharing an axis are visually comparable.
-            range_unit = "Ång"
+            range_unit = "Å"
             if isinstance(self._last_request, dict):
                 range_unit = str(self._last_request.get("output", {}).get("units", {}).get("prange") or range_unit)
-            range_unit_long = "Ång"
-            range_unit_lat = "Ång"
+            range_unit_long = "Å"
+            range_unit_lat = "Å"
             if isinstance(self._last_request, dict):
                 units = self._last_request.get("output", {}).get("units", {})
                 if isinstance(units, dict):
@@ -1506,9 +1507,9 @@ class KoralPage(QWidget):
             if isinstance(req_out, list):
                 requested = [str(x) for x in req_out]
 
-        range_unit = "Ång"
-        range_unit_long = "Ång"
-        range_unit_lat = "Ång"
+        range_unit = "Å"
+        range_unit_long = "Å"
+        range_unit_lat = "Å"
         if isinstance(self._last_request, dict):
             units = self._last_request.get("output", {}).get("units", {})
             if isinstance(units, dict):
@@ -1682,9 +1683,9 @@ class KoralPage(QWidget):
             if isinstance(raw_units, dict):
                 units = raw_units
 
-        range_unit = str(units.get("prange") or "Ång")
-        range_unit_long = str(units.get("long_strag") or "Ång")
-        range_unit_lat = str(units.get("lat_strag") or "Ång")
+        range_unit = str(units.get("prange") or "Å")
+        range_unit_long = str(units.get("long_strag") or "Å")
+        range_unit_lat = str(units.get("lat_strag") or "Å")
         stop_unit_elec = str(units.get("elec_stop") or "eV/Å")
         stop_unit_nucl = str(units.get("nucl_stop") or "eV/Å")
 
@@ -1824,9 +1825,9 @@ class KoralPage(QWidget):
             }.get(int(m), "")
 
         # Units
-        range_unit = "Ång"
-        range_unit_long = "Ång"
-        range_unit_lat = "Ång"
+        range_unit = "Å"
+        range_unit_long = "Å"
+        range_unit_lat = "Å"
         # TXT export requirement: always use SRIM default stopping unit
         stop_unit_elec = "eV/Å"
         stop_unit_nucl = "eV/Å"
@@ -1898,7 +1899,7 @@ class KoralPage(QWidget):
             """Format length value without the unit suffix."""
             val = self._length_from_m(v_m, unit)
             u = str(unit)
-            if u == "Ång":
+            if u == "Å":
                 s = f"{int(round(val))}"
             else:
                 s = f"{val:.3g}"
@@ -1971,8 +1972,9 @@ class KoralPage(QWidget):
 
         # SRIM-like header block
         out_lines.append(" ==================================================================")
-        out_lines.append("              OpenSrim version ---> OpenSrim-2025.00")
+        out_lines.append(f"              OpenSrim version ---> OpenSrim-{__version__}")
         out_lines.append(f"              Calc. date   ---> {calc_date} ")
+        out_lines.append("              Program name: OpenSrim")
         out_lines.append(" ==================================================================")
         out_lines.append("")
 
@@ -2080,14 +2082,13 @@ class KoralPage(QWidget):
                     ee = 0.0
                 out_lines.append(line_for_point(ee, outputs, i))
 
-        out_lines.append("  Program name: OpenSrim")
         return "\n".join(out_lines) + "\n"
 
 
     def _init_hints(self) -> None:
         """Initialize hint system and lock it to this page."""
         try:
-            hints_path = Path(__file__).resolve().parents[1] / "widgets" / "hints.json"  # app/ui/widgets/hints.json
+            hints_path = Path(__file__).resolve().parents[1] / "widgets" / "hints.toml"  # app/ui/widgets/hints.toml
             hs = HintSystem(repo_path=hints_path, parent=self)
             hs.set_current_page("KORAL")
             self._hint_system = hs

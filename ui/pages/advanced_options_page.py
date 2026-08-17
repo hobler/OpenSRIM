@@ -169,6 +169,7 @@ class AdvancedOptionsPage(QWidget):
     mc_psi_min_surface_changed = pyqtSignal(float)
     mc_de_min_surface_changed = pyqtSignal(float)
     mc_replacement_collisions_changed = pyqtSignal(bool)
+    mc_nthreads_changed = pyqtSignal(int)
     toolbar_visibility_changed = pyqtSignal(bool)
     columns_changed = pyqtSignal(int)        # 0=auto, 1, 2, 3
     borders_visibility_changed = pyqtSignal(bool)
@@ -179,6 +180,11 @@ class AdvancedOptionsPage(QWidget):
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
+
+        # Optional callback (set via set_project_elements_provider) returning
+        # the project's current ion + target element symbols, so pickers like
+        # the Lindhard-correction "Add Row" can restrict to those elements.
+        self._project_elements_provider = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(10, 10, 10, 10)
@@ -288,6 +294,24 @@ class AdvancedOptionsPage(QWidget):
         seed_row.addWidget(self.spin_rng_seed)
         seed_row.addStretch(1)
         cascade_opts_l.addLayout(seed_row)
+
+        # Default to ~80% of logical cores: at 100% the simulation can make
+        # the whole UI (including the Stop button) sluggish to unresponsive.
+        _cpu_count = os.cpu_count() or 1
+        _default_threads = max(1, round(0.8 * _cpu_count))
+        threads_row = QHBoxLayout()
+        threads_row.addWidget(QLabel(f"Simulation threads (of {_cpu_count}):"))
+        self.spin_nthreads = QSpinBox()
+        self.spin_nthreads.setRange(1, _cpu_count)
+        self.spin_nthreads.setValue(_default_threads)
+        self.spin_nthreads.setToolTip(
+            "Number of CPU threads used by the Monte Carlo simulation. "
+            "Defaults to ~80% of available cores so the UI (including Stop) "
+            "stays responsive while a simulation is running."
+        )
+        threads_row.addWidget(self.spin_nthreads)
+        threads_row.addStretch(1)
+        cascade_opts_l.addLayout(threads_row)
         cascade_opts_l.addStretch(1)
 
         # --- Nuclear Stopping content ---
@@ -582,6 +606,7 @@ class AdvancedOptionsPage(QWidget):
         self.spin_psi_min.valueChanged.connect(self._emit_mc_setup_advanced)
         self.spin_psi_min_surface.valueChanged.connect(self._emit_mc_setup_advanced)
         self.spin_de_min_surface.valueChanged.connect(self._emit_mc_setup_advanced)
+        self.spin_nthreads.valueChanged.connect(self._emit_mc_setup_advanced)
         self.spin_rng_seed.valueChanged.connect(self._emit_mc_setup_advanced)
         self.cmb_electronic_stopping.currentIndexChanged.connect(self._emit_mc_setup_advanced)
         self.cmb_scattering_algorithm.currentIndexChanged.connect(self._emit_mc_setup_advanced)
@@ -644,6 +669,7 @@ class AdvancedOptionsPage(QWidget):
             self.mc_de_min_changed.emit(float(self.spin_de_min.value()))
             self.mc_psi_min_surface_changed.emit(float(self.spin_psi_min_surface.value()))
             self.mc_de_min_surface_changed.emit(float(self.spin_de_min_surface.value()))
+            self.mc_nthreads_changed.emit(int(self.spin_nthreads.value()))
             self.mc_rng_seed_changed.emit(int(self.spin_rng_seed.value()))
             self.mc_electronic_stopping_changed.emit(str(self.cmb_electronic_stopping.currentText()))
             self.mc_scattering_algorithm_changed.emit(str(self.cmb_scattering_algorithm.currentText()))
@@ -673,8 +699,20 @@ class AdvancedOptionsPage(QWidget):
         self._update_lindhard_table_height()
         self._emit_mc_setup_advanced()
 
+    def set_project_elements_provider(self, provider) -> None:
+        """Register a no-arg callable returning the project's current ion +
+        target element symbols (see MCSetupPage.get_project_element_symbols)."""
+        self._project_elements_provider = provider
+
     def _on_lindhard_pick_clicked(self, button: QPushButton) -> None:
-        dialog = PeriodicTableDialog(self, compact=True, show_hover_info=True, bordered=True)
+        allowed_symbols = None
+        if self._project_elements_provider is not None:
+            try:
+                allowed_symbols = self._project_elements_provider() or None
+            except Exception:
+                allowed_symbols = None
+        dialog = PeriodicTableDialog(self, compact=True, show_hover_info=True, bordered=True,
+                                      allowed_symbols=allowed_symbols)
 
         def _set_selected_element(element: dict) -> None:
             symbol = str(element.get("symbol", "")).strip()
@@ -874,6 +912,7 @@ class AdvancedOptionsPage(QWidget):
             "de_min": float(self.spin_de_min.value()),
             "psi_min_surface": float(self.spin_psi_min_surface.value()),
             "de_min_surface": float(self.spin_de_min_surface.value()),
+            "nthreads": int(self.spin_nthreads.value()),
             "rng_seed": int(self.spin_rng_seed.value()),
             "electronic_stopping": str(self.cmb_electronic_stopping.currentText()),
             "scattering_algorithm": str(self.cmb_scattering_algorithm.currentText()),
@@ -1028,6 +1067,14 @@ class AdvancedOptionsPage(QWidget):
                     pass
                 finally:
                     widget.blockSignals(False)
+        if "nthreads" in payload:
+            try:
+                self.spin_nthreads.blockSignals(True)
+                self.spin_nthreads.setValue(int(payload["nthreads"]))
+            except (TypeError, ValueError):
+                pass
+            finally:
+                self.spin_nthreads.blockSignals(False)
         if "rng_seed" in payload:
             try:
                 self.spin_rng_seed.blockSignals(True)

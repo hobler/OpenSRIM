@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import threading
 from datetime import datetime
@@ -19,7 +20,7 @@ from PyQt6.QtWidgets import (
     QSizePolicy,
 )
 
-from state import AppState
+from state import AppState, load_scoped_settings, save_scoped_settings
 
 
 class _AdaptiveDecimalSpinBox(QDoubleSpinBox):
@@ -176,6 +177,15 @@ class MCSetupPage(QWidget):
         self._psi_min_surface = 5.0
         self._de_min_surface = 15.0
         self._replacement_collisions = False
+        # Default to ~80% of logical cores so the UI stays responsive while a
+        # simulation runs; remembered across restarts in mc_setup.toml.
+        _cpu_count = os.cpu_count() or 1
+        self._nthreads = max(1, round(0.8 * _cpu_count))
+        try:
+            _persisted = load_scoped_settings("mc_setup")
+            self._nthreads = int(_persisted.get("nthreads", self._nthreads))
+        except Exception:
+            pass
 
         if _read_opentrim_params is not None:
             try:
@@ -254,7 +264,7 @@ class MCSetupPage(QWidget):
     def _init_hints(self) -> None:
         """Initialize hint system and lock it to this page."""
         try:
-            hints_path = Path(__file__).resolve().parents[1] / "widgets" / "hints.json"
+            hints_path = Path(__file__).resolve().parents[1] / "widgets" / "hints.toml"
             self._hint_system = HintSystem(repo_path=hints_path, parent=self)
             self._hint_system.set_current_page("MC Setup")
         except Exception:
@@ -296,6 +306,25 @@ class MCSetupPage(QWidget):
     def add_log_entry(self, message: str):
         if self._on_log:
             self._on_log(message)
+
+    def get_project_element_symbols(self) -> set[str]:
+        """Return the ion's symbol plus every target element symbol currently defined.
+
+        Used by Advanced Options to restrict element pickers (e.g. Lindhard
+        correction rows) to elements that are actually part of the project,
+        instead of offering the full periodic table.
+        """
+        symbols: set[str] = set()
+        ion_symbol = str(getattr(self, "_ion_symbol_value", "") or "").strip()
+        if ion_symbol:
+            symbols.add(ion_symbol)
+        for entries in getattr(self, "layer_elements", []) or []:
+            for entry in entries:
+                elem = entry.get("element") if isinstance(entry, dict) else None
+                symbol = str((elem or {}).get("symbol", "")).strip()
+                if symbol:
+                    symbols.add(symbol)
+        return symbols
 
     # -------- configuration (used by MainWindow) ----------
     def collect_simulation_config(self) -> dict:
@@ -463,6 +492,10 @@ class MCSetupPage(QWidget):
             self.set_replacement_collisions(bool(simulation_meta.get("replacement_collisions", self._replacement_collisions)))
         except Exception:
             self._replacement_collisions = bool(simulation_meta.get("replacement_collisions", self._replacement_collisions))
+        try:
+            self.set_nthreads(int(simulation_meta.get("nthreads", self._nthreads)))
+        except Exception:
+            self._nthreads = int(simulation_meta.get("nthreads", self._nthreads))
         workdir = simulation_meta.get("workdir")
         if isinstance(workdir, str) and workdir:
             self._set_working_directory(workdir)
@@ -476,7 +509,7 @@ class MCSetupPage(QWidget):
         if layers:
             first = layers[0]
             if hasattr(self, "width_unit_combo"):
-                unit = first.get("unit", "Ång")
+                unit = first.get("unit", "Å")
                 idx = self.width_unit_combo.findText(unit)
                 if idx >= 0:
                     self.width_unit_combo.setCurrentIndex(idx)
@@ -670,8 +703,9 @@ class MCSetupPage(QWidget):
         self.ion_mass.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         grid.addWidget(self.ion_mass, 1, 3, Qt.AlignmentFlag.AlignLeft)
 
-        self.ion_energy = QDoubleSpinBox()
+        self.ion_energy = _AdaptiveDecimalSpinBox()
         self.ion_energy.setRange(0.001, 1_000_000)
+        self.ion_energy.setDecimals(3)
         self.ion_energy.setValue(10.0)
         self.ion_energy.setMaximumWidth(160)
         self.ion_energy.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
@@ -781,9 +815,12 @@ class MCSetupPage(QWidget):
         # Size to widest entry instead of stretching to full column width.
         self.width_unit_combo = QComboBox()
         self.width_unit_combo.addItems(self.state.unit_options)
-        self.width_unit_combo.setCurrentText("Ång")
+        self.width_unit_combo.setCurrentText("Å")
         self.width_unit_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
-        self.width_unit_combo.currentTextChanged.connect(self._emit_histogram_default_settings)
+        # Remember the active unit so a unit switch can convert displayed values
+        # (matches how the Density combo already behaves).
+        self._width_unit_prev = "Å"
+        self.width_unit_combo.currentTextChanged.connect(self._on_width_unit_changed)
         layers_hdr.set_header_widget(2, self.width_unit_combo)  # "Width" column
 
         self.density_unit_combo = QComboBox()
@@ -1549,7 +1586,7 @@ class MCSetupPage(QWidget):
             payload_layers.append({
                 "name": layer.get("name", ""),
                 "width": layer.get("width", 0.0),
-                "unit": "Ång",
+                "unit": "Å",
                 "density": display_density,
                 "density_unit": "g/cm³",
                 "compound_corr": layer.get("compound_correction", 1.0),
@@ -1585,6 +1622,7 @@ class MCSetupPage(QWidget):
                 "nions_update": simulation.get("nions_update", 0),
                 "rng_seed": simulation.get("rng_seed", 12345),
                 "workdir": simulation.get("workdir", ""),
+                "nthreads": simulation.get("nthreads", self._nthreads),
                 "pmax_min": (params.get("cascade") or {}).get("pmax_min", 0.0),
                 "pmax_max": (params.get("cascade") or {}).get("pmax_max", 4.0),
                 "psi_min": (params.get("cascade") or {}).get("psi_min", 5.0),
@@ -1749,7 +1787,7 @@ class MCSetupPage(QWidget):
 
     # -------- unit conversion helpers ----------
     _WIDTH_TO_ANGSTROM = {
-        "Ång": 1.0,
+        "Å": 1.0,
         "nm": 10.0,
         "µm": 1e4,
         "mm": 1e7,
@@ -1767,6 +1805,41 @@ class MCSetupPage(QWidget):
 
     def _width_in_angstrom(self, value: float, unit: str) -> float:
         return value * self._WIDTH_TO_ANGSTROM.get(unit, 1.0)
+
+    def _on_width_unit_changed(self, new_unit: str) -> None:
+        """Convert the displayed width values when the unit selection changes
+        (mirrors _on_density_unit_changed)."""
+        prev = getattr(self, "_width_unit_prev", "Å")
+        if new_unit == prev or not hasattr(self, "layers_table"):
+            self._width_unit_prev = new_unit
+            self._emit_histogram_default_settings()
+            return
+        data_rows = max(self.layers_table.rowCount() - 1, 0)
+        self._updating_layers_table = True
+        try:
+            for row in range(data_rows):
+                item = self.layers_table.item(row, 2)
+                if item is None:
+                    continue
+                text = item.text().strip()
+                if not text:
+                    continue
+                try:
+                    val = float(text)
+                except ValueError:
+                    continue
+                val_ang = self._width_in_angstrom(val, prev)
+                new_val = val_ang / self._WIDTH_TO_ANGSTROM.get(new_unit, 1.0)
+                # Å..km spans 13 orders of magnitude -- a fixed-decimal format
+                # would silently round small results (e.g. Å -> km) to "0".
+                text = f"{new_val:.8g}"
+                if "e" not in text and "." in text:
+                    text = text.rstrip("0").rstrip(".")
+                item.setText(text)
+        finally:
+            self._updating_layers_table = False
+        self._width_unit_prev = new_unit
+        self._emit_histogram_default_settings()
 
     @staticmethod
     def _avg_atomic_mass(elements: list[dict]) -> float:
@@ -1838,7 +1911,7 @@ class MCSetupPage(QWidget):
 
     def get_histogram_default_settings(self) -> dict:
         width_unit = (self.width_unit_combo.currentText()
-                      if hasattr(self, "width_unit_combo") else "Ång")
+                      if hasattr(self, "width_unit_combo") else "Å")
         total_width = 0.0
         config = self.collect_simulation_config() if hasattr(self, "layers_table") else {}
         layers = config.get("layers", []) if isinstance(config, dict) else []
@@ -1888,6 +1961,7 @@ class MCSetupPage(QWidget):
             "psi_min_surface": float(self._psi_min_surface),
             "de_min_surface": float(self._de_min_surface),
             "replacement_collisions": bool(self._replacement_collisions),
+            "nthreads": int(self._nthreads),
         })
 
     def get_advanced_simulation_settings(self) -> dict:
@@ -1905,6 +1979,7 @@ class MCSetupPage(QWidget):
             "psi_min_surface": float(self._psi_min_surface),
             "de_min_surface": float(self._de_min_surface),
             "replacement_collisions": bool(self._replacement_collisions),
+            "nthreads": int(self._nthreads),
         }
 
     def set_follow_recoils(self, value: bool) -> None:
@@ -1981,6 +2056,18 @@ class MCSetupPage(QWidget):
         self._replacement_collisions = bool(value)
         self._emit_advanced_simulation_settings()
 
+    def set_nthreads(self, value: int) -> None:
+        cpu_count = os.cpu_count() or 1
+        try:
+            self._nthreads = max(1, min(cpu_count, int(value)))
+        except (TypeError, ValueError):
+            self._nthreads = max(1, round(0.8 * cpu_count))
+        try:
+            save_scoped_settings({"nthreads": self._nthreads}, "mc_setup")
+        except Exception:
+            pass
+        self._emit_advanced_simulation_settings()
+
     def set_lindhard_correction(self, value: dict) -> None:
         if not isinstance(value, dict):
             return
@@ -2007,7 +2094,7 @@ class MCSetupPage(QWidget):
         out = cfg["output"]
 
         width_unit = (self.width_unit_combo.currentText()
-                      if hasattr(self, "width_unit_combo") else "Ång")
+                      if hasattr(self, "width_unit_combo") else "Å")
         density_unit = (self.density_unit_combo.currentText()
                         if hasattr(self, "density_unit_combo") else "g/cm³")
 
@@ -2019,6 +2106,8 @@ class MCSetupPage(QWidget):
             f"nions = {ions['no_of_ions']}",
             f"nions_update = {ions['update_after_ions']}",
             f"rng_seed = {simulation.get('rng_seed', 12345)}",
+            # NOTE: not yet consumed by simulators/opentrim (pending backend work).
+            f"nthreads = {int(self._nthreads)}",
             f'workdir = "{results_dir}"',
             "",
             "[beam]",
@@ -2805,7 +2894,7 @@ class MCSetupPage(QWidget):
             item = QTableWidgetItem()
             self.layers_table.setItem(layer_idx, 4, item)
         self._updating_layers_table = True
-        item.setText(f"{display_val:.4f}")
+        item.setText(f"{display_val:.4e}" if unit == "atoms/cm³" else f"{display_val:.4f}")
         self._updating_layers_table = False
 
     def _elements_for_row(self, row: int) -> list[dict]:
@@ -2875,7 +2964,7 @@ class MCSetupPage(QWidget):
                 except ValueError:
                     continue
                 new_val = self._convert_density(val, prev, new_unit, self._elements_for_row(row))
-                item.setText(f"{new_val:.4f}")
+                item.setText(f"{new_val:.4e}" if new_unit == "atoms/cm³" else f"{new_val:.4f}")
         finally:
             self._updating_layers_table = False
         self._density_unit_prev = new_unit

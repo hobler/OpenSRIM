@@ -168,13 +168,14 @@ class MainWindow(QMainWindow):
         self.mc_results_tab = self._create_mc_results_tab()
         self.single_plot_page = SinglePlotPage()
         self.advanced_options_tab = AdvancedOptionsPage()
+        self.advanced_options_tab.set_project_elements_provider(self.mc_setup_tab.get_project_element_symbols)
         self._advanced_previous_widget = None
 
         self.tab_widget.addTab(self.koral_tab, "KORAL")
         self.tab_widget.addTab(self.mc_setup_tab, "MC Setup")
         # Initial MC Results tab; more can be added via the "+" button or
         # automatically when a new simulation completes.
-        self._mc_results_first_index = self.tab_widget.addTab(self.mc_results_tab, "MC Results 1")
+        self._mc_results_first_index = self.tab_widget.addTab(self.mc_results_tab, "MC Results")
         self.tab_widget.addTab(self.single_plot_page, "Single Plot")
 
         # "+" button on the tab bar to add additional MC Results tabs.
@@ -209,6 +210,7 @@ class MainWindow(QMainWindow):
         self.advanced_options_tab.mc_de_min_changed.connect(self.mc_setup_tab.set_de_min)
         self.advanced_options_tab.mc_psi_min_surface_changed.connect(self.mc_setup_tab.set_psi_min_surface)
         self.advanced_options_tab.mc_de_min_surface_changed.connect(self.mc_setup_tab.set_de_min_surface)
+        self.advanced_options_tab.mc_nthreads_changed.connect(self.mc_setup_tab.set_nthreads)
         self.advanced_options_tab.mc_rng_seed_changed.connect(self.mc_setup_tab.set_rng_seed)
         self.advanced_options_tab.mc_electronic_stopping_changed.connect(self.mc_setup_tab.set_electronic_stopping_model)
         self.advanced_options_tab.mc_scattering_algorithm_changed.connect(self.mc_setup_tab.set_scattering_algorithm)
@@ -499,9 +501,9 @@ class MainWindow(QMainWindow):
         context = self.advanced_options_tab.context_for_section(section_id)
         self.advanced_options_tab.set_visible_context(context)
         ctx_label = {
-            "mc_setup": "Advanced (Setup)",
-            "mc_results": "Advanced (Results)",
-            "koral": "Advanced (KORAL)",
+            "mc_setup": "MC Setup (Adv.)",
+            "mc_results": "MC Results (Adv.)",
+            "koral": "KORAL (Adv.)",
         }.get(context or "", "Advanced Settings")
         self.tab_widget.setTabText(
             self.tab_widget.indexOf(self.advanced_options_tab), ctx_label
@@ -557,7 +559,7 @@ class MainWindow(QMainWindow):
         Live updates during the run already populated a results tab (tracked in
         ``_last_live_target``). Reuse that same tab on completion instead of
         spawning a new one — otherwise the first simulation would fill
-        "MC Results 1" via live updates and then create a redundant
+        "MC Results" via live updates and then create a redundant
         "MC Results 2" here. A fresh tab is only created if no live update ran
         (e.g. update interval ≥ ion count). ``_last_live_target`` is reset so
         the *next* simulation starts in a new tab.

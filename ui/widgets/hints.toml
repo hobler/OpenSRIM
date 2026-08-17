@@ -1,0 +1,285 @@
+[[pages.KORAL]]
+id = "ion"
+title = "Ion Selection"
+content = '''
+# Ion Selection
+
+- **Identify the ion:** Enter the ion atomic number, choose the ion name from the element list, or enter the chemical symbol; selecting **PT** opens the periodic table, where any ion can be selected by mouse click.
+- **Enter the ion mass:** TRIM defaults to the mass of the most abundant isotope (MAI) for the selected element (shown in the periodic table), but any mass may be entered (units: amu).
+- **Enter the ion energy:** Specify the ion energy in keV; TRIM accepts values up to 10,000,000 keV/amu, but for energies above 1,000 keV/amu, nuclear reaction energy losses are not included, so significant inelastic losses may be omitted.
+'''
+
+[[pages.KORAL]]
+id = "elements"
+title = "Target Data"
+content = '''
+## Target Data
+
+- Enter the target elements: Use the PT button to open the periodic table and select elements by mouse click; if the target contains more than one element, press Add Element for each.
+- Target constraints: Only homogeneous targets are supported; layered structures are not allowed.
+- Compounds: A large list of common compounds is available in the Compound Dictionary, including special stopping powers for many compounds.
+- Stoichiometry and density: For compounds, enter the relative atomic stoichiometry of each element; when finished, carefully review the target density, since ion ranges are linearly dependent on target density.
+'''
+
+[[pages.KORAL]]
+id = "model"
+title = "Model Selection"
+content = '''
+# Model Selection
+
+- Select the **electronic stopping model** used for the simulation.
+- Available models depend on ion type and energy range.
+
+## Typical Options
+- Standard SRIM stopping model
+- Experimental or user-modified stopping tables
+
+> Hint: Changing the stopping model directly affects projected range and straggling.
+'''
+
+[[pages.KORAL]]
+id = "output"
+title = "Output Options"
+content = '''
+# Output Options
+
+- Choose which physical quantities are calculated and stored.
+- Enable or disable detailed output tables and plots.
+
+## Common Outputs
+- Stopping power vs depth
+- Projected range and longitudinal straggling
+- Energy loss distributions
+
+> Hint: Disabling unused outputs can significantly reduce computation time.
+'''
+
+[[pages.KORAL]]
+id = "range_energy"
+title = "Range / Straggling vs Energy"
+content = '''
+# Range / Straggling vs Energy
+
+- Define an **energy range** for the ion simulation.
+- The simulation computes projected range and straggling for each energy step.
+
+## Controls
+- Start energy
+- End energy
+- Energy step size
+
+> Hint: Use smaller energy steps for smoother curves, especially at low energies.
+'''
+
+[[pages."MC Setup"]]
+id = "ion"
+title = "Ion Selection"
+content = '''
+# Ion Selection (MC Setup)
+
+- Select the incident ion using the **Periodic Table** button.
+- Check **Z**, **symbol**, and **mass (amu)**.
+- Set the incident **energy (keV)** in the Ion Selection box.
+
+## Angle of incidence
+- The **angle of incidence** is configured in **Advanced Options** (⚙).
+- MC Setup and KORAL can use **different angles**.
+
+> Hint: Make sure the ion mass matches your intended isotope.
+'''
+
+[[pages."MC Setup"]]
+id = "target_layers"
+title = "Target Layer Selection"
+content = '''
+# Target Layer Selection
+
+This table defines the target stack the ion traverses.
+
+## Typical fields
+- **Name**: free label for the layer
+- **Width + unit**: layer thickness
+- **Density**: material density used in the simulation
+- **Compound correction**: correction factor (if applicable)
+- **Gas**: marks the layer as a gas
+
+## Behavior
+- The currently selected layer controls which entries you edit in **Atoms per layer**.
+- Gas layers enforce **solid-state energy parameters = 0** (damage/disp/latt/surf).
+
+> Hint: Use gas layers for low-density targets; don’t mix gas with solid-state parameters.
+'''
+
+[[pages."MC Setup"]]
+id = "elements"
+title = "Atoms per Layer"
+content = '''
+# Atoms per layer
+
+Defines the **composition of the currently selected target layer**.
+
+## Editing
+- Use the element picker to add an element to the layer.
+- Use `+` / `-` to add/remove entries.
+- Edit the **ratio / stoichiometry** values directly.
+
+## Energy parameters
+- **Damage / Disp / Latt / Surf (eV)** can be shown/hidden from **Advanced Options**.
+- If a layer is marked as **Gas**, these values are forced to **0**.
+
+> Hint: Stoichiometry is typically normalized internally; ensure your ratios are meaningful (sum > 0).
+'''
+
+[[pages."MC Setup"]]
+id = "model"
+title = "Model Selection"
+content = '''
+# Model selection
+
+Select the physical model(s) used by the simulator (e.g. stopping / scattering model).
+
+## Notes
+- Different models can produce noticeably different ranges and straggling.
+- If results look unexpected, re-check model selection first.
+
+> Hint: Keep the model consistent when comparing runs.
+'''
+
+[[pages."MC Setup"]]
+id = "simulator"
+title = "Simulator Selection"
+content = '''
+# Simulator selection
+
+Choose which backend runs the Monte Carlo simulation.
+
+## Options
+- **OpenTRIM**: OpenTRIM-based simulator
+- **PyTRIM**: Python implementation
+
+> Hint: If performance or outputs differ, try the other simulator to cross-check.
+'''
+
+[[pages."MC Setup"]]
+id = "output"
+title = "Output Options"
+content = '''
+# Output Options
+
+Select which results are calculated and stored.
+
+## Common outputs
+- Trajectory start/end points
+- Collision events
+- Range / lateral distributions
+- Backscattered / transmitted energy and angle
+
+> Hint: Enabling fewer outputs can reduce runtime and file size.
+'''
+
+[[pages."Single Plot"]]
+id = "curves"
+title = "Curves"
+content = '''
+# Curves
+
+The overlay shows one or more curves; each can be styled independently.
+
+## Loading curves
+- **Double-click a plot tile** on the MC Results tab to append all of its visible series here. Existing curves stay.
+- Or use **Load Output Directory** to read a previous simulation.
+
+## Managing the list
+- Tick/untick a curve to toggle its **visibility**.
+- **Remove** drops the selected curve; **Clear All** empties the list.
+- Select a curve to edit its style, convolution and stats on the right.
+
+> Hint: The selected curve is the target for the Selected Curve, Gaussian Convolution and Stats panels.
+'''
+
+[[pages."Single Plot"]]
+id = "load_directory"
+title = "Load Output Directory"
+content = '''
+# Load Output Directory
+
+Load curves directly from a previous simulation output directory instead of the MC Results tab.
+
+## Steps
+- Click **Load Output Directory…** and pick a folder.
+- All `.his` series found there are listed in the **Dataset** dropdown.
+- Choose a dataset to append its curves to the plot.
+
+> Hint: Use this to compare results from earlier runs side by side.
+'''
+
+[[pages."Single Plot"]]
+id = "selected_curve"
+title = "Selected Curve"
+content = '''
+# Selected Curve
+
+Per-curve matplotlib styling for the curve selected in the Curves list.
+
+## Options
+- **Label**: legend text for the curve.
+- **Color**: line/marker color.
+- **Line style & width**, **marker** and **opacity**.
+- **Z-order**: drawing order (higher is on top).
+
+> Hint: Styling applies only to the currently selected curve.
+'''
+
+[[pages."Single Plot"]]
+id = "convolution"
+title = "Gaussian Convolution"
+content = '''
+# Gaussian Convolution
+
+Folds the selected curve with a Gaussian to mimic finite beam/detector resolution.
+
+## Depth profiles
+- **Beam σ (Å)**: Gaussian width in plot units. The curve is convolved with `exp(−x²/2σ²)`.
+- When you first enable convolution with σ still at 0, a default of **~3 % of the curve's x-range** is filled in so the effect is immediately visible.
+
+## Lateral / 2-D curves
+- **Scan area** (min–max) applies a rectangular scan along the lateral axis, convolved with the Gaussian via an error-function kernel.
+- Negative bounds are allowed, since the lateral axis is symmetric around 0.
+
+## Applying
+- Set σ (and scan area) first, then tick **Apply convolution** at the bottom of the panel.
+
+> Hint: Load and select a curve before enabling convolution.
+'''
+
+[[pages."Single Plot"]]
+id = "axes"
+title = "Axes & Legend"
+content = '''
+# Axes & Legend
+
+Global axis and legend settings for the whole plot.
+
+## Options
+- **Title** and **X / Y labels** (including secondary top/right axes).
+- **Log X / Log Y** scaling (primary and secondary axes).
+- **Grid** and **Legend** toggles, plus legend **position**.
+
+> Hint: Labels are auto-filled from the loaded data but can be overridden; your edits take precedence.
+'''
+
+[[pages."Single Plot"]]
+id = "reference"
+title = "Reference Image"
+content = '''
+# Reference Image
+
+Overlay a bitmap under the curves to compare against an external figure (e.g. a micrograph or a plot from an earlier run).
+
+## Options
+- **Load Image…**: pick a JPEG/PNG to draw beneath the curves.
+- **Opacity**: blend the image with the plot background.
+- **Clear Image**: remove the overlay.
+
+> Hint: Align the image by matching the axis ranges to the image extent.
+'''

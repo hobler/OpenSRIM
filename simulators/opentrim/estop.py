@@ -64,17 +64,17 @@ def eloss(proj, free_path, params):
         free_path *= (dist + dist_beg + dist_end) / dist
 
     weighted_se = 0.0
-    for i in range(params.materials.nelem[imat]):
-        ielem2 = params.materials.ielem[imat, i]
+    for ielem_mat in range(params.materials[imat].nelem_mat):
+        ielem2 = params.materials[imat].ielem[ielem_mat]
         if params.estop.model == "Lindhard":
             se = estop_lindhard(e, params.estop.fac_lindhard[ielem1, ielem2])
         else:
             se = np.interp(e, params.estop.srim_energies, 
                            params.estop.srim_table[ielem1, ielem2])
-        atomic_fraction = params.materials.atomic_fraction[imat, i]
+        atomic_fraction = params.materials[imat].atomic_fraction[ielem_mat]
         weighted_se += atomic_fraction * se
     
-    dee = weighted_se * params.materials.density[imat] * free_path
+    dee = weighted_se * params.materials[imat].density * free_path
 
     if dee > proj["e"]:
         dee = proj["e"]

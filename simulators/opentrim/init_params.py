@@ -117,7 +117,7 @@ def _get_elements_and_materials_params(input_params):
         atomic_fractions = np.array(atomic_fractions, dtype=np.float64)
         atomic_fractions /= np.sum(atomic_fractions)
         mat["atomic_fractions"] = atomic_fractions
-        mat["nelem"] = len(mat["element"])
+        mat["nelem_mat"] = len(mat["element"])
     nmat = len(materials)
     NMAT = nmat     # could be set to max(3, nmat) to avoid frequent 
                     # recompilation of Numba functions when nmat changes
@@ -133,14 +133,16 @@ def _get_elements_and_materials_params(input_params):
     NELEM_ION = nelem_ion
 
     for mat in materials:
-        ielem = []
+        ielem_lst = []
         for elem in mat["element"]:
             if elem in elements:
-                ielem.append(elements.index(elem))
+                ielem = elements.index(elem)
+                ielem_lst.append(ielem)
             else:
-                ielem.append(len(elements))
                 elements.append(elem)
-        mat["ielem"] = ielem
+                ielem = len(elements) - 1
+                ielem_lst.append(ielem)
+        mat["ielem"] = ielem_lst
     nelem = len(elements)
     NELEM = nelem   # could be set to max(5, nelem) to avoid frequent 
                     # recompilation of Numba functions when nelem changes
@@ -171,7 +173,8 @@ def _get_elements_and_materials_params(input_params):
         elements_params[ielem].name = elem["name"]
         elements_params[ielem].Z = elem["Z"]
         elements_params[ielem].M = elem["M"]
-#    (f"elements_params={elements_params}")
+    #print(f"elements_params={elements_params}")
+    #exit()
 
     ### Define the materials parameters
     MATERIALS_PARAMS_DTYPE = np.dtype([
@@ -179,8 +182,9 @@ def _get_elements_and_materials_params(input_params):
         ("density", np.float64),
         ("compound_correction", np.float64),
         ("gas", bool),
-        ("nelem", np.int32),
+        ("nelem_mat", np.int32),
         ("ielem", np.int32, (NELEM,)),
+        ("ielem_mat", np.int32, (NELEM,)),
         ("atomic_fraction", np.float64, (NELEM,)),
         ("cumulative_fraction", np.float64, (NELEM,)),
         ("edisp", np.float64, (NELEM,)),
@@ -194,21 +198,25 @@ def _get_elements_and_materials_params(input_params):
         materials_params[imat].density = mat["density"]
         materials_params[imat].compound_correction = mat["compound_correction"]
         materials_params[imat].gas = mat["gas"]
-        materials_params[imat].nelem = mat["nelem"]
-        for ielem in range(mat["nelem"]):
-            materials_params[imat].ielem[ielem] = mat["ielem"][ielem]
-            materials_params[imat].atomic_fraction[ielem] = (
-                mat["atomic_fractions"][ielem])
-            materials_params[imat].cumulative_fraction[ielem] = (
-                np.sum(mat["atomic_fractions"][:ielem+1]))
-            materials_params[imat].edisp[ielem] = (
-                mat["element"][ielem]["displacement_energy"])
-            materials_params[imat].esurf[ielem] = (
-                mat["element"][ielem]["surface_binding_energy"])
-            materials_params[imat].ebulk[ielem] = (
-                mat["element"][ielem]["lattice_binding_energy"])
-#    print(f"materials_params={materials_params}")
-
+        materials_params[imat].nelem_mat = mat["nelem_mat"]
+        materials_params[imat].ielem_mat[:] = 0
+        for ielem_mat in range(mat["nelem_mat"]):
+            ielem = mat["ielem"][ielem_mat]
+            materials_params[imat].ielem[ielem_mat] = ielem
+            materials_params[imat].ielem_mat[ielem] = ielem_mat
+            materials_params[imat].atomic_fraction[ielem_mat] = (
+                mat["atomic_fractions"][ielem_mat])
+            materials_params[imat].cumulative_fraction[ielem_mat] = (
+                np.sum(mat["atomic_fractions"][:ielem_mat+1]))
+            materials_params[imat].edisp[ielem_mat] = (
+                mat["element"][ielem_mat]["displacement_energy"])
+            #print(f"imat={imat}, ielem_mat={ielem_mat}, edisp={materials_params[imat].edisp[ielem_mat]}")
+            materials_params[imat].esurf[ielem_mat] = (
+                mat["element"][ielem_mat]["surface_binding_energy"])
+            materials_params[imat].ebulk[ielem_mat] = (
+                mat["element"][ielem_mat]["lattice_binding_energy"])
+    #print(f"materials_params={materials_params}")
+    
     return nelem_target, nelem, elements_params, materials_params
 
 
@@ -378,6 +386,7 @@ def _get_cascade_params(input_params, nelem, elements_params, materials_params,
     NPMAX = 64
     CASCADE_PARAMS_DTYPE = np.dtype([
         ("follow_recoils", np.int64),  # stored as int for better compatibility with Numba
+        ("replacement_collisions", np.int64),  # stored as int for better compatibility with Numba
         ("emin", np.float64),
         ("ed", np.float64),
         ("pmax_max", np.float64),
@@ -390,6 +399,8 @@ def _get_cascade_params(input_params, nelem, elements_params, materials_params,
     cascade_params = np.recarray(1, dtype=CASCADE_PARAMS_DTYPE)
     cascade_params[0].follow_recoils = (
         input_params["simulation"]["follow_recoils"])
+    cascade_params[0].replacement_collisions = (
+        input_params["cascade"]["replacement_collisions"])
     cascade_params[0].emin = 5.0
     # TODO: get ed from input_params
     cascade_params[0].ed = 15.0
@@ -421,8 +432,8 @@ def _get_cascade_params(input_params, nelem, elements_params, materials_params,
         m1 = elements_params[ielem1].M
         for imat in range(nmat):
             pmax_energies = np.zeros(NPMAX, dtype=np.float64)
-            for ielem in range(materials_params[imat].nelem):
-                ielem2 = materials_params[imat].ielem[ielem]
+            for ielem_mat in range(materials_params[imat].nelem_mat):
+                ielem2 = materials_params[imat].ielem[ielem_mat]
                 z2 = elements_params[ielem2].Z
                 m2 = elements_params[ielem2].M
                 rnorm = scatter_params[0].rnorm[ielem1, ielem2]

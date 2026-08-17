@@ -3,9 +3,6 @@
 Available functions:
     cascade: simulate one cascade.
 """
-import os
-from collections import namedtuple
-
 import numpy as np
 from numba import jit, typed
 from .mytypes import PROJ_DTYPE, PROJ_NUMBA_DTYPE
@@ -16,6 +13,36 @@ from .target import check_exit_and_move
 from .stats import score_eed, score_ned, score_start, score_stop, score_exit
 from . import config
 
+
+@jit(debug=config.DEBUG)
+def _check_replacement_collision(proj, recoil, params):
+    """Check if the recoil is a replacement collision and modify the projectile 
+    accordingly.
+
+    Parameters:
+        proj (Projectile): state of the projectile (modified in-place)
+        recoil (Projectile): state of the recoil (modified in-place)
+        params (PARAMS_DTYPE): Simulation parameters
+    """
+    if proj["ielem"] != recoil["ielem"]:
+        return
+
+    imat = proj["ilayer"]
+    ielem_mat = params.materials[imat].ielem_mat[recoil["ielem"]]
+    edisp = params.materials[imat].edisp[ielem_mat]
+
+    if proj["e"] > edisp:
+        return
+
+    if recoil["e"] < params.cascade.emin:
+        return
+
+    if recoil["e"] < proj["e"]:
+        return
+
+    # Replacement collision: swap projectile and recoil
+    proj, recoil = recoil, proj
+    
 
 @jit(debug=config.DEBUG)
 def cascade(initial_proj, params, stats):
@@ -79,9 +106,9 @@ def cascade(initial_proj, params, stats):
         # treat scattering event and recoil
         if recoil["is_inside"]:
             # scattering event, modifying proj and recoil in-place
-            #print("got to scatter")
             scatter(proj, p, dirp, recoil, params)
-            #print("got past scatter")
+            if params.cascade.replacement_collisions:
+                _check_replacement_collision(proj, recoil, params)
 
             # terminate trajectory if the projectile has lost too much energy
             if proj["e"] <= emin:
@@ -89,13 +116,13 @@ def cascade(initial_proj, params, stats):
                 score_stop(stats, proj)
                 proj_stack.pop()
 
-            # start a new cascade if the recoil has enough energy to leave its 
-            # position
+            # start a new sub-cascade if the recoil has enough energy to leave 
+            # its position
             if True:
                 imat = recoil["ilayer"]
-                ielem = params.materials[imat].ielem[recoil["ielem"]]
-                ed = params.materials[imat].edisp[ielem]
-                eb = params.materials[imat].ebulk[ielem]
+                ielem_mat = params.materials[imat].ielem_mat[recoil["ielem"]]
+                ed = params.materials[imat].edisp[ielem_mat]
+                eb = params.materials[imat].ebulk[ielem_mat]
             if (params.cascade.follow_recoils and recoil["e"] > ed):
                 recoil["e"] -= eb
                 proj_stack.append(recoil)

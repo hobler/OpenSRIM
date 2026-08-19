@@ -52,6 +52,7 @@ def init_stats(NELEM_ION, NELEM_TARGET, input_params):
     short_names = {
         "depth_distribution": "x",
         "lateral_distribution": "y",
+        "distribution_2d": "xy",
         "backscattered_atoms": "b",
         "transmitted_atoms": "t",
         "ion_recoils": "",
@@ -61,24 +62,8 @@ def init_stats(NELEM_ION, NELEM_TARGET, input_params):
         "angle": "a",
     }
 
-    # Number of variables to reserve memory for
-    nvar = {
-        "x": NELEM + NELEM_TARGET if follow_recoils else NELEM,
-        "y": NELEM + NELEM_TARGET if follow_recoils else NELEM,
-        "xy": NELEM + NELEM_TARGET if follow_recoils else NELEM,
-        "xn": NELEM,
-        "yn": NELEM,
-        "xyn": NELEM,
-        "xe": NELEM,
-        "ye": NELEM,
-        "xye": NELEM,
-        "be": NELEM if follow_recoils else NELEM_ION,
-        "ba": NELEM if follow_recoils else NELEM_ION,
-        "te": NELEM if follow_recoils else NELEM_ION,
-        "ta": NELEM if follow_recoils else NELEM_ION,
-    }
     # Build a flattened dictionary "stats_configs" of statistics configurations 
-    # from the output confiuration defined in the input parameters. The keys of 
+    # from the output configuration defined in the input parameters. The keys of 
     # the dictionary are constructed from the keys in the input parameters, e.g. 
     #   "depth distribution.ion/recoils" -> "x", 
     #   "lateral distribution.nuclear energy deposition" -> "yn", 
@@ -89,7 +74,7 @@ def init_stats(NELEM_ION, NELEM_TARGET, input_params):
     stats_configs = {}
     
     for name in output_params:
-        if name in ["trajectories", "distribution_2d"]:
+        if name == "trajectories":
             continue
         if name not in short_names:
             raise ValueError(f"Unknown output field: {name}")
@@ -107,41 +92,46 @@ def init_stats(NELEM_ION, NELEM_TARGET, input_params):
                                  f"{name}.{subname}")
 
             short_name = f"{short_names[name]}{short_names[subname]}"
-            stats_configs[short_name] = stats_config
+            if name == "distribution_2d":
+                # convert lists to separate items
+                stats_configs[short_name] = {
+                    "score": bool(stats_config["score"]),
+                    "x_nbins": int(stats_config["nbins"][0]),
+                    "y_nbins": int(stats_config["nbins"][1]),
+                    "x_limits": tuple(stats_config["limits"][0]),
+                    "y_limits": tuple(stats_config["limits"][1]),
+                }
+            else:
+                stats_configs[short_name] = stats_config
 
-    paired_configs = {
-        "xy": ("x", "y"),
-        "xyn": ("xn", "yn"),
-        "xye": ("xe", "ye"),
-    }
-    distribution_2d = output_params["distribution_2d"]
-    distribution_2d_names = {
-        "xy": "ion_recoils",
-        "xyn": "nuclear_energy_deposition",
-        "xye": "electronic_energy_deposition",
-    }
-    for short_name in paired_configs:
-        cfg = distribution_2d[distribution_2d_names[short_name]]
-        nbins = cfg["nbins"]
-        limits = cfg["limits"]
-        stats_configs[short_name] = {
-            "score": bool(cfg["score"]),
-            "x_nbins": int(nbins[0]),
-            "y_nbins": int(nbins[1]),
-            "x_limits": tuple(limits[0]),
-            "y_limits": tuple(limits[1]),
-        }
+    paired_configs = {"xy", "xyn", "xye"}
 
+    # Number of variables to reserve memory for
+    nvar = {
+        "x": NELEM + NELEM_TARGET if follow_recoils else NELEM,
+        "y": NELEM + NELEM_TARGET if follow_recoils else NELEM,
+        "xy": NELEM + NELEM_TARGET if follow_recoils else NELEM,
+        "xn": NELEM,
+        "yn": NELEM,
+        "xyn": NELEM,
+        "xe": NELEM,
+        "ye": NELEM,
+        "xye": NELEM,
+        "be": NELEM if follow_recoils else NELEM_ION,
+        "ba": NELEM if follow_recoils else NELEM_ION,
+        "te": NELEM if follow_recoils else NELEM_ION,
+        "ta": NELEM if follow_recoils else NELEM_ION,
+    }
     # Build a structured array data type of statistics parameters
     for i, short_name in enumerate(stats_configs):
         stats_config = stats_configs[short_name]
-        if short_name in paired_configs:
+        if short_name.startswith("xy"):  # 2d distributions
             stats_dtype = np.dtype([
                 ("score", np.int64),
                 ("nvar", np.int32),
                 ("x_nbins", np.int32),
                 ("y_nbins", np.int32),
-                ("_pad", np.int32),
+                ("_pad", np.int32),  # padding for alignment
                 ("x_limits", np.float64, (2,)),
                 ("y_limits", np.float64, (2,)),
                 ("x_bin_width", np.float64),
@@ -150,7 +140,7 @@ def init_stats(NELEM_ION, NELEM_TARGET, input_params):
                                         stats_config["x_nbins"] + 2,
                                         stats_config["y_nbins"] + 2)),
             ], align=True)
-        else:
+        else:  # 1d distributions
             stats_dtype = np.dtype([
                 ("score", np.int64),  # whether to score this statistics (use integer for JIT compatibility)
                 ("nvar", np.int32),  # number of variables (e.g. atom species) for this statistics
@@ -176,7 +166,7 @@ def init_stats(NELEM_ION, NELEM_TARGET, input_params):
     stats = np.recarray(1, dtype=STATS_DTYPE)
     for short_name, stats_config in stats_configs.items():
         stats[0][short_name]["nvar"] = nvar[short_name]
-        if short_name in paired_configs:
+        if short_name.startswith("xy"):
             stats[0][short_name]["score"] = stats_config["score"]
             stats[0][short_name]["x_nbins"] = stats_config["x_nbins"]
             stats[0][short_name]["y_nbins"] = stats_config["y_nbins"]
@@ -301,18 +291,6 @@ def _score2d(stats_distribution, x, y, ivar, weight=1.0):
             iy = -1
 
         stats_distribution["counts"][ivar, ix, iy] += weight
-
-
-@jit(debug=config.DEBUG)
-def _score_stop(stats, proj):
-    """Score a projectile that has stopped inside the target."""
-    ivar = proj["ielem"]
-    x = proj["pos"][0]
-    y = proj["pos"][1]
-
-    _score1d(stats["x"], x, ivar)
-    _score1d(stats["y"], y, ivar)
-    _score2d(stats["xy"], x, y, ivar)
 
 
 @jit(debug=config.DEBUG)

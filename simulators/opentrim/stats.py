@@ -375,10 +375,15 @@ def score_start(stats, proj, nelem_target):
 
 
 @jit(debug=config.DEBUG)
-def score_stop(stats, proj):
+def score_stop(stats, proj, weight=1.0):
     """Score a projectile that has stopped inside the target."""
-    score_ned(stats, proj)
-    _score_stop(stats, proj)
+    ivar = proj["ielem"]
+    x = proj["pos"][0]
+    y = proj["pos"][1]
+
+    _score1d(stats["x"], x, ivar, weight=weight)
+    _score1d(stats["y"], y, ivar, weight=weight)
+    _score2d(stats["xy"], x, y, ivar, weight=weight)
 
 
 @jit(debug=config.DEBUG)

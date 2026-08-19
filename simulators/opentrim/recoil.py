@@ -50,8 +50,12 @@ def select_recoil(proj, recoil, params):
     
     # free flight path and impact parameter
     #pmax = params.cascade.pmax[ilayer]
-    pmax = np.interp(e, params.cascade.pmax_energies[ielem1, imat], 
-                     params.cascade.pmax_vals)
+    if proj["is_inside"]:
+        pmax = np.interp(e, params.cascade.pmax_energies[ielem1, imat], 
+                         params.cascade.pmax_vals)
+    else:
+        pmax = np.interp(e, params.cascade.pmax_energies_surface[ielem1, imat], 
+                         params.cascade.pmax_vals)
 
     #free_path = params.cascade.mean_free_path[ilayer]
     free_path = 1 / (params.materials[imat].density * np.pi * pmax**2)

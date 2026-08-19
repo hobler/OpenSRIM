@@ -29,20 +29,45 @@ def _check_replacement_collision(proj, recoil, params):
 
     imat = proj["ilayer"]
     ielem_mat = params.materials[imat].ielem_mat[recoil["ielem"]]
-    edisp = params.materials[imat].edisp[ielem_mat]
+    e_disp = params.materials[imat].edisp[ielem_mat]
 
-    if proj["e"] > edisp:
-        return
+    if proj["e"] < e_disp and recoil["e"] > e_disp and recoil["e"] > proj["e"]:
+        proj, recoil = recoil, proj
 
-    if recoil["e"] < params.cascade.emin:
-        return
 
-    if recoil["e"] < proj["e"]:
-        return
+@jit(debug=config.DEBUG)
+def _get_damage_kp(recoil, params):
+    """Get the damage produced by a recoil using the Kinchin-Pease model.
 
-    # Replacement collision: swap projectile and recoil
-    proj, recoil = recoil, proj
-    
+    Parameters:
+        recoil (Projectile): state of the recoil
+        params (PARAMS_DTYPE): Simulation parameters
+
+    Returns:
+        (float): energy deposited by the recoil into nuclear collisions (NED)
+        (float): number of displacements produced by the recoil
+            """
+    kd_KP = params.elements[recoil["ielem"]].kd_KP
+    fd_KP = params.elements[recoil["ielem"]].fd_KP
+
+    ed = fd_KP * recoil["e"]
+    ned = (recoil["e"] 
+           / (1.0 + kd_KP * (ed + 0.40244*ed**(3/4) + 3.4008*ed**(1/6))))
+
+    imat = recoil["ilayer"]
+    ielem_mat = params.materials[imat].ielem_mat[recoil["ielem"]]
+    e_disp = params.materials[imat].edisp[ielem_mat]
+    if ned < e_disp:
+        nvac = 0.0
+    elif ned < 2.5 * e_disp:
+        nvac = 1.0
+    else:
+        nvac = ned / (2.5 * e_disp)
+
+    print('nvac=', nvac, 'ned=', ned, 'e_disp=', e_disp)
+
+    return ned, nvac
+
 
 @jit(debug=config.DEBUG)
 def cascade(initial_proj, params, stats):
@@ -99,6 +124,7 @@ def cascade(initial_proj, params, stats):
         # terminate trajectory if the projectile has no more energy
         if proj["e"] <= emin:
             final_proj_lst.append(proj)
+            score_ned(stats, proj)
             score_stop(stats, proj)
             proj_stack.pop()
             continue
@@ -113,6 +139,7 @@ def cascade(initial_proj, params, stats):
             # terminate trajectory if the projectile has lost too much energy
             if proj["e"] <= emin:
                 final_proj_lst.append(proj)
+                score_ned(stats, proj)
                 score_stop(stats, proj)
                 proj_stack.pop()
 
@@ -121,14 +148,26 @@ def cascade(initial_proj, params, stats):
             if True:
                 imat = recoil["ilayer"]
                 ielem_mat = params.materials[imat].ielem_mat[recoil["ielem"]]
-                ed = params.materials[imat].edisp[ielem_mat]
-                eb = params.materials[imat].ebulk[ielem_mat]
-            if (params.cascade.follow_recoils and recoil["e"] > ed):
-                recoil["e"] -= eb
-                proj_stack.append(recoil)
-                score_start(stats, recoil, params.nelem_target)
+                e_disp = params.materials[imat].edisp[ielem_mat]
+                e_bulk = params.materials[imat].ebulk[ielem_mat]
+            if params.cascade.follow_recoils:
+                if recoil["e"] > e_disp:
+                    recoil["e"] -= e_bulk
+                    proj_stack.append(recoil)  # stores a copy of recoil
+                    score_start(stats, recoil, params.nelem_target)
+                    recoil["e"] = e_bulk  # score the binding energy as NED
+                    score_ned(stats, recoil)
+                else:
+                    score_ned(stats, recoil)
             else:
+                ned, nvac = _get_damage_kp(recoil, params)
+                eed = recoil["e"] - ned
+                score_stop(stats, recoil, weight=nvac)
+                recoil["e"] = ned
                 score_ned(stats, recoil)
+                recoil["e"] = eed
+                score_eed(stats, recoil, dee=eed)
+                
 
     # Return fully simulated projectiles in the correct order
     return final_proj_lst[::-1]

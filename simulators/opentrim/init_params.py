@@ -165,6 +165,8 @@ def _get_elements_and_materials_params(input_params):
         ("name", "<U12"),
         ("Z", np.int32),
         ("M", np.float64),
+        ("kd_KP", np.float64),  # Kinchin-Pease constant for damage formation
+        ("fd_KP", np.float64),  # Kinchin-Pease constant for damage formation
     ], align=True)
 
     elements_params = np.recarray(NELEM, dtype=ELEMENT_PARAMS_DTYPE)
@@ -173,6 +175,9 @@ def _get_elements_and_materials_params(input_params):
         elements_params[ielem].name = elem["name"]
         elements_params[ielem].Z = elem["Z"]
         elements_params[ielem].M = elem["M"]
+        elements_params[ielem].kd_KP = (0.1334 * elem["Z"]**(2/3) 
+                                        / elem["M"]**(1/2))
+        elements_params[ielem].fd_KP = 0.01014 * elem["Z"]**(-7/3) 
     #print(f"elements_params={elements_params}")
     #exit()
 
@@ -388,12 +393,13 @@ def _get_cascade_params(input_params, nelem, elements_params, materials_params,
         ("follow_recoils", np.int64),  # stored as int for better compatibility with Numba
         ("replacement_collisions", np.int64),  # stored as int for better compatibility with Numba
         ("emin", np.float64),
-        ("ed", np.float64),
+        ("ed", np.float64),  # unused, obsolescent
         ("pmax_max", np.float64),
-        ("pmax", np.float64, (NMAT,)),
-        ("mean_free_path", np.float64, (NMAT,)),
+        ("pmax", np.float64, (NMAT,)),  # unused, obsolescent
+        ("mean_free_path", np.float64, (NMAT,)),  # unused, obsolescent
         ("pmax_vals", np.float64, (NPMAX,)),
         ("pmax_energies", np.float64, (NELEM, NMAT, NPMAX)),
+        ("pmax_energies_surface", np.float64, (NELEM, NMAT, NPMAX)),
     ], align=True)
 
     cascade_params = np.recarray(1, dtype=CASCADE_PARAMS_DTYPE)
@@ -401,23 +407,22 @@ def _get_cascade_params(input_params, nelem, elements_params, materials_params,
         input_params["simulation"]["follow_recoils"])
     cascade_params[0].replacement_collisions = (
         input_params["cascade"]["replacement_collisions"])
+    # TODO: get emin from input_params ("cutoff_energy")
     cascade_params[0].emin = 5.0
-    # TODO: get ed from input_params
     cascade_params[0].ed = 15.0
 
     densities = np.array([layer["density"] for layer in input_params["layer"]])
     cascade_params[0].pmax = densities**(-1/3) / sqrt(np.pi)
     cascade_params[0].mean_free_path = densities**(-1/3)
 
-    # TODO: get psimin and demin from input_params
-    psimin = np.radians(5.0)
-    demin = 15.0
+    psimin = input_params["cascade"]["psi_min"]
+    demin = input_params["cascade"]["de_min"]
+    psimin_surface = input_params["cascade"]["psi_min_surface"]
+    demin_surface = input_params["cascade"]["de_min_surface"]
 
-    # TODO: get pmaxmin and pmaxmax from input_params
-    pmaxmax = 4.0
+    pmaxmax = input_params["cascade"]["pmax_max"]
     cascade_params[0].pmax_max = pmaxmax  # needed for surface layer
-
-    pmaxmin = 0
+    pmaxmin = input_params["cascade"]["pmax_min"]
     #pmaxmax = 1.53
     #pmaxmin = pmaxmax
     pmaxmin = max(pmaxmin, pmaxmax / NPMAX)
@@ -432,7 +437,10 @@ def _get_cascade_params(input_params, nelem, elements_params, materials_params,
         m1 = elements_params[ielem1].M
         for imat in range(nmat):
             pmax_energies = np.zeros(NPMAX, dtype=np.float64)
+            pmax_energies_surface = np.zeros(NPMAX, dtype=np.float64)
+
             for ielem_mat in range(materials_params[imat].nelem_mat):
+
                 ielem2 = materials_params[imat].ielem[ielem_mat]
                 z2 = elements_params[ielem2].Z
                 m2 = elements_params[ielem2].M
@@ -448,13 +456,27 @@ def _get_cascade_params(input_params, nelem, elements_params, materials_params,
                             pmax/rnorm, 
                             scatter_params[0].pot_coefs[ielem1, ielem2]
                         )
-                    energy_psi = 14.39979 * z1 * z2 / rnorm * integral / psimin
-                    energy_de = m1/m2 * (
-                        (14.39979 * z1 * z2 / rnorm * integral)**2 / demin)
+                    energy_psi = (14.39979 * z1 * z2 / rnorm * integral 
+                                  / psimin)
+                    energy_de = (m1/m2
+                                 * (14.39979 * z1 * z2 / rnorm * integral)**2 
+                                 / demin)
                     pmax_energies[i] = max(pmax_energies[i], 
                                            energy_psi, energy_de)
-            cascade_params[0].pmax_energies[ielem1, imat] = pmax_energies[::-1]
-            
+                    
+                    energy_psi = (14.39979 * z1 * z2 / rnorm * integral 
+                                  / psimin_surface)
+                    energy_de = (m1/m2
+                                 * (14.39979 * z1 * z2 / rnorm * integral)**2 
+                                 / demin_surface)
+                    pmax_energies_surface[i] = max(pmax_energies_surface[i], 
+                                                   energy_psi, energy_de)
+
+            cascade_params[0].pmax_energies[ielem1, imat] = (
+                pmax_energies[::-1])
+            cascade_params[0].pmax_energies_surface[ielem1, imat] = (
+                pmax_energies_surface[::-1])
+
     return cascade_params
 
 

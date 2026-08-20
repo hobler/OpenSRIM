@@ -10,7 +10,9 @@ from .recoil import select_recoil
 from .scatter import scatter
 from .estop import eloss
 from .target import check_exit_and_move
-from .stats import score_eed, score_ned, score_start, score_stop, score_exit
+from .stats import (score_eed, score_ned, score_start, score_stop, 
+                    score_backscattered, score_transmitted, 
+                    score_yield_back, score_yield_in, score_yield_trans)
 from . import config
 
 
@@ -64,8 +66,6 @@ def _get_damage_kp(recoil, params):
     else:
         nvac = ned / (2.5 * e_disp)
 
-    print('nvac=', nvac, 'ned=', ned, 'e_disp=', e_disp)
-
     return ned, nvac
 
 
@@ -96,6 +96,11 @@ def cascade(initial_proj, params, stats):
     # modify it in-place in select_recoil
     recoil = np.empty(1, dtype=PROJ_DTYPE)[0]
 
+    # Counters for yields
+    nin = np.zeros(stats["i"]["nvar"], dtype=np.float64)
+    nback = np.zeros(stats["b"]["nvar"], dtype=np.float64)
+    ntrans = np.zeros(stats["t"]["nvar"], dtype=np.float64)
+
     # Loop over collision events until there are no more projectiles to 
     # simulate
     while len(proj_stack) > 0:
@@ -117,7 +122,12 @@ def cascade(initial_proj, params, stats):
         exiting = check_exit_and_move(proj, free_path, params)
         if exiting:
             final_proj_lst.append(proj)
-            score_exit(stats, proj)
+            if proj["dir"][0] < 0:
+                score_backscattered(stats, proj)
+                nback[proj["ielem"]] += 1
+            else:
+                score_transmitted(stats, proj)
+                ntrans[proj["ielem"]] += 1
             proj_stack.pop()
             continue
 
@@ -126,6 +136,7 @@ def cascade(initial_proj, params, stats):
             final_proj_lst.append(proj)
             score_ned(stats, proj)
             score_stop(stats, proj)
+            nin[proj["ielem"]] += 1
             proj_stack.pop()
             continue
 
@@ -141,6 +152,7 @@ def cascade(initial_proj, params, stats):
                 final_proj_lst.append(proj)
                 score_ned(stats, proj)
                 score_stop(stats, proj)
+                nin[proj["ielem"]] += 1
                 proj_stack.pop()
 
             # start a new sub-cascade if the recoil has enough energy to leave 
@@ -155,6 +167,7 @@ def cascade(initial_proj, params, stats):
                     recoil["e"] -= e_bulk
                     proj_stack.append(recoil)  # stores a copy of recoil
                     score_start(stats, recoil, params.nelem_target)
+                    nin[recoil["ielem"] + params.nelem_target] += 1
                     recoil["e"] = e_bulk  # score the binding energy as NED
                     score_ned(stats, recoil)
                 else:
@@ -163,11 +176,16 @@ def cascade(initial_proj, params, stats):
                 ned, nvac = _get_damage_kp(recoil, params)
                 eed = recoil["e"] - ned
                 score_stop(stats, recoil, weight=nvac)
+                nin[recoil["ielem"]] += nvac
                 recoil["e"] = ned
                 score_ned(stats, recoil)
                 recoil["e"] = eed
                 score_eed(stats, recoil, dee=eed)
-                
+
+    # Score the yields
+    score_yield_in(stats, nin)
+    score_yield_back(stats, nback)
+    score_yield_trans(stats, ntrans)                
 
     # Return fully simulated projectiles in the correct order
     return final_proj_lst[::-1]

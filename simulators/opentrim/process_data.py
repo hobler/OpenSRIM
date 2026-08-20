@@ -3,6 +3,7 @@ from pathlib import Path
 import numpy as np
 from .stats import standardize_moments
 
+
 def _get_element_names_from_input(input_params):
     beam = input_params["beam"]
     layers = input_params["layer"]
@@ -20,11 +21,13 @@ def _get_element_names_from_input(input_params):
     nelem_target = len(elements) - 1
     return elems, nelem_target
 
+
 def _build_distribution_headers(key, elems, follow_recoils, nelem_target):
     elem_names = list(elems.keys())
 
-    if key in ["x", "y"]:
-        mom_species = elem_names + elem_names[1:] if follow_recoils else elem_names[:]
+    if key in ["i", "x", "y"]:
+        mom_species = (elem_names + elem_names[1:] if follow_recoils 
+                                                   else elem_names[:])
         species_labels = mom_species[:]
         header_indexes = [0]
         for i, label in enumerate(species_labels):
@@ -39,10 +42,14 @@ def _build_distribution_headers(key, elems, follow_recoils, nelem_target):
             else:
                 species_labels[i] = f"{label} (interstitials)"
                 header_indexes.append(z)
-        return header_indexes, [f"{key.upper()} Position"] + species_labels
+        if key == "i":
+            return header_indexes, ["Yield"] + species_labels
+        else:
+            return header_indexes, [f"{key.upper()} Position"] + species_labels
 
     if key[0] in ["b", "t"]:
-        kind_map = {"b": "Backscattered", "t": "Transmitted", "e": "energy", "a": "angle"}
+        kind_map = {"b": "Backscattered", "t": "Transmitted", 
+                    "e": "energy", "a": "angle"}
         mom_species = elem_names[:] if follow_recoils else elem_names[:1]
         species_labels = mom_species[:]
         header_indexes = [0]
@@ -51,7 +58,12 @@ def _build_distribution_headers(key, elems, follow_recoils, nelem_target):
             if i == 0:
                 species_labels[i] = f"{label} (ion)"
             header_indexes.append(z)
-        return header_indexes, [f"{kind_map[key[0]]} {kind_map[key[1]]}"] + species_labels
+        first_label = kind_map[key[0]]
+        if len(key) > 1:
+            first_label += f" {kind_map[key[1]]}"
+        else:
+            first_label += " yield"
+        return header_indexes, [first_label] + species_labels
 
     if key[1] in ["n", "e"]:
         kind_map = {"n": "NED", "e": "EED"}
@@ -67,16 +79,19 @@ def _build_distribution_headers(key, elems, follow_recoils, nelem_target):
 
     return None, None
 
+
 def _header_and_column_row(indexes, labels):
     column_row = ", ".join([str(el) for el in indexes])
-    header = "\n".join([f"{k}:{v}" for k, v in zip(indexes, labels)])
+    header = "\n".join([f"{k}: {v}" for k, v in zip(indexes, labels)])
     return header, column_row
+
 
 def _write_histogram(path, val, x_vals, header_indexes, header_elems):
     header, column_row = _header_and_column_row(header_indexes, header_elems)
     data = np.vstack((x_vals, val["counts"][:, 1:-1])).T
     with open(path, "w") as f:
         np.savetxt(f, data, delimiter=", ", fmt="%d", header=header + "\n" + column_row)
+
 
 def _write_histogram_binary_2d(path, val, species_labels):
     counts = np.asarray(val["counts"][:, 1:-1, 1:-1], dtype="<f8")
@@ -121,8 +136,10 @@ def _write_moments(path, val, species_labels, species_indexes):
 
     header, column_row = _header_and_column_row(header_indexes, header_elems)
     data = np.column_stack(data_cols)
+    fmt = "%2i" + ",%13.6e" * (len(data_cols) - 1)
     with open(path, "w") as f:
-        np.savetxt(f, data, delimiter=", ", fmt="%.8e", header=header + "\n" + column_row)
+        np.savetxt(f, data, fmt=fmt, header=header + "\n" + column_row)
+
 
 def _write_raw_moments(path, val, species_labels, species_indexes):
     raw_nmom = val["power_sums"].shape[1]
@@ -136,15 +153,18 @@ def _write_raw_moments(path, val, species_labels, species_indexes):
 
     header, column_row = _header_and_column_row(header_indexes, header_elems)
     data = np.column_stack(data_cols)
+    fmt = "%2i" + ",%13.6e" * (len(data_cols) - 1)
     with open(path, "w") as f:
-        np.savetxt(f, data, delimiter=", ", fmt="%.8e", header=header + "\n" + column_row)
+        np.savetxt(f, data, fmt=fmt, header=header + "\n" + column_row)
+
 
 def write_stats(input_params, stats):
     """Write histograms into a directoty of the current simulation
     
-    Parametrers:
-        input_params (dict): Input patameters used to start the simulation (from TOML)
-        stats (np.recarray[STATS_DTYPE]): Statistics to save
+    Arguments:
+        input_params: (dict) Input parameters used to start the simulation 
+            (from reading input.toml)
+        stats: (np.recarray[STATS_DTYPE]) Statistics to save
     
     Returns:
         str: Absolute path to the output directory
@@ -156,30 +176,38 @@ def write_stats(input_params, stats):
     
     follow_recoils = input_params["simulation"]["follow_recoils"]
     elems, nelem_target = _get_element_names_from_input(input_params)
+
     for key, val in zip(stats.dtype.names, stats):
+
         if not val["score"]:
             continue
-        if key in ["xy", "xyn", "xye"]:
+
+        if key not in ["xy", "xyn", "xye"]:  # 0d and 1d
+            header_indexes, header_elems = _build_distribution_headers(
+                key, elems, follow_recoils, nelem_target
+            )
+            if header_indexes is None or header_elems is None:
+                continue
+            species_labels = header_elems[1:]
+            species_indexes = header_indexes[1:]
+            _write_moments(out_path / f"{key}.mom", val, species_labels, 
+                           species_indexes)
+            # _write_raw_moments(out_path / "moments_raw" / f"{key}.mom", 
+            #                    val, species_labels, species_indexes)
+            if key not in ["i", "b", "t"]:  # 1d
+                x_vals = np.linspace(val["limits"][0], val["limits"][1], 
+                                     val["nbins"])
+                _write_histogram(out_path / f"{key}.his", val, x_vals, 
+                                 header_indexes, header_elems)
+        else:  # 2d
             source_key = {"xy": "x", "xyn": "xn", "xye": "xe"}[key]
             _, header_elems = _build_distribution_headers(
                 source_key, elems, follow_recoils, nelem_target
             )
             if header_elems is not None:
-                _write_histogram_binary_2d(out_path / f"{key}.hisb", val, header_elems[1:])
-            continue
-
-        x_vals = np.linspace(val["limits"][0], val["limits"][1], val["nbins"])
-        header_indexes, header_elems = _build_distribution_headers(
-            key, elems, follow_recoils, nelem_target
-        )
-        if header_indexes is None or header_elems is None:
-            continue
-
-        species_labels = header_elems[1:]
-        species_indexes = header_indexes[1:]
-        _write_histogram(out_path / f"{key}.his", val, x_vals, header_indexes, header_elems)
-        _write_moments(out_path / f"{key}.mom", val, species_labels, species_indexes)
-        # _write_raw_moments(out_path / "moments_raw" / f"{key}.mom", val, species_labels, species_indexes)
+                _write_histogram_binary_2d(out_path / f"{key}.hisb", val, 
+                                           header_elems[1:])
+    
     return out_path
 
 

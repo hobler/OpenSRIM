@@ -49,7 +49,7 @@ def simulate(nion, params, stats, sim_idx=0):
 @jit(cache=config.ENABLE_CACHING, parallel=config.PARALLEL, 
      nogil=config.PARALLEL, debug=config.DEBUG)
 def _simulate(nion, params, stats_per_thread, sim_idx):
-    """Perform simulation on given number of projectiles
+    """Perform simulation on given number of projectiles.
     
     Parameters:
         nion: (int) Total number of projectiles to simulate
@@ -88,11 +88,12 @@ def _simulate(nion, params, stats_per_thread, sim_idx):
     return
 
 
-def simulate_adaptive(avg_chunk_time, nion, params, stats, input_params=None, upd_callback=None):
-    """Adaptive, chunked simulation with each chunk taking around avg_sim_time seconds
+def simulate_adaptive(avg_chunk_time, nion, params, stats, input_params=None, 
+                      upd_callback=None):
+    """Adaptive, chunked simulation, each chunk taking ~avg_chunk_time seconds.
     
     Parameters:
-        avg_sim_time: (int) Desired simulation time per in seconds
+        avg_chunk_time: (int) Desired simulation time per chunk in seconds
         nion: (int) Total number of projectiles to simulate
         params, stats: As in `simulate()`
         input_params (dict): Simulation configuration (for data saving)
@@ -107,12 +108,7 @@ def simulate_adaptive(avg_chunk_time, nion, params, stats, input_params=None, up
         current_batch = min(chunk_size, nion - processed_count)
         
         start_time = time.time()
-        simulate(
-            current_batch,
-            params,
-            stats,
-            processed_count
-        )
+        simulate(current_batch, params, stats, processed_count)
         duration = time.time() - start_time
         
         processed_count += current_batch
@@ -145,12 +141,8 @@ def simulate_chunked(chunk_size, nion, params, stats, input_params=None,
         if chunk_size == 0:
             return
         
-        simulate(
-            chunk_size,
-            params,
-            stats,
-            sim_idx
-        )
+        simulate(chunk_size, params, stats, sim_idx)
+
         if input_params:
             done = sim_idx + chunk_size
             write_stats(input_params, stats)

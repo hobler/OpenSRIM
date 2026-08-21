@@ -7,8 +7,9 @@ from .stats import standardize_moments
 def _build_distribution_headers(field_name, params):
     """Build headers for statistics data files.
     
-    Arguments:
+    Parameters:
         field_name: (str) Stats field name
+        params: (PARAMS_DTYPE) Simulation parameters
     """
     elem_names = [params.elements[ielem]["name"] 
                   for ielem in range(params.nelem)]
@@ -79,13 +80,32 @@ def _header_and_column_row(indexes, labels):
     return header, column_row
 
 
-def _write_histogram(path, stats_field, header_indexes, header_labels):
+def _write_histogram(path, stats_field, nion, header_indexes, header_labels):
+    """Write a 1D histogram file.
+    
+    Units of densities are [1/A], [1/eV], or [1/deg] depending on the histogram 
+    type.
+
+    The number of ions processed is saved in the ion column of the last row of 
+    the histogram file. I may be used to estimate the statistical error of the 
+    histogram data.
+    
+    Parameters:
+        path: (str) The path to the output file.
+        stats_field: (dict) The statistics field containing the histogram data.
+        nion: (int) The number of projectiles already processed.
+        header_indexes: (list) The indexes for the header.
+        header_labels: (list) The labels for the header.
+    """
     x_vals = np.linspace(stats_field["limits"][0], stats_field["limits"][1], 
-                         stats_field["nbins"])
+                         stats_field["nbins"] + 1)
     header, column_row = _header_and_column_row(header_indexes, header_labels)
-    data = np.vstack((x_vals, stats_field["counts"][:, 1:-1])).T
-    np.savetxt(path, data, delimiter=", ", fmt="%d", 
-                header=header + "\n" + column_row)
+    densities = stats_field["counts"][:, 1:] / (nion * stats_field["bin_width"])
+    densities[0, -1] = nion
+    densities[1:, -1] = 0.0
+    data = np.vstack((x_vals, densities)).T
+    np.savetxt(path, data, delimiter=", ", fmt="%13.6e", 
+               header=header + "\n" + column_row)
 
 
 def _write_histogram_binary_2d(path, val, species_labels):
@@ -151,18 +171,18 @@ def _write_raw_moments(path, val, species_indexes, species_labels):
     np.savetxt(path, data, fmt=fmt, header=header + "\n" + column_row)
 
 
-def write_stats(params, stats, workdir):
+def write_stats(params, stats, nion, workdir):
     """Write histograms into a directory of the current simulation
     
-    Arguments:
+    Parameters:
         params:  (PARAMS_DTYPE) Simulation parameters
         stats: (np.recarray[STATS_DTYPE]) Statistics to save
+        nion: (int) Number of projectiles already processed
         workdir: (str) Directory to save the output files
     
     Returns:
         str: Absolute path to the output directory
     """
-    stats = stats[0]
     out_path = Path(__file__).parent / workdir
     out_path.mkdir(parents=True, exist_ok=True)
     
@@ -186,7 +206,7 @@ def write_stats(params, stats, workdir):
             #                    stats_field, species_indexes, species_labels)
             if stats_name not in ["i", "b", "t"]:  # 1d
                 _write_histogram(out_path / f"{stats_name}.his", stats_field, 
-                                 header_indexes, header_labels)
+                                 nion, header_indexes, header_labels)
         else:  # 2d
             map = {"xy": "x", "xyn": "xn", "xye": "xe"}
             source_stats_name = map[stats_name]

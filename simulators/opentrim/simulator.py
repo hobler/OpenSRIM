@@ -50,8 +50,6 @@ def simulate(nion, params, stats, nion_processed=0):
     for i in range(len(stats_per_thread)):
         merge_stats(stats, stats_per_thread[i])
 
-    return
-
 
 @jit(cache=config.ENABLE_CACHING, parallel=config.PARALLEL, 
      nogil=config.PARALLEL, debug=config.DEBUG)
@@ -95,8 +93,6 @@ def _simulate(nion, params, stats_per_thread, nion_processed):
     proj_count = 0
     for proj_lst in proj_sim:
         proj_count += len(proj_lst)
-    
-    return
 
 
 def simulate_adaptive(avg_chunk_time, nion, params, stats, input_params=None, 
@@ -121,11 +117,11 @@ def simulate_adaptive(avg_chunk_time, nion, params, stats, input_params=None,
         start_time = time.time()
         simulate(nion_chunk, params, stats, nion_processed)
         duration = time.time() - start_time
-        
         nion_processed += nion_chunk
+
         if input_params:
             workdir = input_params["simulation"]["workdir"]
-            write_stats(params[0], stats, workdir)
+            write_stats(params[0], stats[0], nion_processed, workdir)
             save_progress(workdir, nion_processed, nion)
         if upd_callback:
             upd_callback(nion_processed, nion, stats)
@@ -133,8 +129,6 @@ def simulate_adaptive(avg_chunk_time, nion, params, stats, input_params=None,
         # Calculate optimal chunk size
         new_chunk = int((nion_chunk / duration) * avg_chunk_time)
         nion_chunksize = max(min_chunk_size, new_chunk)
-    
-    return
 
 
 def simulate_chunked(nion_chunksize, nion, params, stats, input_params=None, 
@@ -142,7 +136,7 @@ def simulate_chunked(nion_chunksize, nion, params, stats, input_params=None,
     """Chunked simulation for nion projectiles
     
     Parameters:
-        nion_chunksize: (int) Desired size to split total count into
+        nion_chunksize: (int) Desired size to split total count into (> 0)
         nion: (int) Total number of projectiles to simulate
         params, stats: As in `simulate()`
         input_params (dict): Simulation configuration (for data saving)
@@ -150,24 +144,22 @@ def simulate_chunked(nion_chunksize, nion, params, stats, input_params=None,
     """    
     
     def _process_chunks(nion_chunk, nion_processed):
-        if nion_chunksize == 0:
-            return
-        
-        simulate(nion_chunk, params, stats, nion_processed)
 
-        if input_params:
-            done = nion_processed + nion_chunk
-            workdir = input_params["simulation"]["workdir"]
-            write_stats(params[0], stats, workdir)
-            save_progress(workdir, done, nion)
-        if upd_callback:
-            upd_callback(nion_processed+nion_chunk, nion, stats)
-            # TODO: make use of callback to return user stop request; break
-        
-    nion_processed = 0
-    while nion_processed < nion:
-        nion_chunk = min(nion_chunksize, nion - nion_processed)
-        _process_chunks(nion_chunk, nion_processed)
+        simulate(nion_chunk, params, stats, nion_processed)
         nion_processed += nion_chunk
 
-    return
+        if input_params:
+            workdir = input_params["simulation"]["workdir"]
+            write_stats(params[0], stats[0], nion_processed, workdir)
+            save_progress(workdir, nion_processed, nion)
+        if upd_callback:
+            upd_callback(nion_processed, nion, stats)
+            # TODO: make use of callback to return user stop request; break
+        
+        return nion_processed
+
+    nion_processed = 0
+    print(nion_processed, nion)
+    while nion_processed < nion:
+        nion_chunk = min(nion_chunksize, nion - nion_processed)
+        nion_processed = _process_chunks(nion_chunk, nion_processed)

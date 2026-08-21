@@ -7,7 +7,7 @@ import numba as nb
 from . import cascade
 from .mytypes import Projectile, PROJ_DTYPE, PROJ_NUMBA_DTYPE
 from .stats import merge_stats, zero_stats
-from .process_data import write_stats, save_progress
+from .save_output import write_stats, save_progress
 
 
 empty_stats = None
@@ -113,8 +113,9 @@ def simulate_adaptive(avg_chunk_time, nion, params, stats, input_params=None,
         
         processed_count += current_batch
         if input_params:
-            write_stats(input_params, stats)
-            save_progress(input_params, processed_count, nion)
+            workdir = input_params["simulation"]["workdir"]
+            write_stats(params[0], stats, workdir)
+            save_progress(workdir, processed_count, nion)
         if upd_callback:
             upd_callback(processed_count, nion, stats)
             # TODO: make use of callback to return user stop request; break
@@ -145,8 +146,9 @@ def simulate_chunked(chunk_size, nion, params, stats, input_params=None,
 
         if input_params:
             done = sim_idx + chunk_size
-            write_stats(input_params, stats)
-            save_progress(input_params, done, nion)
+            workdir = input_params["simulation"]["workdir"]
+            write_stats(params[0], stats, workdir)
+            save_progress(workdir, done, nion)
         if upd_callback:
             upd_callback(sim_idx+chunk_size, nion, stats)
             # TODO: make use of callback to return user stop request; break

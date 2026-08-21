@@ -9,7 +9,24 @@ if __package__ is None:
 import numpy as np
 from .stats import max_order
 from .read_params import read_params
-from .process_data import _get_element_names_from_input
+
+
+def _get_element_names_from_input(input_params):
+    beam = input_params["beam"]
+    layers = input_params["layer"]
+
+    elements = [(beam["symbol"], beam["name"], beam["Z"], beam["M"])]
+    for layer in layers:
+        for elem in layer["element"]:
+            descriptor = (elem["symbol"], elem["name"], elem["Z"], elem["M"])
+            if descriptor not in elements[1:]:
+                elements.append(descriptor)
+
+    elems = {}
+    for _, name, z, _ in elements:
+        elems[name] = int(z)
+    nelem_target = len(elements) - 1
+    return elems, nelem_target
 
 
 def _build_measure_configs(input_params, include_unscored=False):

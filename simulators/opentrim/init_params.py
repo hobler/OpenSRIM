@@ -117,7 +117,7 @@ def _get_elements_and_materials_params(input_params):
         atomic_fractions = np.array(atomic_fractions, dtype=np.float64)
         atomic_fractions /= np.sum(atomic_fractions)
         mat["atomic_fractions"] = atomic_fractions
-        mat["nelem"] = len(mat["element"])
+        mat["nelem_mat"] = len(mat["element"])
     nmat = len(materials)
     NMAT = nmat     # could be set to max(3, nmat) to avoid frequent 
                     # recompilation of Numba functions when nmat changes
@@ -133,14 +133,16 @@ def _get_elements_and_materials_params(input_params):
     NELEM_ION = nelem_ion
 
     for mat in materials:
-        ielem = []
+        ielem_lst = []
         for elem in mat["element"]:
             if elem in elements:
-                ielem.append(elements.index(elem))
+                ielem = elements.index(elem)
+                ielem_lst.append(ielem)
             else:
-                ielem.append(len(elements))
                 elements.append(elem)
-        mat["ielem"] = ielem
+                ielem = len(elements) - 1
+                ielem_lst.append(ielem)
+        mat["ielem"] = ielem_lst
     nelem = len(elements)
     NELEM = nelem   # could be set to max(5, nelem) to avoid frequent 
                     # recompilation of Numba functions when nelem changes
@@ -163,6 +165,8 @@ def _get_elements_and_materials_params(input_params):
         ("name", "<U12"),
         ("Z", np.int32),
         ("M", np.float64),
+        ("kd_KP", np.float64),  # Kinchin-Pease constant for damage formation
+        ("fd_KP", np.float64),  # Kinchin-Pease constant for damage formation
     ], align=True)
 
     elements_params = np.recarray(NELEM, dtype=ELEMENT_PARAMS_DTYPE)
@@ -171,7 +175,11 @@ def _get_elements_and_materials_params(input_params):
         elements_params[ielem].name = elem["name"]
         elements_params[ielem].Z = elem["Z"]
         elements_params[ielem].M = elem["M"]
-#    (f"elements_params={elements_params}")
+        elements_params[ielem].kd_KP = (0.1334 * elem["Z"]**(2/3) 
+                                        / elem["M"]**(1/2))
+        elements_params[ielem].fd_KP = 0.01014 * elem["Z"]**(-7/3) 
+    #print(f"elements_params={elements_params}")
+    #exit()
 
     ### Define the materials parameters
     MATERIALS_PARAMS_DTYPE = np.dtype([
@@ -179,11 +187,14 @@ def _get_elements_and_materials_params(input_params):
         ("density", np.float64),
         ("compound_correction", np.float64),
         ("gas", bool),
-        ("nelem", np.int32),
+        ("nelem_mat", np.int32),
         ("ielem", np.int32, (NELEM,)),
+        ("ielem_mat", np.int32, (NELEM,)),
         ("atomic_fraction", np.float64, (NELEM,)),
         ("cumulative_fraction", np.float64, (NELEM,)),
-        ("displacement_energy", np.float64, (NELEM,)),
+        ("edisp", np.float64, (NELEM,)),
+        ("esurf", np.float64, (NELEM,)),
+        ("ebulk", np.float64, (NELEM,)),
     ], align=True)
 
     materials_params = np.recarray(NMAT, dtype=MATERIALS_PARAMS_DTYPE)
@@ -192,17 +203,25 @@ def _get_elements_and_materials_params(input_params):
         materials_params[imat].density = mat["density"]
         materials_params[imat].compound_correction = mat["compound_correction"]
         materials_params[imat].gas = mat["gas"]
-        materials_params[imat].nelem = mat["nelem"]
-        for ielem in range(mat["nelem"]):
-            materials_params[imat].ielem[ielem] = mat["ielem"][ielem]
-            materials_params[imat].atomic_fraction[ielem] = (
-                mat["atomic_fractions"][ielem])
-            materials_params[imat].cumulative_fraction[ielem] = (
-                np.sum(mat["atomic_fractions"][:ielem+1]))
-            materials_params[imat].displacement_energy[ielem] = (
-                mat["element"][ielem]["displacement_energy"])
-#    print(f"materials_params={materials_params}")
-
+        materials_params[imat].nelem_mat = mat["nelem_mat"]
+        materials_params[imat].ielem_mat[:] = 0
+        for ielem_mat in range(mat["nelem_mat"]):
+            ielem = mat["ielem"][ielem_mat]
+            materials_params[imat].ielem[ielem_mat] = ielem
+            materials_params[imat].ielem_mat[ielem] = ielem_mat
+            materials_params[imat].atomic_fraction[ielem_mat] = (
+                mat["atomic_fractions"][ielem_mat])
+            materials_params[imat].cumulative_fraction[ielem_mat] = (
+                np.sum(mat["atomic_fractions"][:ielem_mat+1]))
+            materials_params[imat].edisp[ielem_mat] = (
+                mat["element"][ielem_mat]["displacement_energy"])
+            #print(f"imat={imat}, ielem_mat={ielem_mat}, edisp={materials_params[imat].edisp[ielem_mat]}")
+            materials_params[imat].esurf[ielem_mat] = (
+                mat["element"][ielem_mat]["surface_binding_energy"])
+            materials_params[imat].ebulk[ielem_mat] = (
+                mat["element"][ielem_mat]["lattice_binding_energy"])
+    #print(f"materials_params={materials_params}")
+    
     return nelem_target, nelem, elements_params, materials_params
 
 
@@ -372,37 +391,44 @@ def _get_cascade_params(input_params, nelem, elements_params, materials_params,
     NPMAX = 64
     CASCADE_PARAMS_DTYPE = np.dtype([
         ("follow_recoils", np.int64),  # stored as int for better compatibility with Numba
+        ("replacement_collisions", np.int64),  # stored as int for better compatibility with Numba
         ("emin", np.float64),
-        ("ed", np.float64),
-        ("pmax", np.float64, (NMAT,)),
-        ("mean_free_path", np.float64, (NMAT,)),
+        ("ed", np.float64),  # unused, obsolescent
+        ("pmax_max", np.float64),
+        ("pmax", np.float64, (NMAT,)),  # unused, obsolescent
+        ("mean_free_path", np.float64, (NMAT,)),  # unused, obsolescent
         ("pmax_vals", np.float64, (NPMAX,)),
         ("pmax_energies", np.float64, (NELEM, NMAT, NPMAX)),
+        ("pmax_energies_surface", np.float64, (NELEM, NMAT, NPMAX)),
     ], align=True)
 
     cascade_params = np.recarray(1, dtype=CASCADE_PARAMS_DTYPE)
     cascade_params[0].follow_recoils = (
         input_params["simulation"]["follow_recoils"])
+    cascade_params[0].replacement_collisions = (
+        input_params["cascade"]["replacement_collisions"])
+    # TODO: get emin from input_params ("cutoff_energy")
     cascade_params[0].emin = 5.0
-    # TODO: get ed from input_params
     cascade_params[0].ed = 15.0
 
     densities = np.array([layer["density"] for layer in input_params["layer"]])
     cascade_params[0].pmax = densities**(-1/3) / sqrt(np.pi)
     cascade_params[0].mean_free_path = densities**(-1/3)
 
-    # TODO: get psimin and demin from input_params
-    psimin = np.radians(5.0)
-    demin = 15.0
+    psimin = input_params["cascade"]["psi_min"]
+    demin = input_params["cascade"]["de_min"]
+    psimin_surface = input_params["cascade"]["psi_min_surface"]
+    demin_surface = input_params["cascade"]["de_min_surface"]
 
-    # TODO: get pmaxmin and pmaxmax from input_params
-    pmaxmax = 4.0
-    pmaxmin = 0
+    pmaxmax = input_params["cascade"]["pmax_max"]
+    cascade_params[0].pmax_max = pmaxmax  # needed for surface layer
+    pmaxmin = input_params["cascade"]["pmax_min"]
     #pmaxmax = 1.53
     #pmaxmin = pmaxmax
     pmaxmin = max(pmaxmin, pmaxmax / NPMAX)
     pmax_vals = np.linspace(pmaxmin, pmaxmax, NPMAX)
     cascade_params[0].pmax_vals = pmax_vals[::-1]
+
 
     nmat = len(input_params["layer"])
 
@@ -411,8 +437,11 @@ def _get_cascade_params(input_params, nelem, elements_params, materials_params,
         m1 = elements_params[ielem1].M
         for imat in range(nmat):
             pmax_energies = np.zeros(NPMAX, dtype=np.float64)
-            for ielem in range(materials_params[imat].nelem):
-                ielem2 = materials_params[imat].ielem[ielem]
+            pmax_energies_surface = np.zeros(NPMAX, dtype=np.float64)
+
+            for ielem_mat in range(materials_params[imat].nelem_mat):
+
+                ielem2 = materials_params[imat].ielem[ielem_mat]
                 z2 = elements_params[ielem2].Z
                 m2 = elements_params[ielem2].M
                 rnorm = scatter_params[0].rnorm[ielem1, ielem2]
@@ -427,13 +456,27 @@ def _get_cascade_params(input_params, nelem, elements_params, materials_params,
                             pmax/rnorm, 
                             scatter_params[0].pot_coefs[ielem1, ielem2]
                         )
-                    energy_psi = 14.39979 * z1 * z2 / rnorm * integral / psimin
-                    energy_de = m1/m2 * (
-                        (14.39979 * z1 * z2 / rnorm * integral)**2 / demin)
+                    energy_psi = (14.39979 * z1 * z2 / rnorm * integral 
+                                  / psimin)
+                    energy_de = (m1/m2
+                                 * (14.39979 * z1 * z2 / rnorm * integral)**2 
+                                 / demin)
                     pmax_energies[i] = max(pmax_energies[i], 
                                            energy_psi, energy_de)
-            cascade_params[0].pmax_energies[ielem1, imat] = pmax_energies[::-1]
-            
+                    
+                    energy_psi = (14.39979 * z1 * z2 / rnorm * integral 
+                                  / psimin_surface)
+                    energy_de = (m1/m2
+                                 * (14.39979 * z1 * z2 / rnorm * integral)**2 
+                                 / demin_surface)
+                    pmax_energies_surface[i] = max(pmax_energies_surface[i], 
+                                                   energy_psi, energy_de)
+
+            cascade_params[0].pmax_energies[ielem1, imat] = (
+                pmax_energies[::-1])
+            cascade_params[0].pmax_energies_surface[ielem1, imat] = (
+                pmax_energies_surface[::-1])
+
     return cascade_params
 
 

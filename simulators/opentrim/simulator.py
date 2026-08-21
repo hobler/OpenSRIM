@@ -7,7 +7,7 @@ import numba as nb
 from . import cascade
 from .mytypes import Projectile, PROJ_DTYPE, PROJ_NUMBA_DTYPE
 from .stats import merge_stats, zero_stats
-from .process_data import write_stats, save_progress
+from .save_output import write_stats, save_progress
 
 
 empty_stats = None
@@ -49,7 +49,7 @@ def simulate(nion, params, stats, sim_idx=0):
 @jit(cache=config.ENABLE_CACHING, parallel=config.PARALLEL, 
      nogil=config.PARALLEL, debug=config.DEBUG)
 def _simulate(nion, params, stats_per_thread, sim_idx):
-    """Perform simulation on given number of projectiles
+    """Perform simulation on given number of projectiles.
     
     Parameters:
         nion: (int) Total number of projectiles to simulate
@@ -57,13 +57,17 @@ def _simulate(nion, params, stats_per_thread, sim_idx):
         stats_per_thread: (ndarray[STATS_DTYPE]) Array of stats for each thread
         sim_idx: (int) Simulation index (for chunked simulations)
     """
-    # Initial conditions of the projectile
+    # Initial conditions of the projectile, starting outside target
+    dirx = np.cos(np.radians(params[0].beam.tilt))
+    diry = np.sin(np.radians(params[0].beam.tilt))
+    dirz = 0.0
+    xinit = params[0].geometry.x_intf[0] - params[0].cascade.pmax_max
+    yinit = xinit * diry / dirx
+    zinit = xinit * dirz / dirx
     proj_init = Projectile(
         params[0].beam.energy,  # energy (eV)
-        np.array([0.0, 0.0, 0.0]),  # position (A)
-        np.array([np.cos(np.radians(params[0].beam.tilt)), 
-                      np.sin(np.radians(params[0].beam.tilt)), 0.0])
-                      # direction (unit vector)
+        np.array([xinit, yinit, zinit]),  # position (A)
+        np.array([dirx, diry, dirz])  # direction (unit vector)
     )
     proj_dummy_list = typed.List.empty_list(PROJ_NUMBA_DTYPE)
     proj_sim = [proj_dummy_list for _ in range(nion)]
@@ -84,11 +88,12 @@ def _simulate(nion, params, stats_per_thread, sim_idx):
     return
 
 
-def simulate_adaptive(avg_chunk_time, nion, params, stats, input_params=None, upd_callback=None):
-    """Adaptive, chunked simulation with each chunk taking around avg_sim_time seconds
+def simulate_adaptive(avg_chunk_time, nion, params, stats, input_params=None, 
+                      upd_callback=None):
+    """Adaptive, chunked simulation, each chunk taking ~avg_chunk_time seconds.
     
     Parameters:
-        avg_sim_time: (int) Desired simulation time per in seconds
+        avg_chunk_time: (int) Desired simulation time per chunk in seconds
         nion: (int) Total number of projectiles to simulate
         params, stats: As in `simulate()`
         input_params (dict): Simulation configuration (for data saving)
@@ -103,18 +108,14 @@ def simulate_adaptive(avg_chunk_time, nion, params, stats, input_params=None, up
         current_batch = min(chunk_size, nion - processed_count)
         
         start_time = time.time()
-        simulate(
-            current_batch,
-            params,
-            stats,
-            processed_count
-        )
+        simulate(current_batch, params, stats, processed_count)
         duration = time.time() - start_time
         
         processed_count += current_batch
         if input_params:
-            write_stats(input_params, stats)
-            save_progress(input_params, processed_count, nion)
+            workdir = input_params["simulation"]["workdir"]
+            write_stats(params[0], stats, workdir)
+            save_progress(workdir, processed_count, nion)
         if upd_callback:
             upd_callback(processed_count, nion, stats)
             # TODO: make use of callback to return user stop request; break
@@ -125,7 +126,8 @@ def simulate_adaptive(avg_chunk_time, nion, params, stats, input_params=None, up
     return
 
 
-def simulate_chunked(chunk_size, nion, params, stats, input_params=None, upd_callback=None):
+def simulate_chunked(chunk_size, nion, params, stats, input_params=None, 
+                     upd_callback=None):
     """Chunked simulation for nion projectiles
     
     Parameters:
@@ -140,16 +142,13 @@ def simulate_chunked(chunk_size, nion, params, stats, input_params=None, upd_cal
         if chunk_size == 0:
             return
         
-        simulate(
-            chunk_size,
-            params,
-            stats,
-            sim_idx
-        )
+        simulate(chunk_size, params, stats, sim_idx)
+
         if input_params:
             done = sim_idx + chunk_size
-            write_stats(input_params, stats)
-            save_progress(input_params, done, nion)
+            workdir = input_params["simulation"]["workdir"]
+            write_stats(params[0], stats, workdir)
+            save_progress(workdir, done, nion)
         if upd_callback:
             upd_callback(sim_idx+chunk_size, nion, stats)
             # TODO: make use of callback to return user stop request; break

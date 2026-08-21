@@ -65,7 +65,7 @@ def normalize_if_needed(vec, fallback):
 
 
 @jit(debug=config.DEBUG)
-def scatter(proj, p, dirp, recoil, scatter_params):
+def scatter(proj, p, dirp, recoil, params):
     """Treat a scattering event.
 
     The atomic numbers and masses of the ion and the target atom enter the
@@ -84,20 +84,20 @@ def scatter(proj, p, dirp, recoil, scatter_params):
             (= from the collision point to the recoil position before 
             the collision) (unit vector, size 3)
         recoil (Projectile): the recoil projectile (modified in-place)
-        scatter_params (np.recarray): Scatter parameters
+        params (PARAMS_DTYPE): Simulation parameters
     """
     p = max(p, 1e-10)  # Avoid 0/0 in p*tan(theta/2)
 
     # Some abbreviations
     ielem1 = proj["ielem"]
     ielem2 = recoil["ielem"]
-    enorm = scatter_params.enorm[ielem1, ielem2]
-    rnorm = scatter_params.rnorm[ielem1, ielem2]
-    dirfac = scatter_params.dirfac[ielem1, ielem2]
-    denfac = scatter_params.denfac[ielem1, ielem2]
-    integrate_algorithm = scatter_params.integrate_algorithm
-    pot_model = scatter_params.pot_model
-    pot_coefs = scatter_params.pot_coefs[ielem1, ielem2]
+    enorm = params.scatter.enorm[ielem1, ielem2]
+    rnorm = params.scatter.rnorm[ielem1, ielem2]
+    dirfac = params.scatter.dirfac[ielem1, ielem2]
+    denfac = params.scatter.denfac[ielem1, ielem2]
+    integrate_algorithm = params.scatter.integrate_algorithm
+    pot_model = params.scatter.pot_model
+    pot_coefs = params.scatter.pot_coefs[ielem1, ielem2]
     
     # Scattering angle in the CM system and time integral
     if integrate_algorithm == "magic":
@@ -123,7 +123,7 @@ def scatter(proj, p, dirp, recoil, scatter_params):
     proj_dir = normalize_if_needed(proj_dir[:], proj["dir"][:])
     recoil_dir = normalize_if_needed(recoil_dir[:], proj["dir"][:])
 
-    # Determine turning points of trajectries
+    # Determine turning points ("tp") of trajectries
     x12 = p * sin_half_theta / cos_half_theta
     #x12 = 0.0
     if integrate_algorithm == "magic":  # tau undefined

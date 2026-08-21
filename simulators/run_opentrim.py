@@ -15,7 +15,7 @@ if __package__ is None:
         sys.path.insert(0, project_root)
     __package__ = "simulators"
 
-from simulators.opentrim import process_data
+from simulators.opentrim import save_output
 from simulators.opentrim.read_params import read_params
 from simulators.opentrim.init_params import get_params
 from simulators.opentrim.stats import init_stats, zero_stats
@@ -29,7 +29,7 @@ class _StopRequested(Exception):
 def _workdir(input_params) -> Path:
     """Resolve the run's working directory the same way process_data does."""
     workdir = input_params["simulation"]["workdir"]
-    return Path(process_data.__file__).parent / workdir
+    return Path(save_output.__file__).parent / workdir
 
 
 def main(toml_path: str | None = None) -> None:

@@ -113,16 +113,16 @@ def _read_moments_file(path: Path) -> dict:
 
 # Mapping from file prefix to human-readable name and axis labels
 _MEASURE_META = {
-    "x":   ("Depth Distribution: Ion/Recoil",           "Depth (Å)",            "Counts"),
-    "xn":  ("Depth: Nuclear Energy Deposition",         "Depth (Å)",            "Energy (eV)"),
-    "xe":  ("Depth: Electronic Energy Deposition",      "Depth (Å)",            "Energy (eV)"),
-    "y":   ("Lateral Distribution: Ion/Recoil",         "Lateral Position (Å)", "Counts"),
-    "yn":  ("Lateral: Nuclear Energy Deposition",       "Lateral Position (Å)", "Energy (eV)"),
-    "ye":  ("Lateral: Electronic Energy Deposition",    "Lateral Position (Å)", "Energy (eV)"),
-    "be":  ("Backscattered: Energy",                    "Energy (eV)",          "Counts"),
-    "ba":  ("Backscattered: Angle",                     "Angle (deg)",          "Counts"),
-    "te":  ("Transmitted: Energy",                      "Energy (eV)",          "Counts"),
-    "ta":  ("Transmitted: Angle",                       "Angle (deg)",          "Counts"),
+    "x":   ("Depth Distribution: Ion/Recoil",           "Depth (Å)",            "Density (1/Å)"),
+    "xn":  ("Depth: Nuclear Energy Deposition",         "Depth (Å)",            "Energy density (eV/Å)"),
+    "xe":  ("Depth: Electronic Energy Deposition",      "Depth (Å)",            "Energy density (eV/Å)"),
+    "y":   ("Lateral Distribution: Ion/Recoil",         "Lateral Position (Å)", "Density (1/Å)"),
+    "yn":  ("Lateral: Nuclear Energy Deposition",       "Lateral Position (Å)", "Energy density (eV/Å)"),
+    "ye":  ("Lateral: Electronic Energy Deposition",    "Lateral Position (Å)", "Energy density (eV/Å)"),
+    "be":  ("Backscattered: Energy",                    "Energy (eV)",          "Density (1/eV)"),
+    "ba":  ("Backscattered: Angle",                     "Angle (deg)",          "Density (1/deg)"),
+    "te":  ("Transmitted: Energy",                      "Energy (eV)",          "Density (1/eV)"),
+    "ta":  ("Transmitted: Angle",                       "Angle (deg)",          "Density (1/deg)"),
 }
 
 # 2D distribution metadata: (display_prefix, x_label, y_label, colorbar_label)
@@ -139,22 +139,58 @@ _COLORS = [
 
 
 def _rebin_step(x: np.ndarray, cols, factor: int):
-    """Combine adjacent bins by *factor* (counts are summed, x is averaged).
+    """Combine adjacent *factor* bins.
+    
+    The Rebinning is done such that theedge closest to theorigin is retained.
 
-    Trailing bins that don't fill a full group are dropped. Returns
-    ``(x_new, [col_new, ...])`` even if no change was made (``factor <= 1``).
+    Parameters:
+        x: (np.ndarray) The x-values of the bins.
+        cols: (list of np.ndarray) The columns of data to rebin.
+        factor: (int) The factor by which to rebin.
+
+    Returns:
+        ``(x_new, [col_new, ...])`` even if no change was made (``factor <= 1``).
+        col_new is shortened by 1 element to account for the last row being the 
+        number of ions processed. Thus, len(x_new) = len(col_new) + 1.
     """
     if factor is None or factor <= 1:
-        return x, list(cols)
-    n = (len(x) // factor) * factor
-    if n == 0:
-        return x, list(cols)
-    x_arr = np.asarray(x[:n], dtype=float)
-    x_new = x_arr.reshape(-1, factor).mean(axis=1)
+        return x, [col[:-1] for col in cols]
+
+    # get counts/nion from densities
+    cols_new = [col[:-1] * (x[1:] - x[:-1]) for col in cols]
+
+    # search for position closest to the origin and expand arrays such that 
+    # there are multiples of n_merge boxes to the left and right of the origin
+    n = len(x) - 1
+    i = np.argmin(abs(x))
+    nadd_left = -i % factor
+    nadd_right = -(n-i) % factor
+    x_new = np.concatenate((x[0]-(np.arange(nadd_left)[::-1]+1)*(x[1]-x[0]), x,
+                            x[-1]+(np.arange(nadd_right)+1)*(x[-1]-x[-2])))
     cols_new = [
-        np.asarray(c[:n], dtype=float).reshape(-1, factor).sum(axis=1)
-        for c in cols
+        np.concatenate((np.zeros(nadd_left), col, np.zeros(nadd_right)))
+        for col in cols_new
     ]
+
+    # merge boxes
+    x_new = x_new[::factor]
+    cols_new = [
+        np.array([np.sum(col[i:i+factor]) for i in range(0, len(col), factor)])
+        for col in cols_new
+    ]
+
+    # regain densities
+    cols_new = [col / (x_new[1:] - x_new[:-1]) for col in cols_new]
+
+    #n = (len(x) // factor) * factor
+    #if n == 0:
+    #    return x, list(cols)
+    #x_arr = np.asarray(x[:n], dtype=float)
+    #x_new = x_arr.reshape(-1, factor).mean(axis=1)
+    #cols_new = [
+    #    np.asarray(c[:n], dtype=float).reshape(-1, factor).sum(axis=1)
+    #    for c in cols
+    #]
     return x_new, cols_new
 
 
@@ -403,8 +439,10 @@ def _build_plots_from_directory(results_dir: str):
                 for i, col_data in enumerate(cols_p):
                     label = _labels[i + 1] if (i + 1) < len(_labels) else f"Series {i}"
                     color = _COLORS[i % len(_COLORS)]
-                    ax.step(x_p, col_data, where="mid", color=color,
+                    ax.stairs(col_data, x_p, color=color,
                             linewidth=1.2, label=label)
+#                    ax.step(x_p, col_data, where="mid", color=color,
+#                            linewidth=1.2, label=label)
                 ax.set_xlabel(_xlabel)
                 ax.set_ylabel(_ylabel)
                 ax.set_title(_title)

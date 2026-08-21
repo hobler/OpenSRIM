@@ -32,7 +32,7 @@ def init_stats(NELEM_ION, NELEM_TARGET, input_params):
     
     The stats array contains subarrays for all the moments and histograms.
 
-    Arguments:
+    Parameters:
         NELEM_ION: (int) The maximum number of different ion atom species
         NELEM_TARGET: (int) The maximum number of different target atom species
         input_params: (dict) The input parameters dictionary, used to extract 
@@ -229,7 +229,7 @@ def zero_stats(stats):
     Loop over the fields and subfields of the stats structured array and reset 
     the power sums and histogram counts to zero.
     
-    Arguments:
+    Parameters:
         stats: The stats structured array to be reset (modified in-place)
     
     Returns: 
@@ -245,7 +245,7 @@ def zero_stats(stats):
 def merge_stats(total_stats, stats):
     """Merge the statistics from one projectile into the total statistics.
     
-    Arguments:
+    Parameters:
         total_stats: The total statistics to be updated (modified in-place)
         stats: The statistics from a single projectile to be merged into the 
             total statistics
@@ -265,7 +265,7 @@ def merge_stats(total_stats, stats):
 def _score0d(stats_field, value, ivar):
     """Score a projectile's contribution to a 0d statistics distribution.
     
-    Arguments:
+    Parameters:
         stats_field: The stats structured array field to be updated 
             (modified in-place)
         value: The value to be scored (e.g. penetration depth)
@@ -280,7 +280,7 @@ def _score0d(stats_field, value, ivar):
 def _score1d(stats_field, value, ivar, weight=1.0):
     """Score a projectile's contribution to a 1d statistics distribution.
     
-    Arguments:
+    Parameters:
         stats_field: The stats structured array field to be updated 
             (modified in-place)
         value: The value to be scored (e.g. penetration depth)
@@ -305,7 +305,7 @@ def _score1d(stats_field, value, ivar, weight=1.0):
 def _score2d(stats_field, x, y, ivar, weight=1.0):
     """Score a projectile's contribution to a 2d statistics distribution.
     
-    Arguments:
+    Parameters:
         stats_field: The stats structured array field to be updated 
             (modified in-place)
         x: The x-coordinate to be scored
@@ -431,7 +431,7 @@ def standardize_moments(stats_field, ivar):
     count, mean, standard deviation, skewness, and kurtosis, although the term 
     is nomally used only for the latter two.
     
-    Arguments:
+    Parameters:
         stats_field: The stats structured array field containing the power sums
         ivar: The index of the variable (atom species) for which to calculate 
             the moments

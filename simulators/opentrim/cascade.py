@@ -101,6 +101,9 @@ def cascade(initial_proj, params, stats):
     nback = np.zeros(stats["b"]["nvar"], dtype=np.float64)
     ntrans = np.zeros(stats["t"]["nvar"], dtype=np.float64)
 
+    # TODO: Apply the surface binding energy to the projectile when it enters 
+    # the target. For that, we need a way to specify the surface binding energy.
+
     # Loop over collision events until there are no more projectiles to 
     # simulate
     while len(proj_stack) > 0:

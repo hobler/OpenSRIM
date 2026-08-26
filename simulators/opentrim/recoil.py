@@ -59,9 +59,12 @@ def select_recoil(proj, recoil, params):
 
     #free_path = params.cascade.mean_free_path[ilayer]
     free_path = 1 / (params.materials[imat].density * np.pi * pmax**2)
-    if proj["first_ffp"]:
-        free_path *= np.random.rand()
+    if True:  # determistic free flight path except first one
+        if proj["first_ffp"]:
+            free_path *= np.random.rand()
         proj["first_ffp"] = False
+    else:      # statistical free flight path
+        free_path *= -np.log(np.random.rand())
 
     p = pmax * sqrt(np.random.rand())
     collision_pos = pos[:] + free_path * dir[:]

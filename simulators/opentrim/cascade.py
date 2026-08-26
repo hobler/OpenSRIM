@@ -163,7 +163,10 @@ def cascade(initial_proj, params, stats):
             if True:
                 imat = recoil["ilayer"]
                 ielem_mat = params.materials[imat].ielem_mat[recoil["ielem"]]
-                e_disp = params.materials[imat].edisp[ielem_mat]
+                if recoil["dist_surf"] > 10.0:
+                    e_disp = params.materials[imat].edisp[ielem_mat]
+                else:  # if close to the surface, use surface binding energy
+                    e_disp = params.materials[imat].esurf[ielem_mat]
                 e_bulk = params.materials[imat].ebulk[ielem_mat]
             if params.cascade.follow_recoils:
                 if recoil["e"] > e_disp:

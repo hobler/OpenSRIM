@@ -1220,6 +1220,16 @@ class MCSetupPage(QWidget):
         grid.addWidget(sep, 0, 1, 2, 1)
 
         self.cascade_combo, _cascade_w = _combo_with_gear(["Ions only", "Full cascade"], "cascade_options")
+        # This combo and Advanced Options' "Follow recoils" checkbox both
+        # control follow_recoils; keep them in sync in both directions so a
+        # change here is actually reflected in the written input.toml.
+        # Also align the combo's initial text with the already-loaded
+        # self._follow_recoils, since QComboBox defaults to its first item
+        # ("Ions only") regardless of that value.
+        self.cascade_combo.setCurrentText("Full cascade" if self._follow_recoils else "Ions only")
+        self.cascade_combo.currentTextChanged.connect(
+            lambda text: self.set_follow_recoils(text == "Full cascade")
+        )
         grid.addWidget(_cascade_w, 1, 2, Qt.AlignmentFlag.AlignLeft)
 
         self.nuclear_stopping_combo, _nuclear_w = _combo_with_gear(["ZBL", "NLHlin"], "nuclear_stopping")
@@ -1984,6 +1994,12 @@ class MCSetupPage(QWidget):
 
     def set_follow_recoils(self, value: bool) -> None:
         self._follow_recoils = bool(value)
+        if hasattr(self, "cascade_combo"):
+            wanted = "Full cascade" if self._follow_recoils else "Ions only"
+            if self.cascade_combo.currentText() != wanted:
+                self.cascade_combo.blockSignals(True)
+                self.cascade_combo.setCurrentText(wanted)
+                self.cascade_combo.blockSignals(False)
         self._emit_advanced_simulation_settings()
 
     def set_rng_seed(self, value: int) -> None:

@@ -179,8 +179,8 @@ def init_stats(NELEM_ION, NELEM_TARGET, input_params):
     # Create the structured array of statistics
     stats = np.recarray(1, dtype=STATS_DTYPE)
     for short_name in ("i", "b", "t"):  # 0d
-        stats[0][short_name]["score"] = True
         stats[0][short_name]["nvar"] = nvar[short_name]
+        stats[0][short_name]["score"] = True
         stats[0][short_name]["counts"].fill(0.0)
         stats[0][short_name]["power_sums"].fill(0.0)
 

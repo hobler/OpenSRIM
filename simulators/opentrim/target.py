@@ -77,8 +77,15 @@ def check_exit_and_move(proj, free_path, params):
 
     if dist_surf < -params.cascade.pmax_max:
         # edge of surface layer reached
-        factor = ((-params.cascade.pmax_max - proj["dist_surf"]) 
-                  / (dist_surf - proj["dist_surf"]))
+        if is_on_beamside == proj["is_on_beamside"]:  # common case
+            factor = ((-params.cascade.pmax_max - proj["dist_surf"]) 
+                    / (dist_surf - proj["dist_surf"]))
+        else:  # do it the long way
+            pos_plane = (params.geometry.x_intf[0] - params.cascade.pmax_max 
+                         if is_on_beamside 
+                         else params.geometry.x_intf[params.geometry.nlayers] 
+                              + params.cascade.pmax_max)
+            factor = (pos_plane - proj["pos"][0]) / (pos_new[0] - proj["pos"][0])
         proj["pos"] += factor * free_path * proj["dir"]
         proj["dist_surf"] = -params.cascade.pmax_max
         proj["is_on_beamside"] = is_on_beamside
@@ -94,10 +101,12 @@ def check_exit_and_move(proj, free_path, params):
         e_surf = params.materials[imat].esurf[ielem_mat]
         if e_perp > e_surf:
             # refraction
-            cos_beta = np.sqrt((e_perp - e_surf) / (proj["e"] - e_perp))
+            cos_beta = np.sqrt((e_perp - e_surf) / (proj["e"] - e_surf))
             sin_beta = np.sqrt(1.0 - cos_beta**2)
             proj["dir"][0] = np.sign(proj["dir"][0]) * cos_beta
-            proj["dir"][1:] *= sin_beta / np.linalg.norm(proj["dir"][1:])
+            len_dirxy = np.linalg.norm(proj["dir"][1:])
+            if len_dirxy > 0:
+                proj["dir"][1:] *= sin_beta / len_dirxy
             proj["e"] -= e_surf
             #print("exiting check_exit_and_move (refract)...")
             return True

@@ -57,7 +57,7 @@ def _simulate(nion, params, stats_per_thread, nion_processed):
     """Perform simulation on given number of projectiles.
     
     Parameters:
-        nion: (int) Total number of projectiles to simulate (in this chunk
+        nion: (int) Number of projectiles to simulate (in this chunk
             for chunked simulations)
         params: (PARAMS_DTYPE) Simulation parameters
         stats_per_thread: (ndarray[STATS_DTYPE]) Array of stats for each thread
@@ -159,7 +159,6 @@ def simulate_chunked(nion_chunksize, nion, params, stats, input_params=None,
         return nion_processed
 
     nion_processed = 0
-    print(nion_processed, nion)
     while nion_processed < nion:
         nion_chunk = min(nion_chunksize, nion - nion_processed)
         nion_processed = _process_chunks(nion_chunk, nion_processed)

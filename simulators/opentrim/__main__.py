@@ -19,7 +19,7 @@ import time
 import sys
 import os
 from pathlib import Path
-from numba import jit, prange
+#from numba import jit, prange  # if at all, import this after config.py
 
 if __package__ is None:
     # Running as a script: add parent dir to sys.path

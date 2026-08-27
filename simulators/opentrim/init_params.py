@@ -51,6 +51,7 @@ def _get_beam_params(input_params):
     """
     BEAM_PARAMS_DTYPE = np.dtype([
         ("ielem", np.int32),
+        ("_pad", np.int32),  # padding for alignment
         ("energy", np.float64),
         ("tilt", np.float64),
     ], align=True)
@@ -85,6 +86,7 @@ def _get_geometry_params(input_params):
 
     GEOMETRY_PARAMS_DTYPE = np.dtype([
         ("nlayers", np.int32),
+        ("_pad", np.int32),  # padding for alignment
         ("x_intf", np.float64, (NLAYERS+1,)),
     ], align=True)
 
@@ -164,6 +166,7 @@ def _get_elements_and_materials_params(input_params):
         ("symbol", "<U2"),
         ("name", "<U12"),
         ("Z", np.int32),
+        ("_pad", np.int32),  # padding for alignment
         ("M", np.float64),
         ("kd_KP", np.float64),  # Kinchin-Pease constant for damage formation
         ("fd_KP", np.float64),  # Kinchin-Pease constant for damage formation
@@ -188,6 +191,7 @@ def _get_elements_and_materials_params(input_params):
         ("compound_correction", np.float64),
         ("gas", bool),
         ("nelem_mat", np.int32),
+        ("_pad", np.int32),  # padding for alignment
         ("ielem", np.int32, (NELEM,)),
         ("ielem_mat", np.int32, (NELEM,)),
         ("atomic_fraction", np.float64, (NELEM,)),

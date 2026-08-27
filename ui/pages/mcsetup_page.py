@@ -1220,6 +1220,16 @@ class MCSetupPage(QWidget):
         grid.addWidget(sep, 0, 1, 2, 1)
 
         self.cascade_combo, _cascade_w = _combo_with_gear(["Ions only", "Full cascade"], "cascade_options")
+        # This combo and Advanced Options' "Follow recoils" checkbox both
+        # control follow_recoils; keep them in sync in both directions so a
+        # change here is actually reflected in the written input.toml.
+        # Also align the combo's initial text with the already-loaded
+        # self._follow_recoils, since QComboBox defaults to its first item
+        # ("Ions only") regardless of that value.
+        self.cascade_combo.setCurrentText("Full cascade" if self._follow_recoils else "Ions only")
+        self.cascade_combo.currentTextChanged.connect(
+            lambda text: self.set_follow_recoils(text == "Full cascade")
+        )
         grid.addWidget(_cascade_w, 1, 2, Qt.AlignmentFlag.AlignLeft)
 
         self.nuclear_stopping_combo, _nuclear_w = _combo_with_gear(["ZBL", "NLHlin"], "nuclear_stopping")
@@ -1984,6 +1994,12 @@ class MCSetupPage(QWidget):
 
     def set_follow_recoils(self, value: bool) -> None:
         self._follow_recoils = bool(value)
+        if hasattr(self, "cascade_combo"):
+            wanted = "Full cascade" if self._follow_recoils else "Ions only"
+            if self.cascade_combo.currentText() != wanted:
+                self.cascade_combo.blockSignals(True)
+                self.cascade_combo.setCurrentText(wanted)
+                self.cascade_combo.blockSignals(False)
         self._emit_advanced_simulation_settings()
 
     def set_rng_seed(self, value: int) -> None:
@@ -2319,14 +2335,14 @@ class MCSetupPage(QWidget):
             "",
         ]
 
-        # 2D distributions: enable scoring when the dedicated 2D checkbox is
-        # set, or when either the depth or lateral 1D variant of the same
-        # physical quantity is enabled. The simulator requires these sections
-        # to exist; missing them raises KeyError in init_stats. Limits combine
-        # the 1D depth/lateral limits.
-        score_2d_ir   = bool(out.get('dist2d_ion_recoil') or out.get('range_ion_recoil')  or out.get('lateral_ion_recoil'))
-        score_2d_ned  = bool(out.get('dist2d_phonons')    or out.get('range_phonons')     or out.get('lateral_phonons'))
-        score_2d_eed  = bool(out.get('dist2d_ionization') or out.get('range_ionization')  or out.get('lateral_ionization'))
+        # 2D distributions: scoring follows only the dedicated 2D checkbox.
+        # The [output.distribution_2d.*] sections themselves are always
+        # written below (the simulator requires them to exist), independent
+        # of "score" -- so there is no need to force score=true just because
+        # a 1D depth/lateral checkbox for the same quantity happens to be on.
+        score_2d_ir   = bool(out.get('dist2d_ion_recoil'))
+        score_2d_ned  = bool(out.get('dist2d_phonons'))
+        score_2d_eed  = bool(out.get('dist2d_ionization'))
         lines += [
             "[output.distribution_2d.ion_recoils]",
             f"score = {'true' if score_2d_ir else 'false'}",

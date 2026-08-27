@@ -134,17 +134,17 @@ def screen_fun(r, pot_coefs):
         (float): derivative of ZBL screening function at distance r
             (1/RNORM)
     """
-    r = np.asarray(r)
     a = pot_coefs.a[:4]
     b = pot_coefs.b[:4]
 
-    exp = np.exp(-np.outer(r, b))
-    screen = np.sum(a*exp, axis=1)
-    dscreen = - np.sum(a*b*exp, axis=1)
+    exp0 = np.exp(-b[0]*r)
+    exp1 = np.exp(-b[1]*r)
+    exp2 = np.exp(-b[2]*r)
+    exp3 = np.exp(-b[3]*r)
+    screen = a[0]*exp0 + a[1]*exp1 + a[2]*exp2 + a[3]*exp3
+    dscreen = - a[0]*b[0]*exp0 - a[1]*b[1]*exp1 - a[2]*b[2]*exp2 - a[3]*b[3]*exp3
 
     return screen, dscreen
-
-
 
 
 # Constants for apsis estimation for the ZBL potential
@@ -181,18 +181,18 @@ def estimate_apsis(e, p, pot_coefs):
         r0 = sqrt(r0sq)
     
     # Do Newton-Raphson iterations to improve the estimate
-    r0 = np.asarray(r0)
     for _ in range(NITER):
         screen, dscreen = screen_fun(r0, pot_coefs)
-        numerator = r0*(r0-screen[0]/e) - p**2
-        denominator = 2*r0 - (screen[0]+r0*dscreen[0])/e
+        numerator = r0*(r0-screen/e) - p**2
+        denominator = 2*r0 - (screen+r0*dscreen)/e
         r0 -= numerator/denominator
 
-        residuum = 1 - screen[0]/(e*r0) - p**2/r0**2
+        residuum = 1 - screen/(e*r0) - p**2/r0**2
         if abs(residuum) < 1e-4:
             break
 
     return r0
+
 
 # Constants for Biersack's magic formula
 C1 = 0.99229
@@ -218,7 +218,7 @@ def magic(e, p, pot_coefs):
     r0 = estimate_apsis(e, p, pot_coefs)
     screen, dscreen = screen_fun(r0, pot_coefs)
 
-    rho = 2*(e*r0-screen[0]) / (screen[0]/r0-dscreen[0])
+    rho = 2*(e*r0-screen) / (screen/r0-dscreen)
     sqrte = sqrt(e)
     alpha = 1 + C1/sqrte
     beta = (C2+sqrte) / (C3+sqrte)
@@ -233,5 +233,3 @@ def magic(e, p, pot_coefs):
         print("  e =", e, "p =", p, "r0 =", r0, "rho =", rho, "delta =", delta)
 
     return cos_half_theta
-
-

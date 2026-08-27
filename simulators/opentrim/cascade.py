@@ -3,6 +3,10 @@
 Available functions:
     cascade: simulate one cascade.
 """
+import os
+NUMBA_DISABLE_JIT = os.environ.get("NUMBA_DISABLE_JIT", "") == "1"
+from copy import deepcopy
+
 import numpy as np
 from numba import jit, typed
 from .mytypes import PROJ_DTYPE, PROJ_NUMBA_DTYPE
@@ -72,7 +76,7 @@ def _get_damage_kp(recoil, params):
 @jit(debug=config.DEBUG)
 def cascade(initial_proj, params, stats):
     """Simulate trajectories of one ion and its recoils.
-    
+
     Parameters:
         initial_proj: (Projectile) the initial state of the first projectile
         params: (PARAMS_DTYPE) Simulation parameters
@@ -81,8 +85,15 @@ def cascade(initial_proj, params, stats):
     Returns:
         ndarray[Projectile]: list of final projectile states
     """
+    #print("Entered cascade...")
+    # In Python mode, we need to create a deep copy of the initial projectile 
+    # to avoid modifying it in-place when it is appended to the projectile 
+    # stack. In Numba mode, this is not necessary, since the initial projectile 
+    # is passed by value to the cascade function.
+    if NUMBA_DISABLE_JIT:
+        initial_proj = deepcopy(initial_proj)
+
     emin = params.cascade.emin
-    ed = params.cascade.ed  # ignored (see below)
     
     # Fully simulated projectiles
     final_proj_lst = typed.List.empty_list(PROJ_NUMBA_DTYPE)
@@ -160,14 +171,13 @@ def cascade(initial_proj, params, stats):
 
             # start a new sub-cascade if the recoil has enough energy to leave 
             # its position
-            if True:
-                imat = recoil["ilayer"]
-                ielem_mat = params.materials[imat].ielem_mat[recoil["ielem"]]
-                if recoil["dist_surf"] > 10.0:
-                    e_disp = params.materials[imat].edisp[ielem_mat]
-                else:  # if close to the surface, use surface binding energy
-                    e_disp = params.materials[imat].esurf[ielem_mat]
-                e_bulk = params.materials[imat].ebulk[ielem_mat]
+            imat = recoil["ilayer"]
+            ielem_mat = params.materials[imat].ielem_mat[recoil["ielem"]]
+            if recoil["dist_surf"] > 10.0:
+                e_disp = params.materials[imat].edisp[ielem_mat]
+            else:  # if close to the surface, use surface binding energy
+                e_disp = params.materials[imat].esurf[ielem_mat]
+            e_bulk = params.materials[imat].ebulk[ielem_mat]
             if params.cascade.follow_recoils:
                 if recoil["e"] > e_disp:
                     recoil["e"] -= e_bulk

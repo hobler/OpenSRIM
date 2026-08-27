@@ -3,7 +3,7 @@ import os
 
 #os.environ["NUMBA_DISABLE_JIT"] = "1"
 #os.environ["NUMBA_FULL_TRACEBACK"] = "1"
-#os.environ["NUMBA_DEBUG"] = "1"
+#os.environ["NUMBA_DEBUG"] = "1"  # usually too much output
 #os.environ["NUMBA_BOUNDSCHECK"] = "1"
 #os.environ["NUMBA_DISABLE_ARRAY_EXPR_REWRITE"] = "1"
 #os.environ["NUMBA_OPT"] = "0"

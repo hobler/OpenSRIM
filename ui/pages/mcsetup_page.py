@@ -166,7 +166,7 @@ class MCSetupPage(QWidget):
         self._scattering_algorithm = "Legendre"
         self._n_absc = 4
         self._electronic_stopping_model = "SRIM"
-        self._electronic_straggling_model = "Off"
+        self._electronic_straggling = False
         self._loaded_model_correction: dict[str, float] = {}
         # NOTE: these cascade parameters are round-tripped through the UI and
         # the generated input TOML, but simulators/opentrim does not yet read
@@ -201,8 +201,8 @@ class MCSetupPage(QWidget):
                 self._scattering_algorithm = str(_scatter.get("algorithm", self._scattering_algorithm))
                 self._n_absc = int(_scatter.get("n_absc", self._n_absc))
                 self._electronic_stopping_model = str(_model.get("electronic_stopping", self._electronic_stopping_model))
-                self._electronic_straggling_model = self._coerce_straggling(
-                    _model.get("electronic_straggling"), self._electronic_straggling_model
+                self._electronic_straggling = self._coerce_straggling(
+                    _model.get("electronic_straggling"), self._electronic_straggling
                 )
                 self._pmax_min = float(_cascade.get("pmax_min", self._pmax_min))
                 self._pmax_max = float(_cascade.get("pmax_max", self._pmax_max))
@@ -398,7 +398,7 @@ class MCSetupPage(QWidget):
             "cascade": self.cascade_combo.currentText() if hasattr(self, "cascade_combo") else "",
             "nuclear_stopping": self.nuclear_stopping_combo.currentText() if hasattr(self, "nuclear_stopping_combo") else "",
             "electronic_stopping": self._electronic_stopping_model,
-            "electronic_straggling": self._electronic_straggling_model,
+            "electronic_straggling": bool(self._electronic_straggling),
             "simulator": self.simulator_combo.currentText() if hasattr(self, "simulator_combo") else "",
             "scattering_algorithm": self._scattering_algorithm,
             "n_absc": int(self._n_absc),
@@ -573,7 +573,7 @@ class MCSetupPage(QWidget):
                     self.electronic_stopping_combo.setCurrentIndex(idx)
                 self.set_electronic_stopping_model(electronic)
         if "electronic_straggling" in selection:
-            self.set_electronic_straggling_model(selection.get("electronic_straggling"))
+            self.set_electronic_straggling(selection.get("electronic_straggling"))
 
         if hasattr(self, "simulator_combo"):
             simulator = selection.get("simulator")
@@ -2046,7 +2046,7 @@ class MCSetupPage(QWidget):
             "follow_recoils": bool(self._follow_recoils),
             "rng_seed": int(self._rng_seed),
             "electronic_stopping": str(self._electronic_stopping_model),
-            "electronic_straggling": str(self._electronic_straggling_model),
+            "electronic_straggling": bool(self._electronic_straggling),
             "scattering_algorithm": str(self._scattering_algorithm),
             "n_absc": int(self._n_absc),
             "lindhard_correction": dict(self._loaded_model_correction),
@@ -2066,7 +2066,7 @@ class MCSetupPage(QWidget):
             "follow_recoils": bool(self._follow_recoils),
             "rng_seed": int(self._rng_seed),
             "electronic_stopping": str(self._electronic_stopping_model),
-            "electronic_straggling": str(self._electronic_straggling_model),
+            "electronic_straggling": bool(self._electronic_straggling),
             "scattering_algorithm": str(self._scattering_algorithm),
             "n_absc": int(self._n_absc),
             "lindhard_correction": dict(self._loaded_model_correction),
@@ -2108,34 +2108,28 @@ class MCSetupPage(QWidget):
             self._electronic_stopping_model = value
         self._emit_advanced_simulation_settings()
 
-    # Accepted OpenTRIM electronic straggling models. "Off" disables straggling;
-    # the Advanced Options checkbutton toggles between "Off" and "Bohr".
-    _STRAGGLING_MODELS = ("Off", "Bohr", "Chu", "Yang")
+    @staticmethod
+    def _coerce_straggling(value, default: bool = False) -> bool:
+        """Normalise a TOML value for models.electronic_straggling to a bool.
 
-    @classmethod
-    def _coerce_straggling(cls, value, default: str = "Off") -> str:
-        """Normalise a TOML/legacy value to a valid electronic_straggling model.
-
-        Old input files stored this as a boolean; treat True as "Bohr" and
-        False as "Off". Unknown strings fall back to *default*.
+        Accepts plain booleans as well as legacy string values that older
+        input files may still carry (e.g. "Bohr"/"Off", "true"/"false").
+        Anything unrecognised falls back to *default*.
         """
         if isinstance(value, bool):
-            return "Bohr" if value else "Off"
+            return value
         if value is None:
             return default
-        text = str(value).strip()
-        for model in cls._STRAGGLING_MODELS:
-            if text.lower() == model.lower():
-                return model
-        if text.lower() in ("", "none", "false", "0"):
-            return "Off"
-        if text.lower() in ("true", "1", "on"):
-            return "Bohr"
+        text = str(value).strip().lower()
+        if text in ("", "off", "none", "false", "0", "no"):
+            return False
+        if text in ("bohr", "chu", "yang", "true", "1", "on", "yes"):
+            return True
         return default
 
-    def set_electronic_straggling_model(self, value) -> None:
-        self._electronic_straggling_model = self._coerce_straggling(
-            value, self._electronic_straggling_model
+    def set_electronic_straggling(self, value) -> None:
+        self._electronic_straggling = self._coerce_straggling(
+            value, self._electronic_straggling
         )
         self._emit_advanced_simulation_settings()
 
@@ -2327,11 +2321,12 @@ class MCSetupPage(QWidget):
         potential = sel.get("nuclear_stopping", "ZBL")
         estop = sel.get("electronic_stopping", "SRIM")
         estraggle = self._coerce_straggling(sel.get("electronic_straggling"))
+        estraggle_toml = "true" if estraggle else "false"
         lines += [
             "[models]",
             f'potential = "{potential}"',
             f'electronic_stopping = "{estop}"',
-            f'electronic_straggling = "{estraggle}"',
+            f"electronic_straggling = {estraggle_toml}",
             "",
             "[models.scattering_integrals]",
             f'algorithm = "{sel.get("scattering_algorithm", "Legendre")}"',

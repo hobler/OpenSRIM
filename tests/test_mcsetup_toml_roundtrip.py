@@ -77,7 +77,7 @@ gas = false
 [models]
 potential = "NLHlin"
 electronic_stopping = "Lindhard"
-electronic_straggling = "Bohr"
+electronic_straggling = true
 
 [models.scattering_integrals]
 algorithm = "magic"
@@ -224,7 +224,7 @@ class MCSetupTomlRoundtripTest(unittest.TestCase):
 
         self.assertEqual(saved["models"]["potential"], "NLHlin")
         self.assertEqual(saved["models"]["electronic_stopping"], "Lindhard")
-        self.assertEqual(saved["models"]["electronic_straggling"], "Bohr")
+        self.assertIs(saved["models"]["electronic_straggling"], True)
         self.assertEqual(saved["models"]["scattering_integrals"]["algorithm"], "magic")
         self.assertEqual(saved["models"]["scattering_integrals"]["n_absc"], 9)
         self.assertAlmostEqual(saved["models"]["lindhard_correction"]["B->Si"], 1.75)

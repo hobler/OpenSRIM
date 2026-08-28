@@ -177,6 +177,7 @@ class MCSetupPage(QWidget):
         self._psi_min_surface = 5.0
         self._de_min_surface = 15.0
         self._replacement_collisions = False
+        self._top_layer_roughness = 0.0
         # Default to ~80% of logical cores so the UI stays responsive while a
         # simulation runs; remembered across restarts in mc_setup.toml.
         _cpu_count = os.cpu_count() or 1
@@ -206,6 +207,9 @@ class MCSetupPage(QWidget):
                 self._psi_min_surface = float(_cascade.get("psi_min_surface", self._psi_min_surface))
                 self._de_min_surface = float(_cascade.get("de_min_surface", self._de_min_surface))
                 self._replacement_collisions = bool(_cascade.get("replacement_collisions", self._replacement_collisions))
+                _layers = _defaults.get("layer") or []
+                if _layers and isinstance(_layers[0], dict):
+                    self._top_layer_roughness = float(_layers[0].get("roughness", self._top_layer_roughness))
             except Exception:
                 pass
 
@@ -369,6 +373,7 @@ class MCSetupPage(QWidget):
                 "density_unit": global_density_unit,
                 "compound_corr": (self.layers_table.item(row, 5).text() if self.layers_table.item(row, 5) else ""),
                 "gas": gas_checkbox.isChecked() if gas_checkbox else False,
+                "roughness": float(self._top_layer_roughness) if row == 0 else 0.0,
                 "elements": [
                     {
                         "Z": entry["element"]["number"],
@@ -496,6 +501,10 @@ class MCSetupPage(QWidget):
             self.set_nthreads(int(simulation_meta.get("nthreads", self._nthreads)))
         except Exception:
             self._nthreads = int(simulation_meta.get("nthreads", self._nthreads))
+        try:
+            self.set_top_layer_roughness(float(simulation_meta.get("target_roughness", self._top_layer_roughness)))
+        except Exception:
+            self._top_layer_roughness = float(simulation_meta.get("target_roughness", self._top_layer_roughness))
         workdir = simulation_meta.get("workdir")
         if isinstance(workdir, str) and workdir:
             self._set_working_directory(workdir)
@@ -799,6 +808,9 @@ class MCSetupPage(QWidget):
         title_lbl.setStyleSheet("font-weight: 600;")
         header_l.addWidget(title_lbl)
         header_l.addWidget(self._hint_btn("target_layers", parent=header))
+        layer_settings_btn = AdvancedSettingsButton("Open target layer advanced options", header)
+        layer_settings_btn.clicked.connect(lambda: self.advanced_requested.emit("target_layers"))
+        header_l.addWidget(layer_settings_btn)
         header_l.addStretch(1)
         v.addWidget(header)
 
@@ -1617,6 +1629,7 @@ class MCSetupPage(QWidget):
                 "density_unit": "g/cm³",
                 "compound_corr": layer.get("compound_correction", 1.0),
                 "gas": layer.get("gas", False),
+                "roughness": layer.get("roughness", 0.0),
                 "elements": elements,
             })
 
@@ -1656,6 +1669,7 @@ class MCSetupPage(QWidget):
                 "psi_min_surface": (params.get("cascade") or {}).get("psi_min_surface", 5.0),
                 "de_min_surface": (params.get("cascade") or {}).get("de_min_surface", 15.0),
                 "replacement_collisions": (params.get("cascade") or {}).get("replacement_collisions", False),
+                "target_roughness": payload_layers[0].get("roughness", 0.0) if payload_layers else 0.0,
             },
             "layers": payload_layers,
             "selection": {
@@ -2028,6 +2042,7 @@ class MCSetupPage(QWidget):
             "de_min_surface": float(self._de_min_surface),
             "replacement_collisions": bool(self._replacement_collisions),
             "nthreads": int(self._nthreads),
+            "target_roughness": float(self._top_layer_roughness),
         })
 
     def get_advanced_simulation_settings(self) -> dict:
@@ -2046,6 +2061,7 @@ class MCSetupPage(QWidget):
             "de_min_surface": float(self._de_min_surface),
             "replacement_collisions": bool(self._replacement_collisions),
             "nthreads": int(self._nthreads),
+            "target_roughness": float(self._top_layer_roughness),
         }
 
     def set_follow_recoils(self, value: bool) -> None:
@@ -2140,6 +2156,13 @@ class MCSetupPage(QWidget):
             pass
         self._emit_advanced_simulation_settings()
 
+    def set_top_layer_roughness(self, value: float) -> None:
+        try:
+            self._top_layer_roughness = max(0.0, float(value))
+        except (TypeError, ValueError):
+            self._top_layer_roughness = 0.0
+        self._emit_advanced_simulation_settings()
+
     def set_lindhard_correction(self, value: dict) -> None:
         if not isinstance(value, dict):
             return
@@ -2193,7 +2216,7 @@ class MCSetupPage(QWidget):
         ]
 
         total_width = 0.0
-        for layer in layers:
+        for layer_index, layer in enumerate(layers):
             try:
                 w_raw = float(layer["width"])
             except (TypeError, ValueError):
@@ -2220,8 +2243,10 @@ class MCSetupPage(QWidget):
                 f"density = {d_val}",
                 f"compound_correction = {cc}",
                 f"gas = {'true' if layer.get('gas') else 'false'}",
-                "",
             ]
+            if layer_index == 0:
+                lines.append(f"roughness = {float(layer.get('roughness', self._top_layer_roughness) or 0.0)}")
+            lines.append("")
             for elem in layer.get("elements", []):
                 try:
                     disp_e = float(elem.get("disp", 25.0))

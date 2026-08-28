@@ -38,6 +38,7 @@ width               = 240.0    # layer thickness (Angstrom)
 density             = 0.11364   # atomic density (atoms/Angstrom^3)
 compound_correction = 1.0       # Bragg compound correction factor
 gas                 = false     # treat layer as gas
+roughness           = 0.0       # top layer roughness (Angstrom)
 
     [[layer.element]]
     symbol             = "C"

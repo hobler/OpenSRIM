@@ -35,6 +35,7 @@ width = 10000.0
 density = 1.0
 compound_correction = 1.0
 gas = false
+roughness = 0.0
 
     [[layer.element]]
     symbol = "Si"
@@ -43,4 +44,3 @@ gas = false
     M = 0.0
     stoichiometry = 1.0
     displacement_energy = 25.0
-

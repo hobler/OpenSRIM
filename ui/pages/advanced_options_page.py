@@ -170,6 +170,7 @@ class AdvancedOptionsPage(QWidget):
     mc_de_min_surface_changed = pyqtSignal(float)
     mc_replacement_collisions_changed = pyqtSignal(bool)
     mc_nthreads_changed = pyqtSignal(int)
+    mc_target_roughness_changed = pyqtSignal(float)
     toolbar_visibility_changed = pyqtSignal(bool)
     columns_changed = pyqtSignal(int)        # 0=auto, 1, 2, 3
     borders_visibility_changed = pyqtSignal(bool)
@@ -247,6 +248,23 @@ class AdvancedOptionsPage(QWidget):
         nbins_row.addStretch(1)
         model_l.addLayout(nbins_row)
         model_l.addStretch(1)
+
+        # --- Target Layers content ---
+        target_layers = QWidget(content)
+        target_layers_l = QVBoxLayout(target_layers)
+        target_layers_l.setContentsMargins(0, 0, 0, 0)
+        target_layers_l.setSpacing(8)
+
+        roughness_row = QHBoxLayout()
+        roughness_row.addWidget(QLabel("Top layer roughness (Å):"))
+        self.spin_target_roughness = QDoubleSpinBox()
+        self.spin_target_roughness.setRange(0.0, 1.0e9)
+        self.spin_target_roughness.setDecimals(4)
+        self.spin_target_roughness.setValue(0.0)
+        roughness_row.addWidget(self.spin_target_roughness)
+        roughness_row.addStretch(1)
+        target_layers_l.addLayout(roughness_row)
+        target_layers_l.addStretch(1)
 
         # --- Cascade Options content ---
         cascade_opts = QWidget(content)
@@ -546,6 +564,7 @@ class AdvancedOptionsPage(QWidget):
         display_l.addStretch(1)
 
         self._acc_ion = AccordionItem("Ion selection", ion, expanded=False, parent=content)
+        self._acc_target_layers = AccordionItem("Target Layers", target_layers, expanded=False, parent=content)
         self._acc_atoms = AccordionItem("Atoms per layer", atoms, expanded=True, parent=content)
         self._acc_model = AccordionItem("Model selection", model, expanded=False, parent=content)
         self._acc_cascade = AccordionItem("Cascade Options", cascade_opts, expanded=False, parent=content)
@@ -557,6 +576,7 @@ class AdvancedOptionsPage(QWidget):
 
         self._accordion_by_id = {
             "ion_selection_mc": self._acc_ion,
+            "target_layers": self._acc_target_layers,
             "atoms_per_layer": self._acc_atoms,
             "model_selection": self._acc_model,
             "mc_setup_advanced": self._acc_cascade,
@@ -569,7 +589,7 @@ class AdvancedOptionsPage(QWidget):
         }
 
         self._all_accordions = (
-            self._acc_ion, self._acc_atoms, self._acc_model,
+            self._acc_ion, self._acc_target_layers, self._acc_atoms, self._acc_model,
             self._acc_cascade, self._acc_nuclear, self._acc_electronic,
             self._acc_koral_solver, self._acc_hist, self._acc_display,
         )
@@ -577,6 +597,7 @@ class AdvancedOptionsPage(QWidget):
             item.toggled.connect(lambda on, src=item: self._handle_item_toggled(src, on))
 
         content_l.addWidget(self._acc_ion)
+        content_l.addWidget(self._acc_target_layers)
         content_l.addWidget(self._acc_atoms)
         content_l.addWidget(self._acc_model)
         content_l.addWidget(self._acc_cascade)
@@ -608,6 +629,7 @@ class AdvancedOptionsPage(QWidget):
         self.spin_de_min_surface.valueChanged.connect(self._emit_mc_setup_advanced)
         self.spin_nthreads.valueChanged.connect(self._emit_mc_setup_advanced)
         self.spin_rng_seed.valueChanged.connect(self._emit_mc_setup_advanced)
+        self.spin_target_roughness.valueChanged.connect(self._emit_mc_setup_advanced)
         self.cmb_electronic_stopping.currentIndexChanged.connect(self._emit_mc_setup_advanced)
         self.cmb_scattering_algorithm.currentIndexChanged.connect(self._emit_mc_setup_advanced)
         self.spin_n_absc.valueChanged.connect(self._emit_mc_setup_advanced)
@@ -671,6 +693,7 @@ class AdvancedOptionsPage(QWidget):
             self.mc_de_min_surface_changed.emit(float(self.spin_de_min_surface.value()))
             self.mc_nthreads_changed.emit(int(self.spin_nthreads.value()))
             self.mc_rng_seed_changed.emit(int(self.spin_rng_seed.value()))
+            self.mc_target_roughness_changed.emit(float(self.spin_target_roughness.value()))
             self.mc_electronic_stopping_changed.emit(str(self.cmb_electronic_stopping.currentText()))
             self.mc_scattering_algorithm_changed.emit(str(self.cmb_scattering_algorithm.currentText()))
             self.mc_n_absc_changed.emit(int(self.spin_n_absc.value()))
@@ -913,6 +936,7 @@ class AdvancedOptionsPage(QWidget):
             "psi_min_surface": float(self.spin_psi_min_surface.value()),
             "de_min_surface": float(self.spin_de_min_surface.value()),
             "nthreads": int(self.spin_nthreads.value()),
+            "target_roughness": float(self.spin_target_roughness.value()),
             "rng_seed": int(self.spin_rng_seed.value()),
             "electronic_stopping": str(self.cmb_electronic_stopping.currentText()),
             "scattering_algorithm": str(self.cmb_scattering_algorithm.currentText()),
@@ -1083,6 +1107,14 @@ class AdvancedOptionsPage(QWidget):
                 pass
             finally:
                 self.spin_rng_seed.blockSignals(False)
+        if "target_roughness" in payload:
+            try:
+                self.spin_target_roughness.blockSignals(True)
+                self.spin_target_roughness.setValue(float(payload["target_roughness"]))
+            except (TypeError, ValueError):
+                pass
+            finally:
+                self.spin_target_roughness.blockSignals(False)
         if "electronic_stopping" in payload:
             idx = self.cmb_electronic_stopping.findText(str(payload.get("electronic_stopping", self.cmb_electronic_stopping.currentText())))
             if idx >= 0:
@@ -1116,6 +1148,7 @@ class AdvancedOptionsPage(QWidget):
     # relevant sections depending on where the user opened Advanced Settings.
     _SECTION_CONTEXT = {
         "ion_selection_mc": "mc_setup",
+        "target_layers": "mc_setup",
         "atoms_per_layer": "mc_setup",
         "model_selection": "mc_setup",
         "mc_setup_advanced": "mc_setup",

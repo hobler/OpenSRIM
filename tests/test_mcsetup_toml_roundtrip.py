@@ -192,6 +192,9 @@ class MCSetupTomlRoundtripTest(unittest.TestCase):
         self.assertEqual(saved["simulation"]["nions_update"], 17)
         self.assertEqual(saved["simulation"]["rng_seed"], 6789)
         self.assertEqual(saved["simulation"]["nthreads"], 2)
+        # workdir is derived from the project context, never written back into
+        # the file, even when the loaded (legacy) file still contained one.
+        self.assertNotIn("workdir", saved["simulation"])
 
         self.assertEqual(saved["beam"]["symbol"], "B")
         self.assertEqual(saved["beam"]["Z"], 5)
@@ -243,6 +246,23 @@ class MCSetupTomlRoundtripTest(unittest.TestCase):
         self.assertEqual(output["distribution_2d"]["ion_recoils"]["limits"], [[1.0, 5555.0], [-22.0, 33.0]])
         self.assertEqual(output["backscattered_atoms"]["energy"]["limits"], [0.0, 12500.0])
         self.assertEqual(output["backscattered_atoms"]["angle"]["limits"], [-80.0, 80.0])
+
+    def test_legacy_workdir_is_ignored_and_working_dir_follows_file(self) -> None:
+        page = MCSetupPage(AppState())
+
+        with tempfile.TemporaryDirectory() as tmp:
+            project_dir = Path(tmp) / "my_project"
+            project_dir.mkdir()
+            input_path = project_dir / "input.toml"
+            input_path.write_text(ROUNDTRIP_TOML, encoding="utf-8")
+
+            # Legacy file still carries workdir = "legacy-results"; loading it
+            # must not crash and the working directory must follow the file.
+            page.load_toml_from_path(input_path)
+
+            self.assertEqual(page._working_directory, str(project_dir))
+            saved = tomllib.loads(page._build_input_toml(str(project_dir)))
+            self.assertNotIn("workdir", saved["simulation"])
 
 
 if __name__ == "__main__":

@@ -1769,8 +1769,15 @@ class MCSetupPage(QWidget):
             return
 
         payload = self._raw_toml_to_payload(params)
+        # workdir is not taken from the file anymore: derive it from the
+        # location of the loaded input.toml. Old files that still carry a
+        # workdir key remain loadable; their stored value is simply ignored.
+        if isinstance(payload.get("simulation"), dict):
+            payload["simulation"].pop("workdir", None)
         self.apply_simulation_config(payload)
         self._current_toml_path = toml_path
+        if toml_path.parent:
+            self._set_working_directory(str(toml_path.parent))
         self.state.remember_dialog_path(toml_path)
         self.add_log_entry(f"Loaded TOML configuration from: {toml_path}")
 
@@ -2244,7 +2251,9 @@ class MCSetupPage(QWidget):
             f"rng_seed = {simulation.get('rng_seed', 12345)}",
             # NOTE: not yet consumed by simulators/opentrim (pending backend work).
             f"nthreads = {int(self._nthreads)}",
-            f'workdir = "{results_dir}"',
+            # workdir is intentionally not written: it is derived from the
+            # location of this input.toml (see read_params) / the current
+            # project context, not persisted in the file.
             "",
             "[beam]",
             f'symbol = "{ion["symbol"]}"',

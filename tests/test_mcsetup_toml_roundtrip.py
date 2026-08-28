@@ -45,6 +45,7 @@ width = 1234.0
 density = 0.05
 compound_correction = 0.77
 gas = false
+roughness = 12.3
 
     [[layer.element]]
     symbol = "Si"
@@ -202,6 +203,8 @@ class MCSetupTomlRoundtripTest(unittest.TestCase):
         self.assertAlmostEqual(saved["layer"][1]["density"], 0.06)
         self.assertAlmostEqual(saved["layer"][0]["compound_correction"], 0.77)
         self.assertAlmostEqual(saved["layer"][1]["compound_correction"], 1.23)
+        self.assertAlmostEqual(saved["layer"][0]["roughness"], 12.3)
+        self.assertNotIn("roughness", saved["layer"][1])
 
         elements = [layer["element"][0] for layer in saved["layer"]]
         self.assertEqual([element["symbol"] for element in elements], ["Si", "O"])

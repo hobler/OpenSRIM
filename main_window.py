@@ -212,6 +212,7 @@ class MainWindow(QMainWindow):
         self.advanced_options_tab.mc_de_min_surface_changed.connect(self.mc_setup_tab.set_de_min_surface)
         self.advanced_options_tab.mc_nthreads_changed.connect(self.mc_setup_tab.set_nthreads)
         self.advanced_options_tab.mc_rng_seed_changed.connect(self.mc_setup_tab.set_rng_seed)
+        self.advanced_options_tab.mc_target_roughness_changed.connect(self.mc_setup_tab.set_top_layer_roughness)
         self.advanced_options_tab.mc_electronic_stopping_changed.connect(self.mc_setup_tab.set_electronic_stopping_model)
         self.advanced_options_tab.mc_scattering_algorithm_changed.connect(self.mc_setup_tab.set_scattering_algorithm)
         self.advanced_options_tab.mc_n_absc_changed.connect(self.mc_setup_tab.set_n_absc)

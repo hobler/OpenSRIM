@@ -600,12 +600,19 @@ class MCSetupPage(QWidget):
             if hasattr(self, attr) and key in output:
                 getattr(self, attr).setChecked(bool(output.get(key)))
 
+        histogram_settings = payload.get("histogram_settings")
+        if isinstance(histogram_settings, dict):
+            current = self.get_histogram_default_settings()
+            current.update(histogram_settings)
+            self.set_histogram_settings(current)
 
     def _apply_layer_data(self, row: int, data: dict):
         for col, key in enumerate(["name", "width", None, "density", "compound_corr"], start=1):
             if key is None:
                 continue
             self.layers_table.setItem(row, col, QTableWidgetItem(str(data.get(key, ""))))
+            if key == "density":
+                self._density_user_override.add(row)
 
         # Apply global width unit from first layer's data (done once in apply_simulation_config).
         # No per-row unit widget needed anymore.
@@ -621,6 +628,15 @@ class MCSetupPage(QWidget):
             element = self.state.elements_by_number.get(int(number)) if number else None
             if not element:
                 continue
+            element = dict(element)
+            if entry.get("symbol"):
+                element["symbol"] = entry.get("symbol")
+            if entry.get("name"):
+                element["name"] = entry.get("name")
+            if number:
+                element["number"] = int(number)
+            if entry.get("mass") is not None:
+                element["atomic_mass"] = entry.get("mass")
             overrides = {k: entry.get(k) for k in ("damage", "disp", "latt", "surf")}
             self._add_element_to_layer(row, element, entry.get("ratio", 0.0), overrides=overrides, refresh=False)
 
@@ -1068,7 +1084,7 @@ class MCSetupPage(QWidget):
             else:
                 defaults = self._get_default_energy_params(entry["element"])
                 for key in ("damage", "disp", "latt", "surf"):
-                    entry[key] = defaults[key]
+                    entry.setdefault(key, defaults[key])
 
     def _handle_layer_selection_changed(self):
         self._refresh_element_table()
@@ -1671,8 +1687,53 @@ class MCSetupPage(QWidget):
                 "transmitted_energy": bool((output.get("transmitted_atoms") or {}).get("energy", {}).get("score", False)),
                 "transmitted_angle": bool((output.get("transmitted_atoms") or {}).get("angle", {}).get("score", False)),
             },
+            "histogram_settings": self._histogram_settings_from_output(output),
         }
         return payload
+
+    @staticmethod
+    def _section_value(output: dict, group: str, name: str, key: str, default):
+        section = (output.get(group) or {}).get(name) if isinstance(output, dict) else None
+        if not isinstance(section, dict):
+            return default
+        return section.get(key, default)
+
+    def _histogram_settings_from_output(self, output: dict) -> dict:
+        """Extract shared histogram controls from OpenTRIM output tables."""
+        if not isinstance(output, dict):
+            return {}
+
+        settings: dict = {"enabled": False}
+        nbins = self._section_value(output, "depth_distribution", "ion_recoils", "nbins", None)
+        if nbins is not None:
+            try:
+                settings["nbins"] = int(nbins)
+                settings["enabled"] = True
+            except (TypeError, ValueError):
+                pass
+
+        def _pair(limits) -> tuple[float, float] | None:
+            if not isinstance(limits, (list, tuple)) or len(limits) != 2:
+                return None
+            try:
+                return float(limits[0]), float(limits[1])
+            except (TypeError, ValueError):
+                return None
+
+        for limits, min_key, max_key, scale in (
+            (self._section_value(output, "depth_distribution", "ion_recoils", "limits", None), "depth_min", "depth_max", 1.0),
+            (self._section_value(output, "lateral_distribution", "ion_recoils", "limits", None), "lateral_min", "lateral_max", 1.0),
+            (self._section_value(output, "backscattered_atoms", "energy", "limits", None), "energy_min", "energy_max", 1.0 / 1000.0),
+            (self._section_value(output, "backscattered_atoms", "angle", "limits", None), "angle_min", "angle_max", 1.0),
+        ):
+            pair = _pair(limits)
+            if pair is None:
+                continue
+            settings[min_key] = pair[0] * scale
+            settings[max_key] = pair[1] * scale
+            settings["enabled"] = True
+
+        return settings
 
     def load_toml_from_path(self, path: str | Path) -> None:
         toml_path = Path(path)
@@ -1894,15 +1955,10 @@ class MCSetupPage(QWidget):
                                     elements: list[dict] | None = None) -> float:
         """Convert density to atoms/Å³ which OpenTRIM expects.
 
-        First tries using the material_densities table (most reliable).
-        Falls back to converting the user-entered value."""
-        # Prefer table density
-        if elements:
-            table_d = self._density_from_table(elements)
-            if table_d is not None:
-                return table_d
-
-        # Fallback: convert manually entered value
+        The displayed density value is authoritative. Newly-added layers are
+        auto-filled from material_densities.csv elsewhere, but loaded or edited
+        values must survive a Load -> Save roundtrip unchanged.
+        """
         if unit == "atoms/cm³":
             return value * 1e-24
         if unit == "kg/m³":

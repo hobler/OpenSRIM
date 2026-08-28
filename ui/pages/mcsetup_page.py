@@ -166,6 +166,7 @@ class MCSetupPage(QWidget):
         self._scattering_algorithm = "Legendre"
         self._n_absc = 4
         self._electronic_stopping_model = "SRIM"
+        self._electronic_straggling_model = "Off"
         self._loaded_model_correction: dict[str, float] = {}
         # NOTE: these cascade parameters are round-tripped through the UI and
         # the generated input TOML, but simulators/opentrim does not yet read
@@ -200,6 +201,9 @@ class MCSetupPage(QWidget):
                 self._scattering_algorithm = str(_scatter.get("algorithm", self._scattering_algorithm))
                 self._n_absc = int(_scatter.get("n_absc", self._n_absc))
                 self._electronic_stopping_model = str(_model.get("electronic_stopping", self._electronic_stopping_model))
+                self._electronic_straggling_model = self._coerce_straggling(
+                    _model.get("electronic_straggling"), self._electronic_straggling_model
+                )
                 self._pmax_min = float(_cascade.get("pmax_min", self._pmax_min))
                 self._pmax_max = float(_cascade.get("pmax_max", self._pmax_max))
                 self._psi_min = float(_cascade.get("psi_min", self._psi_min))
@@ -394,6 +398,7 @@ class MCSetupPage(QWidget):
             "cascade": self.cascade_combo.currentText() if hasattr(self, "cascade_combo") else "",
             "nuclear_stopping": self.nuclear_stopping_combo.currentText() if hasattr(self, "nuclear_stopping_combo") else "",
             "electronic_stopping": self._electronic_stopping_model,
+            "electronic_straggling": self._electronic_straggling_model,
             "simulator": self.simulator_combo.currentText() if hasattr(self, "simulator_combo") else "",
             "scattering_algorithm": self._scattering_algorithm,
             "n_absc": int(self._n_absc),
@@ -567,6 +572,8 @@ class MCSetupPage(QWidget):
                 if idx >= 0:
                     self.electronic_stopping_combo.setCurrentIndex(idx)
                 self.set_electronic_stopping_model(electronic)
+        if "electronic_straggling" in selection:
+            self.set_electronic_straggling_model(selection.get("electronic_straggling"))
 
         if hasattr(self, "simulator_combo"):
             simulator = selection.get("simulator")
@@ -1676,6 +1683,7 @@ class MCSetupPage(QWidget):
                 "cascade": "Full cascade" if bool(simulation.get("follow_recoils", True)) else "Ions only",
                 "nuclear_stopping": models.get("potential", "ZBL"),
                 "electronic_stopping": models.get("electronic_stopping", "SRIM"),
+                "electronic_straggling": self._coerce_straggling(models.get("electronic_straggling")),
                 "simulator": "OpenTRIM",
                 "scattering_algorithm": (models.get("scattering_integrals") or {}).get("algorithm", "Legendre"),
                 "n_absc": (models.get("scattering_integrals") or {}).get("n_absc", 4),
@@ -2031,6 +2039,7 @@ class MCSetupPage(QWidget):
             "follow_recoils": bool(self._follow_recoils),
             "rng_seed": int(self._rng_seed),
             "electronic_stopping": str(self._electronic_stopping_model),
+            "electronic_straggling": str(self._electronic_straggling_model),
             "scattering_algorithm": str(self._scattering_algorithm),
             "n_absc": int(self._n_absc),
             "lindhard_correction": dict(self._loaded_model_correction),
@@ -2050,6 +2059,7 @@ class MCSetupPage(QWidget):
             "follow_recoils": bool(self._follow_recoils),
             "rng_seed": int(self._rng_seed),
             "electronic_stopping": str(self._electronic_stopping_model),
+            "electronic_straggling": str(self._electronic_straggling_model),
             "scattering_algorithm": str(self._scattering_algorithm),
             "n_absc": int(self._n_absc),
             "lindhard_correction": dict(self._loaded_model_correction),
@@ -2089,6 +2099,37 @@ class MCSetupPage(QWidget):
     def set_electronic_stopping_model(self, value: str) -> None:
         if value in {"SRIM", "Lindhard"}:
             self._electronic_stopping_model = value
+        self._emit_advanced_simulation_settings()
+
+    # Accepted OpenTRIM electronic straggling models. "Off" disables straggling;
+    # the Advanced Options checkbutton toggles between "Off" and "Bohr".
+    _STRAGGLING_MODELS = ("Off", "Bohr", "Chu", "Yang")
+
+    @classmethod
+    def _coerce_straggling(cls, value, default: str = "Off") -> str:
+        """Normalise a TOML/legacy value to a valid electronic_straggling model.
+
+        Old input files stored this as a boolean; treat True as "Bohr" and
+        False as "Off". Unknown strings fall back to *default*.
+        """
+        if isinstance(value, bool):
+            return "Bohr" if value else "Off"
+        if value is None:
+            return default
+        text = str(value).strip()
+        for model in cls._STRAGGLING_MODELS:
+            if text.lower() == model.lower():
+                return model
+        if text.lower() in ("", "none", "false", "0"):
+            return "Off"
+        if text.lower() in ("true", "1", "on"):
+            return "Bohr"
+        return default
+
+    def set_electronic_straggling_model(self, value) -> None:
+        self._electronic_straggling_model = self._coerce_straggling(
+            value, self._electronic_straggling_model
+        )
         self._emit_advanced_simulation_settings()
 
     def set_n_absc(self, value: int) -> None:
@@ -2276,10 +2317,12 @@ class MCSetupPage(QWidget):
         # Models
         potential = sel.get("nuclear_stopping", "ZBL")
         estop = sel.get("electronic_stopping", "SRIM")
+        estraggle = self._coerce_straggling(sel.get("electronic_straggling"))
         lines += [
             "[models]",
             f'potential = "{potential}"',
             f'electronic_stopping = "{estop}"',
+            f'electronic_straggling = "{estraggle}"',
             "",
             "[models.scattering_integrals]",
             f'algorithm = "{sel.get("scattering_algorithm", "Legendre")}"',

@@ -67,6 +67,7 @@ roughness           = 0.0       # top layer roughness (Angstrom)
 #potential          = "ZBL"       # "ZBL" or "NLHlin"; interatomic potential
 potential          = "NLHlin"
 electronic_stopping = "SRIM"  # "Lindhard" or "SRIM"; electronic stopping power
+electronic_straggling = "Off"  # "Off", "Bohr", "Chu" or "Yang"; electronic straggling model
 
 [models.scattering_integrals]
 #algorithm = "magic"  # "magic" or "Legendre"

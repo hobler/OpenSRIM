@@ -159,6 +159,7 @@ class AdvancedOptionsPage(QWidget):
     mc_follow_recoils_changed = pyqtSignal(bool)
     mc_rng_seed_changed = pyqtSignal(int)
     mc_electronic_stopping_changed = pyqtSignal(str)
+    mc_electronic_straggling_changed = pyqtSignal(str)
     mc_scattering_algorithm_changed = pyqtSignal(str)
     mc_n_absc_changed = pyqtSignal(int)
     mc_lindhard_correction_changed = pyqtSignal(dict)
@@ -371,6 +372,15 @@ class AdvancedOptionsPage(QWidget):
         model_row.addWidget(self.cmb_electronic_stopping)
         model_row.addStretch(1)
         electronic_opts_l.addLayout(model_row)
+
+        self.chk_electronic_straggling = QCheckBox("Electronic straggling")
+        self.chk_electronic_straggling.setChecked(False)
+        self.chk_electronic_straggling.setToolTip(
+            "When enabled, electronic energy-loss straggling (Bohr model) is applied.\n"
+            "Maps to models.electronic_straggling in the simulation TOML "
+            '("Off" when disabled, "Bohr" when enabled).'
+        )
+        electronic_opts_l.addWidget(self.chk_electronic_straggling)
 
         electronic_opts_l.addWidget(QLabel("Lindhard correction factors:"))
         self.tbl_lindhard_correction = QTableWidget(0, 3)
@@ -631,6 +641,7 @@ class AdvancedOptionsPage(QWidget):
         self.spin_rng_seed.valueChanged.connect(self._emit_mc_setup_advanced)
         self.spin_target_roughness.valueChanged.connect(self._emit_mc_setup_advanced)
         self.cmb_electronic_stopping.currentIndexChanged.connect(self._emit_mc_setup_advanced)
+        self.chk_electronic_straggling.toggled.connect(self._emit_mc_setup_advanced)
         self.cmb_scattering_algorithm.currentIndexChanged.connect(self._emit_mc_setup_advanced)
         self.spin_n_absc.valueChanged.connect(self._emit_mc_setup_advanced)
         self.btn_lindhard_add.clicked.connect(self._on_add_lindhard_row)
@@ -695,6 +706,9 @@ class AdvancedOptionsPage(QWidget):
             self.mc_rng_seed_changed.emit(int(self.spin_rng_seed.value()))
             self.mc_target_roughness_changed.emit(float(self.spin_target_roughness.value()))
             self.mc_electronic_stopping_changed.emit(str(self.cmb_electronic_stopping.currentText()))
+            self.mc_electronic_straggling_changed.emit(
+                "Bohr" if self.chk_electronic_straggling.isChecked() else "Off"
+            )
             self.mc_scattering_algorithm_changed.emit(str(self.cmb_scattering_algorithm.currentText()))
             self.mc_n_absc_changed.emit(int(self.spin_n_absc.value()))
             self.mc_lindhard_correction_changed.emit(self._collect_lindhard_correction())
@@ -939,6 +953,7 @@ class AdvancedOptionsPage(QWidget):
             "target_roughness": float(self.spin_target_roughness.value()),
             "rng_seed": int(self.spin_rng_seed.value()),
             "electronic_stopping": str(self.cmb_electronic_stopping.currentText()),
+            "electronic_straggling": "Bohr" if self.chk_electronic_straggling.isChecked() else "Off",
             "scattering_algorithm": str(self.cmb_scattering_algorithm.currentText()),
             "n_absc": int(self.spin_n_absc.value()),
             "lindhard_correction": self._collect_lindhard_correction(),
@@ -1121,6 +1136,15 @@ class AdvancedOptionsPage(QWidget):
                 self.cmb_electronic_stopping.blockSignals(True)
                 self.cmb_electronic_stopping.setCurrentIndex(idx)
                 self.cmb_electronic_stopping.blockSignals(False)
+        if "electronic_straggling" in payload:
+            raw = payload.get("electronic_straggling")
+            if isinstance(raw, bool):
+                enabled = raw
+            else:
+                enabled = str(raw).strip().lower() not in ("", "off", "none", "false", "0")
+            self.chk_electronic_straggling.blockSignals(True)
+            self.chk_electronic_straggling.setChecked(enabled)
+            self.chk_electronic_straggling.blockSignals(False)
         if "scattering_algorithm" in payload:
             idx = self.cmb_scattering_algorithm.findText(str(payload.get("scattering_algorithm", self.cmb_scattering_algorithm.currentText())))
             if idx >= 0:

@@ -159,7 +159,7 @@ class AdvancedOptionsPage(QWidget):
     mc_follow_recoils_changed = pyqtSignal(bool)
     mc_rng_seed_changed = pyqtSignal(int)
     mc_electronic_stopping_changed = pyqtSignal(str)
-    mc_electronic_straggling_changed = pyqtSignal(str)
+    mc_electronic_straggling_changed = pyqtSignal(bool)
     mc_scattering_algorithm_changed = pyqtSignal(str)
     mc_n_absc_changed = pyqtSignal(int)
     mc_lindhard_correction_changed = pyqtSignal(dict)
@@ -376,9 +376,9 @@ class AdvancedOptionsPage(QWidget):
         self.chk_electronic_straggling = QCheckBox("Electronic straggling")
         self.chk_electronic_straggling.setChecked(False)
         self.chk_electronic_straggling.setToolTip(
-            "When enabled, electronic energy-loss straggling (Bohr model) is applied.\n"
+            "When enabled, electronic energy-loss straggling is applied.\n"
             "Maps to models.electronic_straggling in the simulation TOML "
-            '("Off" when disabled, "Bohr" when enabled).'
+            "(true / false)."
         )
         electronic_opts_l.addWidget(self.chk_electronic_straggling)
 
@@ -707,7 +707,7 @@ class AdvancedOptionsPage(QWidget):
             self.mc_target_roughness_changed.emit(float(self.spin_target_roughness.value()))
             self.mc_electronic_stopping_changed.emit(str(self.cmb_electronic_stopping.currentText()))
             self.mc_electronic_straggling_changed.emit(
-                "Bohr" if self.chk_electronic_straggling.isChecked() else "Off"
+                bool(self.chk_electronic_straggling.isChecked())
             )
             self.mc_scattering_algorithm_changed.emit(str(self.cmb_scattering_algorithm.currentText()))
             self.mc_n_absc_changed.emit(int(self.spin_n_absc.value()))
@@ -953,7 +953,7 @@ class AdvancedOptionsPage(QWidget):
             "target_roughness": float(self.spin_target_roughness.value()),
             "rng_seed": int(self.spin_rng_seed.value()),
             "electronic_stopping": str(self.cmb_electronic_stopping.currentText()),
-            "electronic_straggling": "Bohr" if self.chk_electronic_straggling.isChecked() else "Off",
+            "electronic_straggling": bool(self.chk_electronic_straggling.isChecked()),
             "scattering_algorithm": str(self.cmb_scattering_algorithm.currentText()),
             "n_absc": int(self.spin_n_absc.value()),
             "lindhard_correction": self._collect_lindhard_correction(),

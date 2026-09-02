@@ -12,34 +12,6 @@ from . import nlhlin
 from . import zbl
 
 
-def _get_nlhlin_coefs(z1, z2):
-    """Get the coefficients for the NLHlin screening function.
-
-    Parameters:
-        z1: (int) atomic number of atom 1
-        z2: (int) atomic number of atom 2
-        
-    Returns:
-        a1, a2, a3: prefactors
-        b1, b2, b3: 1/screening lengths (1/A)
-        rmax: maximum range of the potential (A)
-    """
-    fname = os.path.join(os.path.dirname(__file__), "dmol_coeffs_rmax.dat")
-    if not os.path.exists(fname):
-        raise OSError(f"get_nlhlin_coefs: Coefficients file {fname} not found")
-    
-    with open(fname, "r") as f:
-        for line in f:
-            if line.startswith("#"):
-                continue
-            items = line.split()
-            if int(items[0]) == min(z1, z2) and int(items[1]) == max(z1, z2):
-                return [float(c) for c in items[2:-1]]
-    
-    raise ValueError(f"get_nlhlin_coefs: Coefficients for Z1={z1}, Z2={z2} "
-                     f"not found in {fname}")
-
-
 def _get_beam_params(input_params):
     """Get the beam parameters from the input parameters.
 

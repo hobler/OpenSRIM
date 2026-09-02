@@ -20,6 +20,10 @@ from numba import jit
 def is_inside_target(pos, params):
     """Check if a given position is inside the target.
 
+    If the position is within roughness of the top surface, the result is 
+    determined by a random number. The probability of being inside is 
+    proportional to the distance from the surface.
+
     Parameters:
         pos (ndarray): Position to check (size 3)
         params (PARAMS_DTYPE): Simulation parameters
@@ -27,6 +31,15 @@ def is_inside_target(pos, params):
     Returns:
         (bool): True if the position is inside the target, False otherwise
     """
+    if pos[0] < params.geometry.x_intf[0]:
+        return False
+    elif pos[0] < params.geometry.x_intf[0] + params.geometry.roughness:
+        dist_surf = pos[0] - params.geometry.x_intf[0]
+        return dist_surf > params.geometry.roughness * np.random.rand()
+    elif pos[0] > params.geometry.x_intf[params.geometry.nlayers]:
+        return False
+    else:
+        return True
     return (params.geometry.x_intf[0] <= pos[0] 
             <= params.geometry.x_intf[params.geometry.nlayers])
 
@@ -79,7 +92,7 @@ def check_exit_and_move(proj, free_path, params):
         # edge of surface layer reached
         if is_on_beamside == proj["is_on_beamside"]:  # common case
             factor = ((-params.cascade.pmax_max - proj["dist_surf"]) 
-                    / (dist_surf - proj["dist_surf"]))
+                      / (dist_surf - proj["dist_surf"]))
         else:  # do it the long way
             pos_plane = (params.geometry.x_intf[0] - params.cascade.pmax_max 
                          if is_on_beamside 
@@ -87,6 +100,9 @@ def check_exit_and_move(proj, free_path, params):
                               + params.cascade.pmax_max)
             factor = (pos_plane - proj["pos"][0]) / (pos_new[0] - proj["pos"][0])
         proj["pos"] += factor * free_path * proj["dir"]
+        if proj["pos"][0] < (params.geometry.x_intf[0] 
+                             - params.cascade.pmax_max - 0.01):
+            print("x=", proj["pos"][0], ",dir=", proj["dir"])
         proj["dist_surf"] = -params.cascade.pmax_max
         proj["is_on_beamside"] = is_on_beamside
         proj["is_inside"] = False

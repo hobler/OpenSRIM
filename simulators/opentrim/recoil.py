@@ -97,5 +97,7 @@ def select_recoil(proj, recoil, params):
     recoil["ilayer"] = get_layer_index(recoil["pos"], params)
     recoil["ielem"] = get_element_index(recoil, params)
     recoil["is_inside"] = is_inside_target(recoil["pos"], params)
+    recoil["pos_init"] = recoil["pos"]  # copied
+    recoil["virtual"] = proj["virtual"]  # copied
 
     return free_path, p, dirp[:]

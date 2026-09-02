@@ -4,6 +4,8 @@ Available functions:
     cascade: simulate one cascade.
 """
 import os
+
+from simulators.opentrim import recoil
 NUMBA_DISABLE_JIT = os.environ.get("NUMBA_DISABLE_JIT", "") == "1"
 from copy import deepcopy
 
@@ -14,8 +16,8 @@ from .recoil import select_recoil
 from .scatter import scatter
 from .estop import eloss
 from .target import check_exit_and_move
-from .stats import (score_eed, score_ned, score_start, score_stop, 
-                    score_backscattered, score_transmitted, 
+from .stats import (score_eed, score_ned, score_point_defect, score_stop, 
+                    score_exit, 
                     score_yield_back, score_yield_in, score_yield_trans)
 from . import config
 
@@ -87,7 +89,7 @@ def cascade(initial_proj, params, stats):
     """
     #print("Entered cascade...")
     # In Python mode, we need to create a deep copy of the initial projectile 
-    # to avoid modifying it in-place when it is appended to the projectile 
+    # to avoid modifying it in-place after it is appended to the projectile 
     # stack. In Numba mode, this is not necessary, since the initial projectile 
     # is passed by value to the cascade function.
     if NUMBA_DISABLE_JIT:
@@ -113,7 +115,8 @@ def cascade(initial_proj, params, stats):
     ntrans = np.zeros(stats["t"]["nvar"], dtype=np.float64)
 
     # TODO: Apply the surface binding energy to the projectile when it enters 
-    # the target. For that, we need a way to specify the surface binding energy.
+    # the target. For that, we need a way to specify the surface binding energy
+    # of the projectile.
 
     # Loop over collision events until there are no more projectiles to 
     # simulate
@@ -121,14 +124,15 @@ def cascade(initial_proj, params, stats):
 
         proj = proj_stack[-1]
     
-        # set recoil parameters before interaction(recoil is modified in-place)
+        # set recoil parameters before interaction (recoil is modified in-place)
         free_path, p, dirp = select_recoil(proj, recoil, params)
         free_path += proj["dffp_new"]
 
         # consider electronic energy loss
         dee = eloss(proj, free_path + proj["dffp_old"], params)
         proj["e"] -= dee
-        score_eed(stats, proj, dee) 
+        pos_eed = proj["pos"] + 0.5 * free_path * proj["dir"]
+        score_eed(stats, proj["ielem"], pos_eed, dee) 
 
         # move projectile forward and terminate trajectory if projectile exits 
         # the target (proj is modified in-place)
@@ -136,11 +140,10 @@ def cascade(initial_proj, params, stats):
         exiting = check_exit_and_move(proj, free_path, params)
         if exiting:
             final_proj_lst.append(proj)
+            score_exit(stats, proj, params.nelem_target)
             if proj["dir"][0] < 0:
-                score_backscattered(stats, proj)
                 nback[proj["ielem"]] += 1
             else:
-                score_transmitted(stats, proj)
                 ntrans[proj["ielem"]] += 1
             proj_stack.pop()
             continue
@@ -148,7 +151,6 @@ def cascade(initial_proj, params, stats):
         # terminate trajectory if the projectile has no more energy
         if proj["e"] <= emin:
             final_proj_lst.append(proj)
-            score_ned(stats, proj)
             score_stop(stats, proj)
             nin[proj["ielem"]] += 1
             proj_stack.pop()
@@ -164,44 +166,49 @@ def cascade(initial_proj, params, stats):
             # terminate trajectory if the projectile has lost too much energy
             if proj["e"] <= emin:
                 final_proj_lst.append(proj)
-                score_ned(stats, proj)
                 score_stop(stats, proj)
                 nin[proj["ielem"]] += 1
                 proj_stack.pop()
 
-            # start a new sub-cascade if the recoil has enough energy to leave 
-            # its position
-            imat = recoil["ilayer"]
-            ielem_mat = params.materials[imat].ielem_mat[recoil["ielem"]]
-            if recoil["dist_surf"] > 10.0:
-                e_disp = params.materials[imat].edisp[ielem_mat]
-            else:  # if close to the surface, use surface binding energy
-                e_disp = params.materials[imat].esurf[ielem_mat]
-            e_bulk = params.materials[imat].ebulk[ielem_mat]
+            # if the recoil has enough energy to leave its position start a new 
+            # sub-cascade or score Kinchin-Pease damage
             if params.cascade.follow_recoils:
-                if recoil["e"] > e_disp:
-                    recoil["e"] -= e_bulk
-                    proj_stack.append(recoil)  # stores a copy of recoil
-                    score_start(stats, recoil, params.nelem_target)
-                    nin[recoil["ielem"] + params.nelem_target] += 1
-                    recoil["e"] = e_bulk  # score the binding energy as NED
-                    score_ned(stats, recoil)
+                imat = recoil["ilayer"]
+                ielem_mat = params.materials[imat].ielem_mat[recoil["ielem"]]
+                e_surf = params.materials[imat].esurf[ielem_mat]
+                e_disp = params.materials[imat].edisp[ielem_mat]
+                e_bulk = params.materials[imat].ebulk[ielem_mat]
+                if recoil["dist_surf"] < 10.0:
+                    start = recoil["e"] > e_surf
+                    recoil["virtual"] = (recoil["e"] < e_disp)
                 else:
-                    score_ned(stats, recoil)
+                    start = recoil["e"] > e_disp
+                    recoil["virtual"] = False
+                if start:
+                    ielem = recoil["ielem"] + params.nelem_target
+                    score_point_defect(stats, ielem, recoil["pos"])
+                    score_ned(stats, recoil["ielem"], recoil["pos"], e_bulk)
+                    nin[recoil["ielem"]] += 1
+                    recoil["e"] -= e_bulk
+                    recoil["e_init"] = recoil["e"]
+                    proj_stack.append(recoil)
+                else:
+                    score_ned(stats, recoil["ielem"], recoil["pos"], 
+                              recoil["e"])
             else:
-                ned, nvac = _get_damage_kp(recoil, params)
+                ned, ndisp = _get_damage_kp(recoil, params)
                 eed = recoil["e"] - ned
-                score_stop(stats, recoil, weight=nvac)
-                nin[recoil["ielem"]] += nvac
+                score_eed(stats, recoil["ielem"], recoil["pos"], eed)
                 recoil["e"] = ned
-                score_ned(stats, recoil)
-                recoil["e"] = eed
-                score_eed(stats, recoil, dee=eed)
+                recoil["virtual"] = False
+                score_stop(stats, recoil, weight=ndisp)
+                nin[recoil["ielem"]] += ndisp
 
     # Score the yields
     score_yield_in(stats, nin)
     score_yield_back(stats, nback)
-    score_yield_trans(stats, ntrans)                
+    score_yield_trans(stats, ntrans) 
+
 
     # Return fully simulated projectiles in the correct order
     return final_proj_lst[::-1]

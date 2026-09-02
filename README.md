@@ -46,6 +46,22 @@ pip install -r requirements.txt
 python3 main_window.py
 ```
 
+### Notes on running OpenTRIM
+
+OpenTRIM uses Numba for just-in-time compilation. As long as you don't modify
+jit-compiled code, set `ENABLE_CACHING = getattr(sys, "frozen", True)` in `simulators/opentrim/config.py` to avoid recompilation at every run.
+
+OpenTRIM may also be run from the command line using a hand-writted or 
+otherwise generated `input.toml` file:
+
+```bash
+source /path/to/venv/bin/activate
+python3 /path/to/simulators/opentrim/__main__.py /path/to/input.toml
+```
+
+where `/path/to` has to be replaced by the respective directories of the files.
+The output files will be generated in the directory of `input.toml`.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

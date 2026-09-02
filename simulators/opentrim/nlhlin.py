@@ -36,10 +36,10 @@ def get_coefs(Z1, Z2):
     if Z1 > Z2:
         Z1, Z2 = Z2, Z1
 
-    #fname = os.path.join(os.path.dirname(__file__), "dmol_coeffs_rmax.dat")
-    fname = os.path.join(os.path.dirname(__file__), "NLHlin_3eV.dat")
+    path = os.path.join(os.path.dirname(__file__), "../../data/NLHlin/")
+    fname = os.path.join(path, "NLHlin_3eV.dat")
     if not os.path.exists(fname):
-        print(f"get_nlhlin_coefs: Coefficients file {fname} not found")
+        print(f"nlhlin.get_coefs: Coefficients file {fname} not found")
         sys.exit()
     
     # Search for line with the correct Z1 and Z2, and read the coefficients

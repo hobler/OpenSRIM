@@ -100,9 +100,6 @@ def check_exit_and_move(proj, free_path, params):
                               + params.cascade.pmax_max)
             factor = (pos_plane - proj["pos"][0]) / (pos_new[0] - proj["pos"][0])
         proj["pos"] += factor * free_path * proj["dir"]
-        if proj["pos"][0] < (params.geometry.x_intf[0] 
-                             - params.cascade.pmax_max - 0.01):
-            print("x=", proj["pos"][0], ",dir=", proj["dir"])
         proj["dist_surf"] = -params.cascade.pmax_max
         proj["is_on_beamside"] = is_on_beamside
         proj["is_inside"] = False

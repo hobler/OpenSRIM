@@ -87,11 +87,13 @@ def _get_geometry_params(input_params):
     GEOMETRY_PARAMS_DTYPE = np.dtype([
         ("nlayers", np.int32),
         ("_pad", np.int32),  # padding for alignment
+        ("roughness", np.float64),
         ("x_intf", np.float64, (NLAYERS+1,)),
     ], align=True)
 
     geometry_params = np.recarray(1, dtype=GEOMETRY_PARAMS_DTYPE)
     geometry_params[0].nlayers = nlayers
+    geometry_params[0].roughness = layers_params[0]["roughness"]
     geometry_params[0].x_intf = x_intf
 
     return geometry_params
@@ -412,7 +414,7 @@ def _get_cascade_params(input_params, nelem, elements_params, materials_params,
     cascade_params[0].replacement_collisions = (
         input_params["cascade"]["replacement_collisions"])
     # TODO: get emin from input_params ("cutoff_energy")
-    cascade_params[0].emin = 5.0
+    cascade_params[0].emin = 3.0
     cascade_params[0].ed = 15.0
 
     densities = np.array([layer["density"] for layer in input_params["layer"]])

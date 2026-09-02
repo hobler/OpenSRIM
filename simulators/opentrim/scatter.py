@@ -16,6 +16,7 @@ from . import nlhlin
 from . import zbl
 from . import config
 from .cm_scatter import scatter_integrals
+from .target import get_distance_from_surface
 
 
 @register_jitable
@@ -145,6 +146,9 @@ def scatter(proj, p, dirp, recoil, params):
     proj["dir"] = proj_dir[:]
     proj["dffp_old"] = x1
     proj["dffp_new"] = np.dot((recoil["pos"][:] - proj_tp[:]), proj_dir[:])
+    proj["dist_surf"], proj["is_on_beamside"] = (
+        get_distance_from_surface(proj["pos"], params)
+    )
     #proj["dffp_new"] = 0.0  # for testing
 
     # New recoil properties
@@ -153,3 +157,6 @@ def scatter(proj, p, dirp, recoil, params):
     recoil["dir"] = recoil_dir[:]
     recoil["dffp_old"] = 0.0
     recoil["dffp_new"] = 0.0
+    recoil["dist_surf"], recoil["is_on_beamside"] = (
+        get_distance_from_surface(recoil["pos"], params)
+    )

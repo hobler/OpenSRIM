@@ -36,10 +36,10 @@ def get_coefs(Z1, Z2):
     if Z1 > Z2:
         Z1, Z2 = Z2, Z1
 
-    #fname = os.path.join(os.path.dirname(__file__), "dmol_coeffs_rmax.dat")
-    fname = os.path.join(os.path.dirname(__file__), "NLHlin_3eV.dat")
+    path = os.path.join(os.path.dirname(__file__), "../../data/NLHlin/")
+    fname = os.path.join(path, "NLHlin_3eV.dat")
     if not os.path.exists(fname):
-        print(f"get_nlhlin_coefs: Coefficients file {fname} not found")
+        print(f"nlhlin.get_coefs: Coefficients file {fname} not found")
         sys.exit()
     
     # Search for line with the correct Z1 and Z2, and read the coefficients
@@ -166,7 +166,7 @@ def screen_fun(r, pot_coefs):
     exp1 = np.exp(-b[1]*r)
     exp2 = np.exp(-b[2]*r)
     screen = a[0]*exp0 + a[1]*exp1 + a[2]*exp2 + c - d*r/rmax
-    dscreen = - a[0]*b[0]*exp0 - a[1]*b[1]*exp1 - a[2]*b[2]*exp2 + d/rmax
+    dscreen = - a[0]*b[0]*exp0 - a[1]*b[1]*exp1 - a[2]*b[2]*exp2 - d/rmax
 
     return screen, dscreen
 

@@ -333,33 +333,10 @@ def _score2d(stats_field, x, y, ivar, weight=1.0):
 
 
 @jit(debug=config.DEBUG)
-def score_backscattered(stats, proj):
-    """Score a backscattered projectile."""
-    ivar = proj["ielem"]
-    energy = proj["e"]
-    angle = math.degrees(math.atan2(proj["dir"][1], -proj["dir"][0]))
-
-    _score1d(stats["be"], energy, ivar)
-    _score1d(stats["ba"], angle, ivar)
-
-
-@jit(debug=config.DEBUG)
-def score_transmitted(stats, proj):
-    """Score a transmitted projectile."""
-    ivar = proj["ielem"]
-    energy = proj["e"]
-    angle = math.degrees(math.atan2(proj["dir"][1], proj["dir"][0]))
-
-    _score1d(stats["te"], energy, ivar)
-    _score1d(stats["ta"], angle, ivar)
-
-
-@jit(debug=config.DEBUG)
-def score_eed(stats, proj, dee):
+def score_eed(stats, ivar, pos, dee):
     """Score the electronic energy deposition for a projectile."""
-    ivar = proj["ielem"]
-    x = proj["pos"][0]  # TODO: Take center of point and previous point
-    y = proj["pos"][1]
+    x = pos[0]
+    y = pos[1]
 
     _score1d(stats["xe"], x, ivar, weight=dee)
     _score1d(stats["ye"], y, ivar, weight=dee)
@@ -367,12 +344,10 @@ def score_eed(stats, proj, dee):
 
 
 @jit(debug=config.DEBUG)
-def score_ned(stats, proj):
+def score_ned(stats, ivar, pos, ned):
     """Score the nuclear energy deposition for a projectile."""
-    ivar = proj["ielem"]
-    x = proj["pos"][0]
-    y = proj["pos"][1]
-    ned = proj["e"]
+    x = pos[0]
+    y = pos[1]
 
     _score1d(stats["xn"], x, ivar, weight=ned)
     _score1d(stats["yn"], y, ivar, weight=ned)
@@ -380,27 +355,44 @@ def score_ned(stats, proj):
 
 
 @jit(debug=config.DEBUG)
-def score_start(stats, proj, nelem_target):
-    """Score a projectile at its starting position."""
-    ivar = proj["ielem"] + nelem_target
-    x = proj["pos"][0]
-    y = proj["pos"][1]
+def score_point_defect(stats, ivar, pos, weight=1.0):
+    """Score a vacancy or interstitial depending on ivar."""
+    x = pos[0]
+    y = pos[1]
 
-    _score1d(stats["x"], x, ivar)
-    _score1d(stats["y"], y, ivar)
-    _score2d(stats["xy"], x, y, ivar)
+    _score1d(stats["x"], x, ivar, weight=weight)
+    _score1d(stats["y"], y, ivar, weight=weight)
+    _score2d(stats["xy"], x, y, ivar, weight=weight)
+
+
+@jit(debug=config.DEBUG)
+def score_exit(stats, proj, nelem_target):
+    """Score a projectile that exits the target."""
+    ivar = proj["ielem"]
+    energy = proj["e"]
+    angle = math.degrees(math.atan2(proj["dir"][1], proj["dir"][0]))
+
+    if proj["dir"][0] < 0:
+        _score1d(stats["be"], energy, ivar)
+        _score1d(stats["ba"], - angle, ivar)
+    else:
+        _score1d(stats["te"], energy, ivar)
+        _score1d(stats["ta"], angle, ivar)
+
+    if proj["virtual"]:
+        ivar += nelem_target  # score vacancy at point of origin
+        score_point_defect(stats, ivar, proj["pos_init"])
 
 
 @jit(debug=config.DEBUG)
 def score_stop(stats, proj, weight=1.0):
     """Score a projectile that has stopped inside the target."""
     ivar = proj["ielem"]
-    x = proj["pos"][0]
-    y = proj["pos"][1]
-
-    _score1d(stats["x"], x, ivar, weight=weight)
-    _score1d(stats["y"], y, ivar, weight=weight)
-    _score2d(stats["xy"], x, y, ivar, weight=weight)
+    if proj["virtual"]:
+        score_ned(stats, ivar, proj["pos_init"], proj["e_init"])
+    else:
+        score_point_defect(stats, ivar, proj["pos"], weight=weight)
+        score_ned(stats, ivar, proj["pos"], proj["e"])
 
 
 @jit(debug=config.DEBUG)

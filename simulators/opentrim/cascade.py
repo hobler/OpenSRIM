@@ -5,7 +5,6 @@ Available functions:
 """
 import os
 
-from simulators.opentrim import recoil
 NUMBA_DISABLE_JIT = os.environ.get("NUMBA_DISABLE_JIT", "") == "1"
 from copy import deepcopy
 

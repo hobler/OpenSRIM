@@ -49,7 +49,8 @@ python3 main_window.py
 ### Notes on running OpenTRIM
 
 OpenTRIM uses Numba for just-in-time compilation. As long as you don't modify
-jit-compiled code, set `ENABLE_CACHING = getattr(sys, "frozen", True)` in `simulators/opentrim/config.py` to avoid recompilation at every run.
+jit-compiled code, set `ENABLE_CACHING = getattr(sys, "frozen", True)` in 
+`simulators/opentrim/config.py` to avoid recompilation at every run.
 
 OpenTRIM may also be run from the command line using a hand-writted or 
 otherwise generated `input.toml` file:

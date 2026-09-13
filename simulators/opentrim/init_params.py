@@ -376,8 +376,8 @@ def _get_cascade_params(input_params, nelem, elements_params, materials_params,
         ("pmax", np.float64, (NMAT,)),  # unused, obsolescent
         ("mean_free_path", np.float64, (NMAT,)),  # unused, obsolescent
         ("pmax_vals", np.float64, (NPMAX,)),
-        ("pmax_energies", np.float64, (NELEM, NMAT, NPMAX)),
-        ("pmax_energies_surface", np.float64, (NELEM, NMAT, NPMAX)),
+        ("pmax_energies_sq", np.float64, (NELEM, NMAT, NPMAX)),
+        ("pmax_energies_surface_sq", np.float64, (NELEM, NMAT, NPMAX)),
     ], align=True)
 
     cascade_params = np.recarray(1, dtype=CASCADE_PARAMS_DTYPE)
@@ -407,7 +407,6 @@ def _get_cascade_params(input_params, nelem, elements_params, materials_params,
     pmax_vals = np.linspace(pmaxmin, pmaxmax, NPMAX)
     cascade_params[0].pmax_vals = pmax_vals[::-1]
 
-
     nmat = len(input_params["layer"])
 
     for ielem1 in range(nelem):
@@ -435,25 +434,32 @@ def _get_cascade_params(input_params, nelem, elements_params, materials_params,
                             scatter_params[0].pot_coefs[ielem1, ielem2]
                         )
                     energy_psi = (14.39979 * z1 * z2 / rnorm * integral 
-                                  / psimin)
+                                  / np.radians(psimin))
                     energy_de = (m1/m2
                                  * (14.39979 * z1 * z2 / rnorm * integral)**2 
                                  / demin)
-                    pmax_energies[i] = max(pmax_energies[i], 
+                    pmax_energies[i] = max(pmax_energies[i],
                                            energy_psi, energy_de)
                     
                     energy_psi = (14.39979 * z1 * z2 / rnorm * integral 
-                                  / psimin_surface)
+                                  / np.radians(psimin_surface))
                     energy_de = (m1/m2
                                  * (14.39979 * z1 * z2 / rnorm * integral)**2 
                                  / demin_surface)
-                    pmax_energies_surface[i] = max(pmax_energies_surface[i], 
+                    pmax_energies_surface[i] = max(pmax_energies_surface[i],
                                                    energy_psi, energy_de)
 
-            cascade_params[0].pmax_energies[ielem1, imat] = (
-                pmax_energies[::-1])
-            cascade_params[0].pmax_energies_surface[ielem1, imat] = (
-                pmax_energies_surface[::-1])
+            #import matplotlib.pyplot as plt
+            #plt.semilogx(pmax_energies_surface, pmax_vals, label=f"imat={imat}, ielem1={ielem1}")
+            #plt.ylabel('Maximum Impact Parameter (Å)')
+            #plt.xlabel('Energy (eV)')
+            #plt.xlim(10, 1e7)
+            #plt.legend()
+            #plt.show()
+            cascade_params[0].pmax_energies_sq[ielem1, imat] = (
+                pmax_energies[::-1]**2)
+            cascade_params[0].pmax_energies_surface_sq[ielem1, imat] = (
+                pmax_energies_surface[::-1]**2)
 
     return cascade_params
 

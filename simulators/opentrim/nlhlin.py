@@ -166,7 +166,7 @@ def screen_fun(r, pot_coefs):
     exp1 = np.exp(-b[1]*r)
     exp2 = np.exp(-b[2]*r)
     screen = a[0]*exp0 + a[1]*exp1 + a[2]*exp2 + c - d*r/rmax
-    dscreen = - a[0]*b[0]*exp0 - a[1]*b[1]*exp1 - a[2]*b[2]*exp2 + d/rmax
+    dscreen = - a[0]*b[0]*exp0 - a[1]*b[1]*exp1 - a[2]*b[2]*exp2 - d/rmax
 
     return screen, dscreen
 

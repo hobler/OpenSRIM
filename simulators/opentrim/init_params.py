@@ -560,8 +560,10 @@ def _get_cascade_params(input_params, nelem, elements_params, materials_params,
                     e = pmax_energies[i]
                     print(pmax, e, np.sqrt(m2/m1 * sn(e) / (np.pi*e)) / np.radians(psimin))
 
+            pmax_energies[-1] = 0.0
+            pmax_energies_surface[-1] = 0.0
             import matplotlib.pyplot as plt
-            plt.semilogx(pmax_energies_surface, pmax_vals, label=f"imat={imat}, ielem1={ielem1}")
+            plt.semilogx(pmax_energies, pmax_vals, label=f"imat={imat}, ielem1={ielem1}")
             plt.ylabel('Maximum Impact Parameter (Å)')
             plt.xlabel('Energy (eV)')
             plt.xlim(10, 1e7)

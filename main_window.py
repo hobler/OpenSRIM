@@ -164,6 +164,10 @@ class MainWindow(QMainWindow):
         )
         # Track all MC Results pages (multi-tab support).
         self.mc_results_tabs: list = []
+        # Monotonically increasing counter for naming new tabs, so that
+        # closing a tab and opening a new one never reuses a number still
+        # shown by a tab that remains open.
+        self._mc_results_tab_counter = 1
         # Keep the first one accessible for backwards compatibility.
         self.mc_results_tab = self._create_mc_results_tab()
         self.single_plot_page = SinglePlotPage()
@@ -435,7 +439,8 @@ class MainWindow(QMainWindow):
             if isinstance(self.tab_widget.widget(i), MCResultsPage):
                 insert_at = i + 1
                 break
-        title = f"MC Results {len(self.mc_results_tabs)}"
+        self._mc_results_tab_counter += 1
+        title = f"MC Results {self._mc_results_tab_counter}"
         self.tab_widget.insertTab(insert_at, page, title)
         self.tab_widget.setCurrentWidget(page)
         self._update_tab_close_buttons()

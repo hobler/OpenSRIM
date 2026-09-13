@@ -453,6 +453,7 @@ def _build_plots_from_directory(results_dir: str):
                 ax.set_xlabel(_xlabel)
                 ax.set_ylabel(_ylabel)
                 ax.set_title(_title)
+                ax.set_yscale("log")
                 if len(cols_p) > 1:
                     ax.legend(fontsize=8)
             return plot_func

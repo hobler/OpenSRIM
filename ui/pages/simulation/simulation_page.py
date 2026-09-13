@@ -5382,12 +5382,12 @@ class MCResultsWidget(QWidget):
         self._on_mode_changed(True)
 
     def _on_sidebar_selection_changed(self, plot_ids: List[str]) -> None:
+        # Only update which tiles are visible here. Sending a plot to the
+        # Single Plot tab is an explicit action (double-click on a tile, see
+        # plot_double_clicked below) — auto-forwarding whenever exactly one
+        # checkbox happens to be checked fired unexpectedly while a user was
+        # still in the middle of checking/unchecking several plots.
         self.plot_area.set_visible_plots(plot_ids)
-        if len(plot_ids) == 1:
-            plot_id = str(plot_ids[0])
-            info = AVAILABLE_PLOTS.get(plot_id)
-            if info is not None:
-                self.plot_open_in_single.emit(plot_id, info)
 
     def _on_mode_changed(self, multiple_mode: bool) -> None:
         self._plot_stack.setCurrentIndex(0 if multiple_mode else 1)

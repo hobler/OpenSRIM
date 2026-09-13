@@ -2371,9 +2371,13 @@ class MCSetupPage(QWidget):
                 lines.append(f'"{key}" = {value}')
             lines.append("")
 
-        # NOTE: not yet consumed by simulators/opentrim (pending backend work).
         lines += [
             "[cascade]",
+            # NOTE: simulators/opentrim currently reads follow_recoils from
+            # [simulation] (see read_params.py); it is duplicated here in
+            # [cascade], its intended long-term home, so nothing breaks once
+            # the backend switches over.
+            f"follow_recoils = {'true' if simulation.get('follow_recoils', True) else 'false'}",
             f"pmax_min = {float(self._pmax_min)}",
             f"pmax_max = {float(self._pmax_max)}",
             f"psi_min = {float(self._psi_min)}",

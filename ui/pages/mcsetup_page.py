@@ -1277,6 +1277,33 @@ class MCSetupPage(QWidget):
         v.addStretch(1)
         return box
 
+    def _warn_trajectory_not_implemented(self, checked: bool) -> None:
+        """Trajectory output isn't implemented in the simulation backend yet;
+        let the user know instead of silently producing no trajectory data.
+
+        Checking "Collisions" also auto-checks Start/End (see the cascade
+        connected above), which fires this handler up to three times for one
+        click, in the same synchronous signal-dispatch chain -- a plain
+        reentrancy flag doesn't help since each call returns (and clears the
+        flag) before the next one fires. Deferring via a single-shot timer
+        collapses the whole cascade into exactly one popup, since by the
+        time it runs, all of that chain's toggled(...) calls have already
+        happened.
+        """
+        if not checked or getattr(self, "_traj_warning_pending", False):
+            return
+        self._traj_warning_pending = True
+        QTimer.singleShot(0, self._show_trajectory_warning)
+
+    def _show_trajectory_warning(self) -> None:
+        self._traj_warning_pending = False
+        QMessageBox.information(
+            self, "Not Yet Implemented",
+            "Trajectory recording is not yet implemented in the simulation "
+            "backend. These options can be selected, but no trajectory "
+            "data will be produced by the simulation.",
+        )
+
     def build_trajectories_output(self) -> QGroupBox:
         box = QGroupBox("")
         v = QVBoxLayout(box)
@@ -1308,6 +1335,8 @@ class MCSetupPage(QWidget):
             self.chk_traj_end.setChecked(True),
         ) if checked else None)
         self.chk_traj_preview = QCheckBox("Preview")
+        for chk in (self.chk_traj_start, self.chk_traj_end, self.chk_traj_coll, self.chk_traj_preview):
+            chk.toggled.connect(self._warn_trajectory_not_implemented)
 
         self.chk_range_ion_recoil = QCheckBox("Ion/Recoil")
         self.chk_range_phonons = QCheckBox("Phonons")

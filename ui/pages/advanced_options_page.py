@@ -301,9 +301,9 @@ class AdvancedOptionsPage(QWidget):
         self.spin_pmax_max = _cascade_param_row("Maximum impact parameter (Å):", 0.0, 1.0e6, 4.0)
         self.spin_pmax_min = _cascade_param_row("Minimum impact parameter (Å):", 0.0, 1.0e6, 0.0)
         self.spin_de_min = _cascade_param_row("Minimum energy transfer (eV):", 0.0, 1.0e9, 15.0)
+        self.spin_de_min_surface = _cascade_param_row("Minimum energy transfer above surface (eV):", 0.0, 1.0e9, 15.0)
         self.spin_psi_min = _cascade_param_row("Minimum scattering angle (°):", 0.0, 180.0, 5.0)
         self.spin_psi_min_surface = _cascade_param_row("Minimum scattering angle above surface (°):", 0.0, 180.0, 5.0)
-        self.spin_de_min_surface = _cascade_param_row("Minimum energy transfer above surface (eV):", 0.0, 1.0e9, 15.0)
 
         seed_row = QHBoxLayout()
         seed_row.addWidget(QLabel("RNG Seed:"))

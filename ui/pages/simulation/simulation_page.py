@@ -3270,8 +3270,9 @@ class SinglePlotPage(QWidget):
             QMessageBox.information(self, "Save Plot Config",
                                     "There are no curves to save.")
             return
+        default_path = os.path.join(get_last_used_directory(), "plot_config.spc.toml")
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save Single Plot Configuration", get_last_used_directory(),
+            self, "Save Single Plot Configuration", default_path,
             "Single Plot Config (*.spc.toml);;TOML Files (*.toml);;All Files (*)",
         )
         if not path:

@@ -1461,7 +1461,7 @@ class KoralPage(QWidget):
                 ax_right.set_yscale("log")
 
             plotted_any = False
-            for key, label, energies, vals in series:
+            for color_idx, (key, label, energies, vals) in enumerate(series):
                 if key in _LENGTH_KEYS and length_axis_unit is not None:
                     plot_vals = [self._length_from_m(float(v), length_axis_unit) for v in vals]
                     target_ax = ax_left
@@ -1478,7 +1478,12 @@ class KoralPage(QWidget):
                 else:
                     plot_vals = vals
                     target_ax = ax_left
-                target_ax.plot(energies, plot_vals, linewidth=1.0, label=label)
+                # Assign colors from a single shared cycle across both axes so
+                # traces on ax_left and ax_right never repeat the same color.
+                target_ax.plot(
+                    energies, plot_vals, linewidth=1.0, label=label,
+                    color=f"C{color_idx}",
+                )
                 plotted_any = True
 
             if length_axis_unit is not None:

@@ -39,6 +39,7 @@ class KrC_screen:
             Z2: atomic number of atom 2
             rnorm: screening length (A)
         """
+        self.name = "KrC"
         self.Z1 = Z1
         self.Z2 = Z2
 

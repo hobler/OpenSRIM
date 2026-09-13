@@ -109,7 +109,7 @@ class Sn:
         e_norm = e / self.enorm
         sn_norm = sn_fit_func(e_norm, self.a, self.b, self.c, self.d)
         sn = (4 * np.pi * self.M1 / (self.M1 + self.M2)
-              * self.Z1 * self.Z2 * 14.4  * self.rnorm) * sn_norm
+              * self.Z1 * self.Z2 * 14.4 * self.rnorm) * sn_norm
         return sn
 
 

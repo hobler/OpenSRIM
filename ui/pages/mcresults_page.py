@@ -6,7 +6,7 @@ from typing import List, Dict, Any
 
 import numpy as np
 from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtWidgets import QWidget, QVBoxLayout
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel
 
 try:
     from ui.pages.simulation.simulation_page import MCResultsWidget
@@ -656,6 +656,13 @@ class MCResultsPage(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
+        # Mirrors MC Setup's run status so users can tell whether the
+        # simulation that produced these results is still running without
+        # switching back to the MC Setup tab.
+        self._status_label = QLabel("")
+        self._status_label.setStyleSheet("color: palette(shadow);")
+        layout.addWidget(self._status_label)
+
         self._results_widget = MCResultsWidget()
         self._results_widget.advanced_requested.connect(self.advanced_requested)
         self._results_widget.plot_open_in_single.connect(self.plot_open_in_single)
@@ -667,6 +674,43 @@ class MCResultsPage(QWidget):
     def get_results_widget(self):
         return self._results_widget
 
+    @staticmethod
+    def _read_run_status_text(results_dir: str) -> str:
+        """Build a short status string from the run's status/progress files."""
+        directory = Path(results_dir)
+        status = ""
+        try:
+            status_file = directory / "status"
+            if status_file.is_file():
+                status = status_file.read_text(encoding="utf-8").strip().lower()
+        except OSError:
+            pass
+
+        if status != "running":
+            if status == "error":
+                return "Simulation error"
+            if status == "done":
+                return "Complete"
+            if status == "stopped":
+                return "Stopped"
+            return ""
+
+        done = total = 0
+        try:
+            progress_file = directory / "progress"
+            if progress_file.is_file():
+                parts = progress_file.read_text(encoding="utf-8").strip().split("/")
+                if len(parts) == 2:
+                    done = int(parts[0].strip())
+                    total = int(parts[1].strip())
+        except (OSError, ValueError):
+            pass
+
+        if total > 0:
+            pct = int(100 * done / total)
+            return f"Running… {pct}% ({done}/{total} ions)"
+        return "Running…"
+
     def load_results_from_directory(self, results_dir: str, *, silent: bool = False) -> None:
         """Read OpenTRIM output files from *results_dir* and display them.
 
@@ -676,6 +720,8 @@ class MCResultsPage(QWidget):
             If *True*, suppress error/info dialogs (used for live updates
             during a running simulation).
         """
+        self._status_label.setText(self._read_run_status_text(results_dir))
+
         try:
             plots, numerical = _build_plots_from_directory(results_dir)
         except Exception as exc:

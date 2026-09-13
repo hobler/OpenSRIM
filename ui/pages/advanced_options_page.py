@@ -278,7 +278,7 @@ class AdvancedOptionsPage(QWidget):
         cascade_opts_l.addWidget(self.chk_follow_recoils)
 
         self.chk_replacement_collisions = QCheckBox("Replacement collisions")
-        self.chk_replacement_collisions.setChecked(False)
+        self.chk_replacement_collisions.setChecked(True)
         self.chk_replacement_collisions.setToolTip(
             "Allow a slow recoil of the same species as the struck lattice atom "
             "to replace it in place, instead of creating a separate interstitial."

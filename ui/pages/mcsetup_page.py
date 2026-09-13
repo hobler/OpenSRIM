@@ -177,7 +177,7 @@ class MCSetupPage(QWidget):
         self._de_min = 15.0
         self._psi_min_surface = 5.0
         self._de_min_surface = 15.0
-        self._replacement_collisions = False
+        self._replacement_collisions = True
         self._top_layer_roughness = 0.0
         # Default to ~80% of logical cores so the UI stays responsive while a
         # simulation runs; remembered across restarts in mc_setup.toml.
@@ -1704,7 +1704,7 @@ class MCSetupPage(QWidget):
                 "de_min": (params.get("cascade") or {}).get("de_min", 15.0),
                 "psi_min_surface": (params.get("cascade") or {}).get("psi_min_surface", 5.0),
                 "de_min_surface": (params.get("cascade") or {}).get("de_min_surface", 15.0),
-                "replacement_collisions": (params.get("cascade") or {}).get("replacement_collisions", False),
+                "replacement_collisions": (params.get("cascade") or {}).get("replacement_collisions", True),
                 "target_roughness": payload_layers[0].get("roughness", 0.0) if payload_layers else 0.0,
             },
             "layers": payload_layers,

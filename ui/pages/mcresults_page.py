@@ -87,7 +87,14 @@ def _read_moments_file(path: Path) -> dict:
             if ":" in text and "," not in text:
                 labels.append(text.split(":", 1)[1].strip())
 
-    data = np.loadtxt(path, delimiter=",")
+    # .mom files are written whitespace-separated (save_output.py's
+    # _write_moments builds one composite fmt string with embedded spaces
+    # and never passes a delimiter to np.savetxt) -- unlike .his files,
+    # which really are comma-separated. Reading with delimiter="," made
+    # every row a single unsplittable token, which np.loadtxt rejected;
+    # the caller's try/except silently swallowed that, which is why no
+    # moments were showing up at all.
+    data = np.loadtxt(path)
     if data.ndim == 1:
         data = data.reshape(1, -1)
 

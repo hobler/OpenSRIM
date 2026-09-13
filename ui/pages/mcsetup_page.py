@@ -2647,6 +2647,7 @@ class MCSetupPage(QWidget):
 
         self._sim_process = None
         self._sim_error = None
+        self._sim_output = ""
 
         def _run_in_thread():
             try:
@@ -2658,14 +2659,19 @@ class MCSetupPage(QWidget):
                     [sys.executable, "-m", "simulators.run_opentrim", str(toml_path)],
                     cwd=str(Path(__file__).resolve().parents[2]),
                     stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
                     env=env,
                 )
                 self._sim_process = proc
-                proc.wait()
+                # communicate() reads to completion while the process runs,
+                # unlike wait() + a later .read() -- that combination never
+                # drained the stdout pipe at all, so any print() output from
+                # the simulation was both invisible in the GUI *and* a
+                # deadlock risk once the OS pipe buffer filled up.
+                stdout, _ = proc.communicate()
+                self._sim_output = stdout.decode(errors="replace") if stdout else ""
                 if proc.returncode != 0:
-                    stderr = proc.stderr.read().decode(errors="replace") if proc.stderr else ""
-                    self._sim_error = stderr or f"Process exited with code {proc.returncode}"
+                    self._sim_error = self._sim_output or f"Process exited with code {proc.returncode}"
             except Exception as exc:
                 self._sim_error = str(exc)
 
@@ -2810,11 +2816,9 @@ class MCSetupPage(QWidget):
                 self.mc_progress.setFormat("Error")
                 self.mc_progress.setValue(0)
                 self.add_log_entry(f"Simulation error: {self._sim_error}")
-                # Defer dialog so timer callback returns first
-                err_msg = self._sim_error or ""
-                QTimer.singleShot(0, lambda: QMessageBox.warning(
-                    self, "Simulation Error",
-                    f"OpenTRIM failed:\n{err_msg[:500]}"))
+                self._show_simulation_error_dialog(
+                    "OpenTRIM failed to complete. See details for the full "
+                    "captured output.", self._sim_error)
             elif stopped:
                 self.mc_progress.setFormat(f"Stopped – {done} ions")
                 self.add_log_entry(
@@ -2823,17 +2827,50 @@ class MCSetupPage(QWidget):
                 )
                 self.simulation_finished.emit(self._current_results_dir)
             else:
-                self.mc_progress.setValue(100)
-                self.mc_progress.setFormat("Complete")
                 # List output files for transparency
                 res_path = Path(self._current_results_dir)
                 his_files = sorted(res_path.glob("*.his"))
                 mom_files = sorted(res_path.glob("*.mom"))
+                output = getattr(self, "_sim_output", "")
+                if not his_files and not mom_files:
+                    # The process exited 0 (no exception reached the top level)
+                    # but produced none of the expected result files. This is
+                    # exactly the "silent print, then a confusing failure when
+                    # loading files that were never created" scenario -- surface
+                    # whatever the process printed instead of claiming success.
+                    self.mc_progress.setFormat("Error")
+                    self.mc_progress.setValue(0)
+                    self.add_log_entry(
+                        "Simulation exited without error, but produced no "
+                        f"result files in: {self._current_results_dir}"
+                    )
+                    self._show_simulation_error_dialog(
+                        "OpenTRIM exited without an error code, but produced "
+                        "no histogram or moment files. See details for "
+                        "whatever it printed.",
+                        output or "(no output was captured)")
+                    return
+                self.mc_progress.setValue(100)
+                self.mc_progress.setFormat("Complete")
                 self.add_log_entry(
                     f"Simulation completed. {len(his_files)} histogram(s), "
                     f"{len(mom_files)} moment file(s) in: {self._current_results_dir}"
                 )
                 self.simulation_finished.emit(self._current_results_dir)
+
+    def _show_simulation_error_dialog(self, summary: str, full_output: str) -> None:
+        """Show a simulation failure with the full captured output available
+        via "Show Details...", instead of truncating it (or dropping it
+        entirely, as the log-only path effectively did before)."""
+        def _show():
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Icon.Warning)
+            box.setWindowTitle("Simulation Error")
+            box.setText(summary)
+            box.setDetailedText(full_output)
+            box.exec()
+        # Defer so the progress-timer callback returns first.
+        QTimer.singleShot(0, _show)
 
     # -------- element/layer logic ----------
     def _open_compound_dictionary(self):

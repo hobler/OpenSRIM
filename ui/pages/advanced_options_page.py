@@ -169,6 +169,7 @@ class AdvancedOptionsPage(QWidget):
     mc_de_min_changed = pyqtSignal(float)
     mc_psi_min_surface_changed = pyqtSignal(float)
     mc_de_min_surface_changed = pyqtSignal(float)
+    mc_cutoff_energy_changed = pyqtSignal(float)
     mc_replacement_collisions_changed = pyqtSignal(bool)
     mc_nthreads_changed = pyqtSignal(int)
     mc_target_roughness_changed = pyqtSignal(float)
@@ -304,6 +305,11 @@ class AdvancedOptionsPage(QWidget):
         self.spin_de_min_surface = _cascade_param_row("Minimum energy transfer above surface (eV):", 0.0, 1.0e9, 15.0)
         self.spin_psi_min = _cascade_param_row("Minimum scattering angle (°):", 0.0, 180.0, 5.0)
         self.spin_psi_min_surface = _cascade_param_row("Minimum scattering angle above surface (°):", 0.0, 180.0, 5.0)
+        self.spin_cutoff_energy = _cascade_param_row("Cutoff energy (eV):", 0.0, 1.0e9, 3.0)
+        self.spin_cutoff_energy.setToolTip(
+            "Energy below which a projectile is considered stopped. Not yet "
+            "consumed by the simulation backend (hardcoded to 3 eV there)."
+        )
 
         seed_row = QHBoxLayout()
         seed_row.addWidget(QLabel("RNG Seed:"))
@@ -637,6 +643,7 @@ class AdvancedOptionsPage(QWidget):
         self.spin_psi_min.valueChanged.connect(self._emit_mc_setup_advanced)
         self.spin_psi_min_surface.valueChanged.connect(self._emit_mc_setup_advanced)
         self.spin_de_min_surface.valueChanged.connect(self._emit_mc_setup_advanced)
+        self.spin_cutoff_energy.valueChanged.connect(self._emit_mc_setup_advanced)
         self.spin_nthreads.valueChanged.connect(self._emit_mc_setup_advanced)
         self.spin_rng_seed.valueChanged.connect(self._emit_mc_setup_advanced)
         self.spin_target_roughness.valueChanged.connect(self._emit_mc_setup_advanced)
@@ -702,6 +709,7 @@ class AdvancedOptionsPage(QWidget):
             self.mc_de_min_changed.emit(float(self.spin_de_min.value()))
             self.mc_psi_min_surface_changed.emit(float(self.spin_psi_min_surface.value()))
             self.mc_de_min_surface_changed.emit(float(self.spin_de_min_surface.value()))
+            self.mc_cutoff_energy_changed.emit(float(self.spin_cutoff_energy.value()))
             self.mc_nthreads_changed.emit(int(self.spin_nthreads.value()))
             self.mc_rng_seed_changed.emit(int(self.spin_rng_seed.value()))
             self.mc_target_roughness_changed.emit(float(self.spin_target_roughness.value()))
@@ -949,6 +957,7 @@ class AdvancedOptionsPage(QWidget):
             "de_min": float(self.spin_de_min.value()),
             "psi_min_surface": float(self.spin_psi_min_surface.value()),
             "de_min_surface": float(self.spin_de_min_surface.value()),
+            "cutoff_energy": float(self.spin_cutoff_energy.value()),
             "nthreads": int(self.spin_nthreads.value()),
             "target_roughness": float(self.spin_target_roughness.value()),
             "rng_seed": int(self.spin_rng_seed.value()),
@@ -1097,6 +1106,7 @@ class AdvancedOptionsPage(QWidget):
             ("de_min", self.spin_de_min),
             ("psi_min_surface", self.spin_psi_min_surface),
             ("de_min_surface", self.spin_de_min_surface),
+            ("cutoff_energy", self.spin_cutoff_energy),
         ):
             if key in payload:
                 try:

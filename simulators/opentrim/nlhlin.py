@@ -36,10 +36,10 @@ def get_coefs(Z1, Z2):
     if Z1 > Z2:
         Z1, Z2 = Z2, Z1
 
-    #fname = os.path.join(os.path.dirname(__file__), "dmol_coeffs_rmax.dat")
-    fname = os.path.join(os.path.dirname(__file__), "NLHlin_3eV.dat")
+    path = os.path.join(os.path.dirname(__file__), "../../data/NLHlin/")
+    fname = os.path.join(path, "NLHlin_3eV.dat")
     if not os.path.exists(fname):
-        print(f"get_nlhlin_coefs: Coefficients file {fname} not found")
+        print(f"nlhlin.get_coefs: Coefficients file {fname} not found")
         sys.exit()
     
     # Search for line with the correct Z1 and Z2, and read the coefficients
@@ -133,7 +133,7 @@ def impulse_integral(p, pot_coefs):
     def integrand(x, p):
         r = np.sqrt(x**2 + p**2)
         screen, dscreen = screen_fun(r, pot_coefs)
-        return (screen[0] - r*dscreen[0]) * p / r**3
+        return (screen - r*dscreen) * p / r**3
     
     xmax = np.sqrt(pot_coefs.rmax**2 - p**2) if p < pot_coefs.rmax else 0
     integral, abserr = quad(integrand, 0, xmax, args=(p,))
@@ -156,16 +156,17 @@ def screen_fun(r, pot_coefs):
         (float): derivative of NLHlin screening function at distance r
             (1/RNORM)
     """
-    r = np.asarray(r)
     a = pot_coefs.a[:3]
     b = pot_coefs.b[:3]
     c = pot_coefs.c
     d = pot_coefs.d
     rmax = pot_coefs.rmax
 
-    exp = np.exp(-np.outer(r, b))
-    screen = np.sum(a*exp, axis=1) + c - d*r/rmax
-    dscreen = - np.sum(a*b*exp, axis=1) - d/rmax
+    exp0 = np.exp(-b[0]*r)
+    exp1 = np.exp(-b[1]*r)
+    exp2 = np.exp(-b[2]*r)
+    screen = a[0]*exp0 + a[1]*exp1 + a[2]*exp2 + c - d*r/rmax
+    dscreen = - a[0]*b[0]*exp0 - a[1]*b[1]*exp1 - a[2]*b[2]*exp2 - d/rmax
 
     return screen, dscreen
 

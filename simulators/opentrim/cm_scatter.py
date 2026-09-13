@@ -18,6 +18,26 @@ ROOTS_LEGENDRE = roots_legendre(4)
 
 
 @jit(debug=config.DEBUG)
+def _integrands(u, e, p, r0, pot_model, pot_coefs):
+    if pot_model == "ZBL":
+        phi0, dphi0 = zbl.screen_fun(r0, pot_coefs)
+        phi, _ = zbl.screen_fun(r0/(1-u**2), pot_coefs)
+    else:
+        phi0, dphi0 = nlhlin.screen_fun(r0, pot_coefs)
+        phi, _ = nlhlin.screen_fun(r0/(1-u**2), pot_coefs)
+    chi = np.where(u < 3e-4, phi0 - r0*dphi0, (phi0 - phi*(1-u**2)) / u**2)
+    h = np.sqrt(r0/e*chi + p**2*(2-u**2))
+    integrand_theta = p / h
+    integrand_tau = (p**2 + r0/e * phi/(1-u**2)) / (h * (1 + u/r0*h))
+    return integrand_theta, integrand_tau
+
+
+@jit(debug=config.DEBUG)
+def _integrand_arccos_half(u):
+    return 1 / np.sqrt(2 - u**2)
+
+
+@jit(debug=config.DEBUG)
 def scatter_integrals(e, p, pot_model, pot_coefs):
     """Calculate scattering angle and time integral.
 
@@ -40,33 +60,14 @@ def scatter_integrals(e, p, pot_model, pot_coefs):
     
     r0, _ = get_apsis(e, p, pot_model, pot_coefs)
 
-    def calc_phi_chi(u):
-        if pot_model == "ZBL":
-            phi0, dphi0 = zbl.screen_fun(r0, pot_coefs)
-            phi, _ = zbl.screen_fun(r0/(1-u**2), pot_coefs)
-        else:
-            phi0, dphi0 = nlhlin.screen_fun(r0, pot_coefs)
-            phi, _ = nlhlin.screen_fun(r0/(1-u**2), pot_coefs)
-        chi = np.where(u < 3e-4, phi0 - r0*dphi0, (phi0 - phi*(1-u**2)) / u**2)
-        return phi, chi
-
-    def integrands(u):
-        phi, chi = calc_phi_chi(u)
-        h = np.sqrt(r0/e*chi + p**2*(2-u**2))
-        integrand_theta = p / h
-        integrand_tau = (p**2 + r0/e * phi/(1-u**2)) / (h * (1 + u/r0*h))
-        return integrand_theta, integrand_tau
-    
-    def integrand_arccos_half(u):
-        return 1 / np.sqrt(2 - u**2)
-
     rmax = pot_coefs.rmax
     umax = np.sqrt(1 - r0 / rmax)
     u_vals, weights = ROOTS_LEGENDRE
     u_vals = 0.5 * umax * (u_vals + 1)
     weights = 0.5 * umax * weights
-    integrand_theta_vals, integrand_tau_vals = integrands(u_vals)
-    arccos_num_half = np.sum(weights * integrand_arccos_half(u_vals))
+    integrand_theta_vals, integrand_tau_vals = _integrands(u_vals, e, p, r0, 
+                                                           pot_model, pot_coefs)
+    arccos_num_half = np.sum(weights * _integrand_arccos_half(u_vals))
     if rmax == np.inf:
         pi_minus_theta = (np.pi / arccos_num_half 
                           * np.sum(weights * integrand_theta_vals))
@@ -104,7 +105,7 @@ def get_apsis(e, p, pot_model, pot_coefs):
     rmax = pot_coefs.rmax
     
     # Initial condition: Assume r0 > r34
-    if rmax is np.inf:  # Use TRIM85 algorithm
+    if rmax == np.inf:  # Use TRIM85 algorithm (do not use "is" in the condition)
         r0 = max(1e-10, p)
         r0_try = -2.7 * np.log(e*r0)
         if r0_try > p:
@@ -140,7 +141,7 @@ def get_apsis(e, p, pot_model, pot_coefs):
             screen, dscreen = zbl.screen_fun(r, pot_coefs)
         else:
             screen, dscreen = nlhlin.screen_fun(r, pot_coefs)
-        return r - screen[0]/e - p**2/r, 1 - dscreen[0]/e + p**2/r**2
+        return r - screen/e - p**2/r, 1 - dscreen/e + p**2/r**2
     
     count = 0
     while abs(delta_r0) > 1e-3 * r0:

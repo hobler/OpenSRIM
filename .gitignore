@@ -148,3 +148,4 @@ rp_table*.txt
 *.blg
 *.toc
 *.synctex.gz
+doc/nuclear_scattering/nuclear_scattering.synctex.gz

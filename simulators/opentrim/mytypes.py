@@ -15,7 +15,10 @@ PROJ_DTYPE = np.dtype([
     ("is_inside", np.bool_),
     ("dist_surf", np.float64),
     ("is_on_beamside", np.bool_),
-    ("first_ffp", np.bool_)
+    ("first_ffp", np.bool_),
+    ("e_init", np.float64),
+    ("pos_init", np.float64, (3,)),
+    ("virtual", np.bool_),
 ], align=True)
 PROJ_NUMBA_DTYPE = from_dtype(PROJ_DTYPE)
 
@@ -59,6 +62,9 @@ if os.environ.get("NUMBA_DISABLE_JIT", "") == "1":
         rec["dist_surf"] = pos[0]
         rec["is_on_beamside"] = True
         rec["first_ffp"] = first_ffp
+        rec["e_init"] = e
+        rec["pos_init"] = pos    # copied
+        rec["virtual"] = False
         return rec
 else:
     @jit(inline = "always", debug=config.DEBUG)
@@ -98,5 +104,8 @@ else:
         rec["dist_surf"] = pos[0]
         rec["is_on_beamside"] = True
         rec["first_ffp"] = first_ffp
+        rec["e_init"] = e
+        rec["pos_init"] = pos    # copied
+        rec["virtual"] = False
         return rec
 

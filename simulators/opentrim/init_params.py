@@ -12,34 +12,6 @@ from . import nlhlin
 from . import zbl
 
 
-def _get_nlhlin_coefs(z1, z2):
-    """Get the coefficients for the NLHlin screening function.
-
-    Parameters:
-        z1: (int) atomic number of atom 1
-        z2: (int) atomic number of atom 2
-        
-    Returns:
-        a1, a2, a3: prefactors
-        b1, b2, b3: 1/screening lengths (1/A)
-        rmax: maximum range of the potential (A)
-    """
-    fname = os.path.join(os.path.dirname(__file__), "dmol_coeffs_rmax.dat")
-    if not os.path.exists(fname):
-        raise OSError(f"get_nlhlin_coefs: Coefficients file {fname} not found")
-    
-    with open(fname, "r") as f:
-        for line in f:
-            if line.startswith("#"):
-                continue
-            items = line.split()
-            if int(items[0]) == min(z1, z2) and int(items[1]) == max(z1, z2):
-                return [float(c) for c in items[2:-1]]
-    
-    raise ValueError(f"get_nlhlin_coefs: Coefficients for Z1={z1}, Z2={z2} "
-                     f"not found in {fname}")
-
-
 def _get_beam_params(input_params):
     """Get the beam parameters from the input parameters.
 
@@ -51,6 +23,7 @@ def _get_beam_params(input_params):
     """
     BEAM_PARAMS_DTYPE = np.dtype([
         ("ielem", np.int32),
+        ("_pad", np.int32),  # padding for alignment
         ("energy", np.float64),
         ("tilt", np.float64),
     ], align=True)
@@ -85,11 +58,14 @@ def _get_geometry_params(input_params):
 
     GEOMETRY_PARAMS_DTYPE = np.dtype([
         ("nlayers", np.int32),
+        ("_pad", np.int32),  # padding for alignment
+        ("roughness", np.float64),
         ("x_intf", np.float64, (NLAYERS+1,)),
     ], align=True)
 
     geometry_params = np.recarray(1, dtype=GEOMETRY_PARAMS_DTYPE)
     geometry_params[0].nlayers = nlayers
+    geometry_params[0].roughness = layers_params[0]["roughness"]
     geometry_params[0].x_intf = x_intf
 
     return geometry_params
@@ -164,6 +140,7 @@ def _get_elements_and_materials_params(input_params):
         ("symbol", "<U2"),
         ("name", "<U12"),
         ("Z", np.int32),
+        ("_pad", np.int32),  # padding for alignment
         ("M", np.float64),
         ("kd_KP", np.float64),  # Kinchin-Pease constant for damage formation
         ("fd_KP", np.float64),  # Kinchin-Pease constant for damage formation
@@ -188,6 +165,7 @@ def _get_elements_and_materials_params(input_params):
         ("compound_correction", np.float64),
         ("gas", bool),
         ("nelem_mat", np.int32),
+        ("_pad", np.int32),  # padding for alignment
         ("ielem", np.int32, (NELEM,)),
         ("ielem_mat", np.int32, (NELEM,)),
         ("atomic_fraction", np.float64, (NELEM,)),
@@ -398,8 +376,8 @@ def _get_cascade_params(input_params, nelem, elements_params, materials_params,
         ("pmax", np.float64, (NMAT,)),  # unused, obsolescent
         ("mean_free_path", np.float64, (NMAT,)),  # unused, obsolescent
         ("pmax_vals", np.float64, (NPMAX,)),
-        ("pmax_energies", np.float64, (NELEM, NMAT, NPMAX)),
-        ("pmax_energies_surface", np.float64, (NELEM, NMAT, NPMAX)),
+        ("pmax_energies_sq", np.float64, (NELEM, NMAT, NPMAX)),
+        ("pmax_energies_surface_sq", np.float64, (NELEM, NMAT, NPMAX)),
     ], align=True)
 
     cascade_params = np.recarray(1, dtype=CASCADE_PARAMS_DTYPE)
@@ -408,7 +386,7 @@ def _get_cascade_params(input_params, nelem, elements_params, materials_params,
     cascade_params[0].replacement_collisions = (
         input_params["cascade"]["replacement_collisions"])
     # TODO: get emin from input_params ("cutoff_energy")
-    cascade_params[0].emin = 5.0
+    cascade_params[0].emin = 3.0
     cascade_params[0].ed = 15.0
 
     densities = np.array([layer["density"] for layer in input_params["layer"]])
@@ -428,7 +406,6 @@ def _get_cascade_params(input_params, nelem, elements_params, materials_params,
     pmaxmin = max(pmaxmin, pmaxmax / NPMAX)
     pmax_vals = np.linspace(pmaxmin, pmaxmax, NPMAX)
     cascade_params[0].pmax_vals = pmax_vals[::-1]
-
 
     nmat = len(input_params["layer"])
 
@@ -457,25 +434,32 @@ def _get_cascade_params(input_params, nelem, elements_params, materials_params,
                             scatter_params[0].pot_coefs[ielem1, ielem2]
                         )
                     energy_psi = (14.39979 * z1 * z2 / rnorm * integral 
-                                  / psimin)
+                                  / np.radians(psimin))
                     energy_de = (m1/m2
                                  * (14.39979 * z1 * z2 / rnorm * integral)**2 
                                  / demin)
-                    pmax_energies[i] = max(pmax_energies[i], 
+                    pmax_energies[i] = max(pmax_energies[i],
                                            energy_psi, energy_de)
                     
                     energy_psi = (14.39979 * z1 * z2 / rnorm * integral 
-                                  / psimin_surface)
+                                  / np.radians(psimin_surface))
                     energy_de = (m1/m2
                                  * (14.39979 * z1 * z2 / rnorm * integral)**2 
                                  / demin_surface)
-                    pmax_energies_surface[i] = max(pmax_energies_surface[i], 
+                    pmax_energies_surface[i] = max(pmax_energies_surface[i],
                                                    energy_psi, energy_de)
 
-            cascade_params[0].pmax_energies[ielem1, imat] = (
-                pmax_energies[::-1])
-            cascade_params[0].pmax_energies_surface[ielem1, imat] = (
-                pmax_energies_surface[::-1])
+            #import matplotlib.pyplot as plt
+            #plt.semilogx(pmax_energies_surface, pmax_vals, label=f"imat={imat}, ielem1={ielem1}")
+            #plt.ylabel('Maximum Impact Parameter (Å)')
+            #plt.xlabel('Energy (eV)')
+            #plt.xlim(10, 1e7)
+            #plt.legend()
+            #plt.show()
+            cascade_params[0].pmax_energies_sq[ielem1, imat] = (
+                pmax_energies[::-1]**2)
+            cascade_params[0].pmax_energies_surface_sq[ielem1, imat] = (
+                pmax_energies_surface[::-1]**2)
 
     return cascade_params
 

@@ -50,18 +50,25 @@ def select_recoil(proj, recoil, params):
     
     # free flight path and impact parameter
     #pmax = params.cascade.pmax[ilayer]
-    if proj["is_inside"]:
-        pmax = np.interp(e, params.cascade.pmax_energies[ielem1, imat], 
-                         params.cascade.pmax_vals)
+    if proj["dist_surf"] < 10.0:
+        pmax = np.interp(
+            e**2, params.cascade.pmax_energies_surface_sq[ielem1, imat], 
+            params.cascade.pmax_vals
+            )
     else:
-        pmax = np.interp(e, params.cascade.pmax_energies_surface[ielem1, imat], 
-                         params.cascade.pmax_vals)
+        pmax = np.interp(
+            e**2, params.cascade.pmax_energies_sq[ielem1, imat], 
+            params.cascade.pmax_vals
+            )
 
     #free_path = params.cascade.mean_free_path[ilayer]
     free_path = 1 / (params.materials[imat].density * np.pi * pmax**2)
-    if proj["first_ffp"]:
-        free_path *= np.random.rand()
+    if False:  # determistic free flight path except first one (also recoil!)
+        if proj["first_ffp"]:
+            free_path *= np.random.rand()
         proj["first_ffp"] = False
+    else:      # statistical free flight path
+        free_path *= -np.log(np.random.rand())
 
     p = pmax * sqrt(np.random.rand())
     collision_pos = pos[:] + free_path * dir[:]
@@ -94,5 +101,7 @@ def select_recoil(proj, recoil, params):
     recoil["ilayer"] = get_layer_index(recoil["pos"], params)
     recoil["ielem"] = get_element_index(recoil, params)
     recoil["is_inside"] = is_inside_target(recoil["pos"], params)
+    recoil["pos_init"] = recoil["pos"]  # copied
+    recoil["virtual"] = proj["virtual"]  # copied
 
     return free_path, p, dirp[:]

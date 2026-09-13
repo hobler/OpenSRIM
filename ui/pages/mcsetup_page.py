@@ -166,6 +166,7 @@ class MCSetupPage(QWidget):
         self._scattering_algorithm = "Legendre"
         self._n_absc = 4
         self._electronic_stopping_model = "SRIM"
+        self._electronic_straggling = False
         self._loaded_model_correction: dict[str, float] = {}
         # NOTE: these cascade parameters are round-tripped through the UI and
         # the generated input TOML, but simulators/opentrim does not yet read
@@ -177,6 +178,7 @@ class MCSetupPage(QWidget):
         self._psi_min_surface = 5.0
         self._de_min_surface = 15.0
         self._replacement_collisions = False
+        self._top_layer_roughness = 0.0
         # Default to ~80% of logical cores so the UI stays responsive while a
         # simulation runs; remembered across restarts in mc_setup.toml.
         _cpu_count = os.cpu_count() or 1
@@ -199,6 +201,9 @@ class MCSetupPage(QWidget):
                 self._scattering_algorithm = str(_scatter.get("algorithm", self._scattering_algorithm))
                 self._n_absc = int(_scatter.get("n_absc", self._n_absc))
                 self._electronic_stopping_model = str(_model.get("electronic_stopping", self._electronic_stopping_model))
+                self._electronic_straggling = self._coerce_straggling(
+                    _model.get("electronic_straggling"), self._electronic_straggling
+                )
                 self._pmax_min = float(_cascade.get("pmax_min", self._pmax_min))
                 self._pmax_max = float(_cascade.get("pmax_max", self._pmax_max))
                 self._psi_min = float(_cascade.get("psi_min", self._psi_min))
@@ -206,6 +211,9 @@ class MCSetupPage(QWidget):
                 self._psi_min_surface = float(_cascade.get("psi_min_surface", self._psi_min_surface))
                 self._de_min_surface = float(_cascade.get("de_min_surface", self._de_min_surface))
                 self._replacement_collisions = bool(_cascade.get("replacement_collisions", self._replacement_collisions))
+                _layers = _defaults.get("layer") or []
+                if _layers and isinstance(_layers[0], dict):
+                    self._top_layer_roughness = float(_layers[0].get("roughness", self._top_layer_roughness))
             except Exception:
                 pass
 
@@ -369,6 +377,7 @@ class MCSetupPage(QWidget):
                 "density_unit": global_density_unit,
                 "compound_corr": (self.layers_table.item(row, 5).text() if self.layers_table.item(row, 5) else ""),
                 "gas": gas_checkbox.isChecked() if gas_checkbox else False,
+                "roughness": float(self._top_layer_roughness) if row == 0 else 0.0,
                 "elements": [
                     {
                         "Z": entry["element"]["number"],
@@ -389,6 +398,7 @@ class MCSetupPage(QWidget):
             "cascade": self.cascade_combo.currentText() if hasattr(self, "cascade_combo") else "",
             "nuclear_stopping": self.nuclear_stopping_combo.currentText() if hasattr(self, "nuclear_stopping_combo") else "",
             "electronic_stopping": self._electronic_stopping_model,
+            "electronic_straggling": bool(self._electronic_straggling),
             "simulator": self.simulator_combo.currentText() if hasattr(self, "simulator_combo") else "",
             "scattering_algorithm": self._scattering_algorithm,
             "n_absc": int(self._n_absc),
@@ -496,6 +506,10 @@ class MCSetupPage(QWidget):
             self.set_nthreads(int(simulation_meta.get("nthreads", self._nthreads)))
         except Exception:
             self._nthreads = int(simulation_meta.get("nthreads", self._nthreads))
+        try:
+            self.set_top_layer_roughness(float(simulation_meta.get("target_roughness", self._top_layer_roughness)))
+        except Exception:
+            self._top_layer_roughness = float(simulation_meta.get("target_roughness", self._top_layer_roughness))
         workdir = simulation_meta.get("workdir")
         if isinstance(workdir, str) and workdir:
             self._set_working_directory(workdir)
@@ -558,6 +572,8 @@ class MCSetupPage(QWidget):
                 if idx >= 0:
                     self.electronic_stopping_combo.setCurrentIndex(idx)
                 self.set_electronic_stopping_model(electronic)
+        if "electronic_straggling" in selection:
+            self.set_electronic_straggling(selection.get("electronic_straggling"))
 
         if hasattr(self, "simulator_combo"):
             simulator = selection.get("simulator")
@@ -600,12 +616,19 @@ class MCSetupPage(QWidget):
             if hasattr(self, attr) and key in output:
                 getattr(self, attr).setChecked(bool(output.get(key)))
 
+        histogram_settings = payload.get("histogram_settings")
+        if isinstance(histogram_settings, dict):
+            current = self.get_histogram_default_settings()
+            current.update(histogram_settings)
+            self.set_histogram_settings(current)
 
     def _apply_layer_data(self, row: int, data: dict):
         for col, key in enumerate(["name", "width", None, "density", "compound_corr"], start=1):
             if key is None:
                 continue
             self.layers_table.setItem(row, col, QTableWidgetItem(str(data.get(key, ""))))
+            if key == "density":
+                self._density_user_override.add(row)
 
         # Apply global width unit from first layer's data (done once in apply_simulation_config).
         # No per-row unit widget needed anymore.
@@ -621,6 +644,15 @@ class MCSetupPage(QWidget):
             element = self.state.elements_by_number.get(int(number)) if number else None
             if not element:
                 continue
+            element = dict(element)
+            if entry.get("symbol"):
+                element["symbol"] = entry.get("symbol")
+            if entry.get("name"):
+                element["name"] = entry.get("name")
+            if number:
+                element["number"] = int(number)
+            if entry.get("mass") is not None:
+                element["atomic_mass"] = entry.get("mass")
             overrides = {k: entry.get(k) for k in ("damage", "disp", "latt", "surf")}
             self._add_element_to_layer(row, element, entry.get("ratio", 0.0), overrides=overrides, refresh=False)
 
@@ -783,6 +815,9 @@ class MCSetupPage(QWidget):
         title_lbl.setStyleSheet("font-weight: 600;")
         header_l.addWidget(title_lbl)
         header_l.addWidget(self._hint_btn("target_layers", parent=header))
+        layer_settings_btn = AdvancedSettingsButton("Open target layer advanced options", header)
+        layer_settings_btn.clicked.connect(lambda: self.advanced_requested.emit("target_layers"))
+        header_l.addWidget(layer_settings_btn)
         header_l.addStretch(1)
         v.addWidget(header)
 
@@ -1068,7 +1103,7 @@ class MCSetupPage(QWidget):
             else:
                 defaults = self._get_default_energy_params(entry["element"])
                 for key in ("damage", "disp", "latt", "surf"):
-                    entry[key] = defaults[key]
+                    entry.setdefault(key, defaults[key])
 
     def _handle_layer_selection_changed(self):
         self._refresh_element_table()
@@ -1220,6 +1255,16 @@ class MCSetupPage(QWidget):
         grid.addWidget(sep, 0, 1, 2, 1)
 
         self.cascade_combo, _cascade_w = _combo_with_gear(["Ions only", "Full cascade"], "cascade_options")
+        # This combo and Advanced Options' "Follow recoils" checkbox both
+        # control follow_recoils; keep them in sync in both directions so a
+        # change here is actually reflected in the written input.toml.
+        # Also align the combo's initial text with the already-loaded
+        # self._follow_recoils, since QComboBox defaults to its first item
+        # ("Ions only") regardless of that value.
+        self.cascade_combo.setCurrentText("Full cascade" if self._follow_recoils else "Ions only")
+        self.cascade_combo.currentTextChanged.connect(
+            lambda text: self.set_follow_recoils(text == "Full cascade")
+        )
         grid.addWidget(_cascade_w, 1, 2, Qt.AlignmentFlag.AlignLeft)
 
         self.nuclear_stopping_combo, _nuclear_w = _combo_with_gear(["ZBL", "NLHlin"], "nuclear_stopping")
@@ -1591,6 +1636,7 @@ class MCSetupPage(QWidget):
                 "density_unit": "g/cm³",
                 "compound_corr": layer.get("compound_correction", 1.0),
                 "gas": layer.get("gas", False),
+                "roughness": layer.get("roughness", 0.0),
                 "elements": elements,
             })
 
@@ -1630,12 +1676,14 @@ class MCSetupPage(QWidget):
                 "psi_min_surface": (params.get("cascade") or {}).get("psi_min_surface", 5.0),
                 "de_min_surface": (params.get("cascade") or {}).get("de_min_surface", 15.0),
                 "replacement_collisions": (params.get("cascade") or {}).get("replacement_collisions", False),
+                "target_roughness": payload_layers[0].get("roughness", 0.0) if payload_layers else 0.0,
             },
             "layers": payload_layers,
             "selection": {
                 "cascade": "Full cascade" if bool(simulation.get("follow_recoils", True)) else "Ions only",
                 "nuclear_stopping": models.get("potential", "ZBL"),
                 "electronic_stopping": models.get("electronic_stopping", "SRIM"),
+                "electronic_straggling": self._coerce_straggling(models.get("electronic_straggling")),
                 "simulator": "OpenTRIM",
                 "scattering_algorithm": (models.get("scattering_integrals") or {}).get("algorithm", "Legendre"),
                 "n_absc": (models.get("scattering_integrals") or {}).get("n_absc", 4),
@@ -1661,8 +1709,53 @@ class MCSetupPage(QWidget):
                 "transmitted_energy": bool((output.get("transmitted_atoms") or {}).get("energy", {}).get("score", False)),
                 "transmitted_angle": bool((output.get("transmitted_atoms") or {}).get("angle", {}).get("score", False)),
             },
+            "histogram_settings": self._histogram_settings_from_output(output),
         }
         return payload
+
+    @staticmethod
+    def _section_value(output: dict, group: str, name: str, key: str, default):
+        section = (output.get(group) or {}).get(name) if isinstance(output, dict) else None
+        if not isinstance(section, dict):
+            return default
+        return section.get(key, default)
+
+    def _histogram_settings_from_output(self, output: dict) -> dict:
+        """Extract shared histogram controls from OpenTRIM output tables."""
+        if not isinstance(output, dict):
+            return {}
+
+        settings: dict = {"enabled": False}
+        nbins = self._section_value(output, "depth_distribution", "ion_recoils", "nbins", None)
+        if nbins is not None:
+            try:
+                settings["nbins"] = int(nbins)
+                settings["enabled"] = True
+            except (TypeError, ValueError):
+                pass
+
+        def _pair(limits) -> tuple[float, float] | None:
+            if not isinstance(limits, (list, tuple)) or len(limits) != 2:
+                return None
+            try:
+                return float(limits[0]), float(limits[1])
+            except (TypeError, ValueError):
+                return None
+
+        for limits, min_key, max_key, scale in (
+            (self._section_value(output, "depth_distribution", "ion_recoils", "limits", None), "depth_min", "depth_max", 1.0),
+            (self._section_value(output, "lateral_distribution", "ion_recoils", "limits", None), "lateral_min", "lateral_max", 1.0),
+            (self._section_value(output, "backscattered_atoms", "energy", "limits", None), "energy_min", "energy_max", 1.0 / 1000.0),
+            (self._section_value(output, "backscattered_atoms", "angle", "limits", None), "angle_min", "angle_max", 1.0),
+        ):
+            pair = _pair(limits)
+            if pair is None:
+                continue
+            settings[min_key] = pair[0] * scale
+            settings[max_key] = pair[1] * scale
+            settings["enabled"] = True
+
+        return settings
 
     def load_toml_from_path(self, path: str | Path) -> None:
         toml_path = Path(path)
@@ -1676,8 +1769,15 @@ class MCSetupPage(QWidget):
             return
 
         payload = self._raw_toml_to_payload(params)
+        # workdir is not taken from the file anymore: derive it from the
+        # location of the loaded input.toml. Old files that still carry a
+        # workdir key remain loadable; their stored value is simply ignored.
+        if isinstance(payload.get("simulation"), dict):
+            payload["simulation"].pop("workdir", None)
         self.apply_simulation_config(payload)
         self._current_toml_path = toml_path
+        if toml_path.parent:
+            self._set_working_directory(str(toml_path.parent))
         self.state.remember_dialog_path(toml_path)
         self.add_log_entry(f"Loaded TOML configuration from: {toml_path}")
 
@@ -1884,15 +1984,10 @@ class MCSetupPage(QWidget):
                                     elements: list[dict] | None = None) -> float:
         """Convert density to atoms/Å³ which OpenTRIM expects.
 
-        First tries using the material_densities table (most reliable).
-        Falls back to converting the user-entered value."""
-        # Prefer table density
-        if elements:
-            table_d = self._density_from_table(elements)
-            if table_d is not None:
-                return table_d
-
-        # Fallback: convert manually entered value
+        The displayed density value is authoritative. Newly-added layers are
+        auto-filled from material_densities.csv elsewhere, but loaded or edited
+        values must survive a Load -> Save roundtrip unchanged.
+        """
         if unit == "atoms/cm³":
             return value * 1e-24
         if unit == "kg/m³":
@@ -1951,6 +2046,7 @@ class MCSetupPage(QWidget):
             "follow_recoils": bool(self._follow_recoils),
             "rng_seed": int(self._rng_seed),
             "electronic_stopping": str(self._electronic_stopping_model),
+            "electronic_straggling": bool(self._electronic_straggling),
             "scattering_algorithm": str(self._scattering_algorithm),
             "n_absc": int(self._n_absc),
             "lindhard_correction": dict(self._loaded_model_correction),
@@ -1962,6 +2058,7 @@ class MCSetupPage(QWidget):
             "de_min_surface": float(self._de_min_surface),
             "replacement_collisions": bool(self._replacement_collisions),
             "nthreads": int(self._nthreads),
+            "target_roughness": float(self._top_layer_roughness),
         })
 
     def get_advanced_simulation_settings(self) -> dict:
@@ -1969,6 +2066,7 @@ class MCSetupPage(QWidget):
             "follow_recoils": bool(self._follow_recoils),
             "rng_seed": int(self._rng_seed),
             "electronic_stopping": str(self._electronic_stopping_model),
+            "electronic_straggling": bool(self._electronic_straggling),
             "scattering_algorithm": str(self._scattering_algorithm),
             "n_absc": int(self._n_absc),
             "lindhard_correction": dict(self._loaded_model_correction),
@@ -1980,10 +2078,17 @@ class MCSetupPage(QWidget):
             "de_min_surface": float(self._de_min_surface),
             "replacement_collisions": bool(self._replacement_collisions),
             "nthreads": int(self._nthreads),
+            "target_roughness": float(self._top_layer_roughness),
         }
 
     def set_follow_recoils(self, value: bool) -> None:
         self._follow_recoils = bool(value)
+        if hasattr(self, "cascade_combo"):
+            wanted = "Full cascade" if self._follow_recoils else "Ions only"
+            if self.cascade_combo.currentText() != wanted:
+                self.cascade_combo.blockSignals(True)
+                self.cascade_combo.setCurrentText(wanted)
+                self.cascade_combo.blockSignals(False)
         self._emit_advanced_simulation_settings()
 
     def set_rng_seed(self, value: int) -> None:
@@ -2001,6 +2106,31 @@ class MCSetupPage(QWidget):
     def set_electronic_stopping_model(self, value: str) -> None:
         if value in {"SRIM", "Lindhard"}:
             self._electronic_stopping_model = value
+        self._emit_advanced_simulation_settings()
+
+    @staticmethod
+    def _coerce_straggling(value, default: bool = False) -> bool:
+        """Normalise a TOML value for models.electronic_straggling to a bool.
+
+        Accepts plain booleans as well as legacy string values that older
+        input files may still carry (e.g. "Bohr"/"Off", "true"/"false").
+        Anything unrecognised falls back to *default*.
+        """
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return default
+        text = str(value).strip().lower()
+        if text in ("", "off", "none", "false", "0", "no"):
+            return False
+        if text in ("bohr", "chu", "yang", "true", "1", "on", "yes"):
+            return True
+        return default
+
+    def set_electronic_straggling(self, value) -> None:
+        self._electronic_straggling = self._coerce_straggling(
+            value, self._electronic_straggling
+        )
         self._emit_advanced_simulation_settings()
 
     def set_n_absc(self, value: int) -> None:
@@ -2068,6 +2198,13 @@ class MCSetupPage(QWidget):
             pass
         self._emit_advanced_simulation_settings()
 
+    def set_top_layer_roughness(self, value: float) -> None:
+        try:
+            self._top_layer_roughness = max(0.0, float(value))
+        except (TypeError, ValueError):
+            self._top_layer_roughness = 0.0
+        self._emit_advanced_simulation_settings()
+
     def set_lindhard_correction(self, value: dict) -> None:
         if not isinstance(value, dict):
             return
@@ -2108,7 +2245,9 @@ class MCSetupPage(QWidget):
             f"rng_seed = {simulation.get('rng_seed', 12345)}",
             # NOTE: not yet consumed by simulators/opentrim (pending backend work).
             f"nthreads = {int(self._nthreads)}",
-            f'workdir = "{results_dir}"',
+            # workdir is intentionally not written: it is derived from the
+            # location of this input.toml (see read_params) / the current
+            # project context, not persisted in the file.
             "",
             "[beam]",
             f'symbol = "{ion["symbol"]}"',
@@ -2121,7 +2260,7 @@ class MCSetupPage(QWidget):
         ]
 
         total_width = 0.0
-        for layer in layers:
+        for layer_index, layer in enumerate(layers):
             try:
                 w_raw = float(layer["width"])
             except (TypeError, ValueError):
@@ -2148,8 +2287,10 @@ class MCSetupPage(QWidget):
                 f"density = {d_val}",
                 f"compound_correction = {cc}",
                 f"gas = {'true' if layer.get('gas') else 'false'}",
-                "",
             ]
+            if layer_index == 0:
+                lines.append(f"roughness = {float(layer.get('roughness', self._top_layer_roughness) or 0.0)}")
+            lines.append("")
             for elem in layer.get("elements", []):
                 try:
                     disp_e = float(elem.get("disp", 25.0))
@@ -2179,10 +2320,13 @@ class MCSetupPage(QWidget):
         # Models
         potential = sel.get("nuclear_stopping", "ZBL")
         estop = sel.get("electronic_stopping", "SRIM")
+        estraggle = self._coerce_straggling(sel.get("electronic_straggling"))
+        estraggle_toml = "true" if estraggle else "false"
         lines += [
             "[models]",
             f'potential = "{potential}"',
             f'electronic_stopping = "{estop}"',
+            f"electronic_straggling = {estraggle_toml}",
             "",
             "[models.scattering_integrals]",
             f'algorithm = "{sel.get("scattering_algorithm", "Legendre")}"',
@@ -2319,14 +2463,14 @@ class MCSetupPage(QWidget):
             "",
         ]
 
-        # 2D distributions: enable scoring when the dedicated 2D checkbox is
-        # set, or when either the depth or lateral 1D variant of the same
-        # physical quantity is enabled. The simulator requires these sections
-        # to exist; missing them raises KeyError in init_stats. Limits combine
-        # the 1D depth/lateral limits.
-        score_2d_ir   = bool(out.get('dist2d_ion_recoil') or out.get('range_ion_recoil')  or out.get('lateral_ion_recoil'))
-        score_2d_ned  = bool(out.get('dist2d_phonons')    or out.get('range_phonons')     or out.get('lateral_phonons'))
-        score_2d_eed  = bool(out.get('dist2d_ionization') or out.get('range_ionization')  or out.get('lateral_ionization'))
+        # 2D distributions: scoring follows only the dedicated 2D checkbox.
+        # The [output.distribution_2d.*] sections themselves are always
+        # written below (the simulator requires them to exist), independent
+        # of "score" -- so there is no need to force score=true just because
+        # a 1D depth/lateral checkbox for the same quantity happens to be on.
+        score_2d_ir   = bool(out.get('dist2d_ion_recoil'))
+        score_2d_ned  = bool(out.get('dist2d_phonons'))
+        score_2d_eed  = bool(out.get('dist2d_ionization'))
         lines += [
             "[output.distribution_2d.ion_recoils]",
             f"score = {'true' if score_2d_ir else 'false'}",

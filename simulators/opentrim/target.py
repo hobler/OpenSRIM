@@ -20,6 +20,10 @@ from numba import jit
 def is_inside_target(pos, params):
     """Check if a given position is inside the target.
 
+    If the position is within roughness of the top surface, the result is 
+    determined by a random number. The probability of being inside is 
+    proportional to the distance from the surface.
+
     Parameters:
         pos (ndarray): Position to check (size 3)
         params (PARAMS_DTYPE): Simulation parameters
@@ -27,6 +31,15 @@ def is_inside_target(pos, params):
     Returns:
         (bool): True if the position is inside the target, False otherwise
     """
+    if pos[0] < params.geometry.x_intf[0]:
+        return False
+    elif pos[0] < params.geometry.x_intf[0] + params.geometry.roughness:
+        dist_surf = pos[0] - params.geometry.x_intf[0]
+        return dist_surf > params.geometry.roughness * np.random.rand()
+    elif pos[0] > params.geometry.x_intf[params.geometry.nlayers]:
+        return False
+    else:
+        return True
     return (params.geometry.x_intf[0] <= pos[0] 
             <= params.geometry.x_intf[params.geometry.nlayers])
 
@@ -77,8 +90,15 @@ def check_exit_and_move(proj, free_path, params):
 
     if dist_surf < -params.cascade.pmax_max:
         # edge of surface layer reached
-        factor = ((-params.cascade.pmax_max - proj["dist_surf"]) 
-                  / (dist_surf - proj["dist_surf"]))
+        if is_on_beamside == proj["is_on_beamside"]:  # common case
+            factor = ((-params.cascade.pmax_max - proj["dist_surf"]) 
+                      / (dist_surf - proj["dist_surf"]))
+        else:  # do it the long way
+            pos_plane = (params.geometry.x_intf[0] - params.cascade.pmax_max 
+                         if is_on_beamside 
+                         else params.geometry.x_intf[params.geometry.nlayers] 
+                              + params.cascade.pmax_max)
+            factor = (pos_plane - proj["pos"][0]) / (pos_new[0] - proj["pos"][0])
         proj["pos"] += factor * free_path * proj["dir"]
         proj["dist_surf"] = -params.cascade.pmax_max
         proj["is_on_beamside"] = is_on_beamside
@@ -94,10 +114,12 @@ def check_exit_and_move(proj, free_path, params):
         e_surf = params.materials[imat].esurf[ielem_mat]
         if e_perp > e_surf:
             # refraction
-            cos_beta = np.sqrt((e_perp - e_surf) / (proj["e"] - e_perp))
+            cos_beta = np.sqrt((e_perp - e_surf) / (proj["e"] - e_surf))
             sin_beta = np.sqrt(1.0 - cos_beta**2)
             proj["dir"][0] = np.sign(proj["dir"][0]) * cos_beta
-            proj["dir"][1:] *= sin_beta / np.linalg.norm(proj["dir"][1:])
+            len_dirxy = np.linalg.norm(proj["dir"][1:])
+            if len_dirxy > 0:
+                proj["dir"][1:] *= sin_beta / len_dirxy
             proj["e"] -= e_surf
             #print("exiting check_exit_and_move (refract)...")
             return True

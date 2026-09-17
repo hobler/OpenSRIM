@@ -390,6 +390,48 @@ def compare_pmax(t_min, psi_min, psi_avg, Z1, Z2, screen_fun):
         plt.tight_layout()
         plt.show()
 
+    # Same plot without ZBL results
+    # psi_avg
+    pmaxmax_psi_avg_vals = np.full_like(e_vals, 0.5642*N**(-1/3))
+    plt.plot(e_vals, np.minimum(pmaxmax_psi_avg_vals, pmax_psi_avg_vals), 
+            'C1', label=r'$\psi_{avg}$=' + r'5.78$\degree$ (+cutoff)')
+    plt.plot(e_vals, pmaxmax_psi_avg_vals, 'C1:')
+    plt.plot(e_vals, pmax_psi_avg_vals, 'C1:') 
+
+    # psi_min
+    plt.plot(e_psi_min_vals, pmax_vals, 'C3',
+            label=r'$\psi_\mathrm{min}$=' + fr'{psi_min}$\degree$')
+
+    # de_min
+    plt.plot(e_de_min_vals, pmax_vals, 'C2',
+            label=r'$T_\mathrm{min}$=' + f'{t_min} eV')
+
+    # psi_avg + de_min
+    pmaxmax_de_vals = np.full_like(e_vals, 1.2407*N**(-1/3))
+    pmax_de_min_vals_interp = np.interp(np.log(e_vals), 
+                                        np.log(e_de_min_vals[::-1]), 
+                                        pmax_vals[::-1])
+    plt.plot(e_vals, np.maximum(
+        np.minimum(pmaxmax_psi_avg_vals, pmax_psi_avg_vals), 
+        pmax_de_min_vals_interp), 
+        'k--', lw=2, 
+        label=r'combining $\psi_\mathrm{avg}$ and $T_\mathrm{min}$')
+
+    # psi_min + de_min
+    plt.plot(np.maximum(e_psi_min_vals, e_de_min_vals), pmax_vals, 'k', 
+            lw=2, label=r'combining $\psi_\mathrm{min}$ and $T_\mathrm{min}$') 
+
+    plt.xlim(1e1, 1e7)
+    plt.xscale('log')
+    plt.xlabel(r'Energy $E$ (eV)')
+    plt.ylim(0, 3)
+    plt.ylabel(r'Maximum impact parameter $p_\mathrm{max}$ ($\rm\AA$)')
+    plt.title(rf'{screen_fun.name} potential, {atom[Z1]} in {atom[Z2]}',
+            fontsize='medium')
+    plt.legend(loc='upper right', fontsize='small')
+    plt.tight_layout()
+    plt.show()
+
 
 def compare_theta_and_tau(screen_fun):
     """Compare scattering angle and time integral between MD and numerical."""
@@ -462,10 +504,10 @@ def compare_theta_and_tau(screen_fun):
 
 if __name__ == "__main__":
     setup(n_absc=4)
-    Z1 = 5
+    Z1 = 15
     Z2 = 14
-    screen_fun = ZBL_screen(Z1, Z2)
-    #screen_fun = NLHlin_screen(Z1, Z2) #, rnorm=1.0)
+    #screen_fun = ZBL_screen(Z1, Z2)
+    screen_fun = NLHlin_screen(Z1, Z2) #, rnorm=1.0)
     
     #plot_psi_and_de(e=3000, Z1=Z1, Z2=Z2, screen_fun=screen_fun)
     #plot_avg_and_min_psi(psi_avg=5.0, Z1=Z1, Z2=Z2, screen_fun=screen_fun)

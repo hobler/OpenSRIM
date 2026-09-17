@@ -482,7 +482,7 @@ def _get_cascade_params(input_params, nelem, elements_params, materials_params,
 
     nmat = len(input_params["layer"])
 
-    use_psi_avg = True  # TODO: get from input_params["cascade"]["use_psi_avg"]
+    use_psi_avg = False  # TODO: get from input_params["cascade"]["use_psi_avg"]
 
     for ielem1 in range(nelem):
         z1 = elements_params[ielem1].Z
@@ -534,10 +534,10 @@ def _get_cascade_params(input_params, nelem, elements_params, materials_params,
                     else:
                         energy_psi = (14.39979 * z1 * z2 / rnorm * integral 
                                       / np.radians(psimin))
-                    energy_de = 0.0  # for testing
-                    #energy_de = (m1/m2
-                    #             * (14.39979 * z1 * z2 / rnorm * integral)**2 
-                    #             / demin)
+                    #energy_de = 0.0  # for testing
+                    energy_de = (m1/m2
+                                 * (14.39979 * z1 * z2 / rnorm * integral)**2 
+                                 / demin)
                     pmax_energies[i] = max(pmax_energies[i],
                                            energy_psi, energy_de)
                     
@@ -551,24 +551,25 @@ def _get_cascade_params(input_params, nelem, elements_params, materials_params,
                     else:
                         energy_psi = (14.39979 * z1 * z2 / rnorm * integral 
                                       / np.radians(psimin_surface))
-                    energy_de = 0.0  # for testing
-                    #energy_de = (m1/m2
-                    #             * (14.39979 * z1 * z2 / rnorm * integral)**2 
-                    #             / demin_surface)
+                    #energy_de = 0.0  # for testing
+                    energy_de = (m1/m2
+                                 * (14.39979 * z1 * z2 / rnorm * integral)**2 
+                                 / demin_surface)
                     pmax_energies_surface[i] = max(pmax_energies_surface[i],
                                                    energy_psi, energy_de)
                     e = pmax_energies[i]
-                    print(pmax, e, np.sqrt(m2/m1 * sn(e) / (np.pi*e)) / np.radians(psimin))
+                    #if use_psi_avg:
+                    #    print(pmax, e, np.sqrt(m2/m1 * sn(e) / (np.pi*e)) / np.radians(psimin))
 
             pmax_energies[-1] = 0.0
             pmax_energies_surface[-1] = 0.0
-            import matplotlib.pyplot as plt
-            plt.semilogx(pmax_energies, pmax_vals, label=f"imat={imat}, ielem1={ielem1}")
-            plt.ylabel('Maximum Impact Parameter (Å)')
-            plt.xlabel('Energy (eV)')
-            plt.xlim(10, 1e7)
-            plt.legend()
-            plt.show()
+            #import matplotlib.pyplot as plt
+            #plt.semilogx(pmax_energies, pmax_vals, label=f"imat={imat}, ielem1={ielem1}")
+            #plt.ylabel('Maximum Impact Parameter (Å)')
+            #plt.xlabel('Energy (eV)')
+            #plt.xlim(10, 1e7)
+            #plt.legend()
+            #plt.show()
             cascade_params[0].pmax_energies_sq[ielem1, imat] = (
                 pmax_energies[::-1]**2)
             cascade_params[0].pmax_energies_surface_sq[ielem1, imat] = (

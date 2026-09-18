@@ -356,6 +356,79 @@ def _get_scatter_params(input_params, nelem, elements_params):
     return scatter_params
 
 
+class _Sn:
+    """Defines the nuclear stopping cross section.
+    """
+    def __init__(self, Z1, Z2, M1, M2, zbl=False, krc=False):
+        """Setup nuclear stopping cross section for given atomic numbers.
+
+        Parameters:
+            Z1: atomic number of atom 1
+            Z2: atomic number of atom 2
+            M1: mass of atom 1 (amu)
+            M2: mass of atom 2 (amu)
+            zbl: whether to use ZBL screening function for nuclear stopping.
+            krc: whether to use the KRC screening function for nuclear stopping.
+        """
+        self.Z1 = min(Z1, Z2)
+        self.Z2 = max(Z1, Z2)
+        self.M1 = M1
+        self.M2 = M2
+
+        path = os.path.join(os.path.dirname(__file__), 
+                            '../../data/nuclear_scattering')
+        if zbl:
+            fname = os.path.join(path, "zbl/sn_fit_params_zbl.txt")
+            a, b, c, d, *_ = np.loadtxt(fname, unpack=True)
+            self.a = a
+            self.b = b
+            self.c = c
+            self.d = d
+            p1 = 0.23
+            p2 = 1
+        elif krc:
+            fname = os.path.join(path, f"krc/sn_fit_params_krc.txt")
+            a, b, c, d, *_ = np.loadtxt(fname, unpack=True)
+            self.a = a
+            self.b = b
+            self.c = c
+            self.d = d
+            p1 = 0.5
+            p2 = 2/3
+        else:
+            fname = os.path.join(path, f"nlhlin/sn_fit_params_nlhlin.txt")
+            Z1_, Z2_, a, b, c, d, *_ = np.loadtxt(fname, unpack=True)
+            idx = np.where((Z1_ == self.Z1) & (Z2_ == self.Z2))[0][0]
+            self.a = a[idx]
+            self.b = b[idx]
+            self.c = c[idx]
+            self.d = d[idx]
+            p1 = 0.5
+            p2 = 0.5
+        #print(f'{Z1=}, {Z2=}:', self.a, self.b, self.c, self.d)
+        self.rnorm = 0.4685 / (self.Z1**p1 + self.Z2**p1)**p2
+        self.enorm = (M1+M2)/M2 * 14.4 * self.Z1 * self.Z2 / self.rnorm
+    
+    def __call__(self, e):
+        """Calculate the nuclear stopping cross section.
+
+        Parameters:
+            e (float): energy of projectile (eV)
+
+        Returns:
+            (float): nuclear stopping cross section (eV A^2)
+        """
+        e_norm = e / self.enorm
+
+        def sn_fit_func(eps, a, b, c, d):
+            return np.log(1 + a*eps) / (2*(eps + b*eps**c + d*eps**0.5))
+
+        sn_norm = sn_fit_func(e_norm, self.a, self.b, self.c, self.d)
+        sn = (4 * np.pi * self.M1 / (self.M1 + self.M2)
+              * self.Z1 * self.Z2 * 14.4 * self.rnorm) * sn_norm
+        return sn
+
+
 def _get_cascade_params(input_params, nelem, elements_params, materials_params,
                         scatter_params):
     """Get the cascade parameters from the input parameters.
@@ -409,6 +482,8 @@ def _get_cascade_params(input_params, nelem, elements_params, materials_params,
 
     nmat = len(input_params["layer"])
 
+    use_psi_avg = False  # TODO: get from input_params["cascade"]["use_psi_avg"]
+
     for ielem1 in range(nelem):
         z1 = elements_params[ielem1].Z
         m1 = elements_params[ielem1].M
@@ -422,6 +497,22 @@ def _get_cascade_params(input_params, nelem, elements_params, materials_params,
                 z2 = elements_params[ielem2].Z
                 m2 = elements_params[ielem2].M
                 rnorm = scatter_params[0].rnorm[ielem1, ielem2]
+                if use_psi_avg:
+                    from scipy.optimize import bisect
+                    sn = _Sn(z1, z2, m1, m2, 
+                                zbl=scatter_params[0].pot_model=="ZBL")
+                    def func(e, pmax, psiavg):
+                        return sn(e) - m1/m2 * np.pi*pmax**2 * e * np.radians(psiavg)**2
+                    # bracket for root finding
+                    pmax_bracket = [
+                        np.sqrt(m2/m1 * sn(10.0) / (np.pi*10.0)) / np.radians(psimin),
+                        np.sqrt(m2/m1 * sn(1e7) / (np.pi*1e7)) / np.radians(psimin)
+                        ]
+                    print(pmax_bracket)
+                    pmax_bracket_surface = [
+                        np.sqrt(m2/m1 * sn(10.0) / (np.pi*10.0)) / np.radians(psimin_surface),
+                        np.sqrt(m2/m1 * sn(1e7) / (np.pi*1e7)) / np.radians(psimin_surface)
+                        ]
                 for i, pmax in enumerate(pmax_vals):
                     if scatter_params[0].pot_model == "NLHlin":
                         integral = nlhlin.impulse_integral(
@@ -433,24 +524,47 @@ def _get_cascade_params(input_params, nelem, elements_params, materials_params,
                             pmax/rnorm, 
                             scatter_params[0].pot_coefs[ielem1, ielem2]
                         )
-                    energy_psi = (14.39979 * z1 * z2 / rnorm * integral 
-                                  / np.radians(psimin))
+                    if use_psi_avg:
+                        if pmax > pmax_bracket[0]:
+                            energy_psi = 0.0
+                        elif pmax < pmax_bracket[1]:
+                            energy_psi = 1e7
+                        else:
+                            energy_psi = bisect(func, 10.0, 1e7, args=(pmax, psimin))
+                    else:
+                        energy_psi = (14.39979 * z1 * z2 / rnorm * integral 
+                                      / np.radians(psimin))
+                    #energy_de = 0.0  # for testing
                     energy_de = (m1/m2
                                  * (14.39979 * z1 * z2 / rnorm * integral)**2 
                                  / demin)
                     pmax_energies[i] = max(pmax_energies[i],
                                            energy_psi, energy_de)
                     
-                    energy_psi = (14.39979 * z1 * z2 / rnorm * integral 
-                                  / np.radians(psimin_surface))
+                    if use_psi_avg:
+                        if pmax > pmax_bracket_surface[0]:
+                            energy_psi = 0.0
+                        elif pmax < pmax_bracket_surface[1]:
+                            energy_psi = 1e7
+                        else:
+                            energy_psi = bisect(func, 10.0, 1e7, args=(pmax, psimin_surface))
+                    else:
+                        energy_psi = (14.39979 * z1 * z2 / rnorm * integral 
+                                      / np.radians(psimin_surface))
+                    #energy_de = 0.0  # for testing
                     energy_de = (m1/m2
                                  * (14.39979 * z1 * z2 / rnorm * integral)**2 
                                  / demin_surface)
                     pmax_energies_surface[i] = max(pmax_energies_surface[i],
                                                    energy_psi, energy_de)
+                    e = pmax_energies[i]
+                    #if use_psi_avg:
+                    #    print(pmax, e, np.sqrt(m2/m1 * sn(e) / (np.pi*e)) / np.radians(psimin))
 
+            pmax_energies[-1] = 0.0
+            pmax_energies_surface[-1] = 0.0
             #import matplotlib.pyplot as plt
-            #plt.semilogx(pmax_energies_surface, pmax_vals, label=f"imat={imat}, ielem1={ielem1}")
+            #plt.semilogx(pmax_energies, pmax_vals, label=f"imat={imat}, ielem1={ielem1}")
             #plt.ylabel('Maximum Impact Parameter (Å)')
             #plt.xlabel('Energy (eV)')
             #plt.xlim(10, 1e7)

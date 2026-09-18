@@ -3,9 +3,11 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 plt.rcParams.update({'font.size': 14})
+from krc import KrC_screen
 from zbl import ZBL_screen
 from nlhlin import NLHlin_screen
 from cm_scatter import setup, scatter_integrals
+from rp import Sn
 from utils import atom, ask_if_save
 
 
@@ -175,6 +177,262 @@ def plot_psi_and_de(e, Z1, Z2, screen_fun):
         print(f"Saved figure to {fname}")
 
 
+def plot_avg_and_min_psi(psi_avg, Z1, Z2, screen_fun):
+    """Plot average cumulated and minimum scattering angle vs reduced energy.
+    
+    Parameters:
+        psi_avg: float
+            Average cumulated scattering angle (deg)    
+        e: float
+            Kinetic energy of the incoming particle (eV).
+        Z1: int
+            Atomic number of the incoming particle.
+        Z2: int
+            Atomic number of the target particle.
+        screen_fun: callable
+            Screening function object
+    """
+    data = np.genfromtxt(
+        os.path.join(os.path.dirname(__file__), 
+                     '../../data/atom_data/ATOMDATA'),
+        dtype='i8, U2, U16, i8, f8, f8, f8, f8, f8, f8, f8, f8',
+        names=['Z', 'symbol', 'name', 'mass', 'M1', 'M2', 'density', 'N',
+            'vF', 'Esurf', 'density_gas', 'Ngas'],
+        max_rows=92
+    )
+    print(data[Z1-1])
+    M1 = data[Z1-1]['M1']
+    M2 = data[Z2-1]['M2']
+    rnorm = screen_fun.rnorm
+    print(rnorm)
+    vcoul = 14.4 * Z1 * Z2 / rnorm
+    enorm = vcoul * (M1 + M2) / M2
+    print(enorm)
+
+    eps_vals = np.logspace(-4, 2, 61)  # reduced energies
+    psi_min_vals = []
+    for eps in np.logspace(-4, 2, 61):
+        sn = Sn(Z1, Z2, M1, M2, 
+                zbl=screen_fun.name == "ZBL", 
+                krc=screen_fun.name == "KrC")
+        e = eps * enorm
+        pmax = np.sqrt(M2/M1 * sn(e) / (np.pi*e)) / np.radians(psi_avg)
+        pmax_ZBL = 2*rnorm * np.sqrt(np.log(1+eps) / (0.02*(1+M1/M2)**2*(eps**2 + 0.1*eps**1.38)))
+        print(f'ε={eps:.4e}, pmax={pmax:.4e} A, pmax_ZBL={pmax_ZBL:.4e} A')
+        integral = screen_fun.impulse_integral(pmax/rnorm)        
+        psi_min = np.degrees(M2 / (M1 + M2) * integral / eps)
+        psi_min_vals.append(psi_min)
+    psi_min_vals = np.array(psi_min_vals)
+
+    plt.axhline(psi_avg, color='k', ls='--', 
+                label='Average cumulated scattering angle')
+    plt.plot(eps_vals, psi_min_vals, 'C1', label='Minimum scattering angle')
+    plt.xscale('log')
+    plt.xlabel(r'Reduced energy $\epsilon$')
+    plt.ylabel('Scattering angle (deg)')
+    plt.title(rf'{screen_fun.name} potential, Z1={Z1}, Z2={Z2}, '
+              rf'$\psi_{{avg}}$={psi_avg:.2f} deg',
+              fontsize='medium')
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+
+def compare_pmax(t_min, psi_min, psi_avg, Z1, Z2, screen_fun):
+    """Plot maximum impact parameters vs reduced energy.
+
+    This function plots the maximum impact parameters as a function of reduced 
+    energy, applying three different criteria: 
+    
+    - the minimum scattering angle, 
+    - the average cumulated scattering angle, and 
+    - the minimum energy transfer.
+
+    Parameters:
+        psi_min: float
+            Minimum scattering angle (deg)
+        psi_avg: float
+            Average cumulated scattering angle (deg)    
+        e: float
+            Kinetic energy of the incoming particle (eV).
+        Z1: int
+            Atomic number of the incoming particle.
+        Z2: int
+            Atomic number of the target particle.
+        screen_fun: callable
+            Screening function object
+    """
+    data = np.genfromtxt(
+        os.path.join(os.path.dirname(__file__), 
+                     '../../data/atom_data/ATOMDATA'),
+        dtype='i8, U2, U16, i8, f8, f8, f8, f8, f8, f8, f8, f8',
+        names=['Z', 'symbol', 'name', 'mass', 'M1', 'M2', 'density', 'N',
+            'vF', 'Esurf', 'density_gas', 'Ngas'],
+        max_rows=92
+        )
+    print(data[Z1-1])
+    M1 = data[Z1-1]['M1']
+    M2 = data[Z2-1]['M2']
+    N = data[Z2-1]['N'] / 1e24  # convert to atoms/A^3
+    gamma = 4*M1*M2 / (M1 + M2)**2
+    rnorm = screen_fun.rnorm
+    print(rnorm)
+    vcoul = 14.4 * Z1 * Z2 / rnorm
+    enorm = vcoul * (M1 + M2) / M2
+    print(enorm)
+
+    sn = Sn(Z1, Z2, M1, M2, 
+            zbl=screen_fun.name == "ZBL", 
+            krc=screen_fun.name == "KrC")
+
+    eps_vals = np.logspace(-6, 4, 101)  # reduced energies
+    pmax_psi_avg_vals = []
+    pmax_psi_avg_ZBL_vals = []
+    pmax_de_ZBL_vals = []
+    for eps in eps_vals:
+        e = eps * enorm
+        pmax_psi_avg_vals.append(
+            np.sqrt(M2/M1 * sn(e) / (np.pi*e)) / np.radians(psi_avg)
+            )
+        pmax_psi_avg_ZBL_vals.append(
+            2*rnorm * np.sqrt(
+                np.log(1+eps) / (0.02 * (1+M1/M2)**2 * (eps**2 + 0.1*eps**1.38))
+                )
+            )
+        xi = np.sqrt(eps * t_min/enorm / gamma)
+        pmax_de_ZBL_vals.append(
+            rnorm / (xi + xi**0.5 + 0.125*xi**0.1)
+            )
+
+    pmax_vals = np.linspace(0.02, 4, 200)
+    eps_psi_min_vals = []
+    eps_de_min_vals = []
+    for pmax in pmax_vals:
+        integral = screen_fun.impulse_integral(pmax/rnorm)
+        print(f'pmax={pmax:.3f}, integral={integral:.3f}')
+        eps_psi_min_vals.append(
+            vcoul * integral / np.radians(psi_min) / enorm
+            )
+        eps_de_min_vals.append(
+            M1/M2 * vcoul**2 * integral**2 / t_min / enorm
+            )
+    eps_psi_min_vals = np.array(eps_psi_min_vals)
+    eps_de_min_vals = np.array(eps_de_min_vals)
+
+    # plot over reduced energy
+    plt.plot(eps_vals, pmax_psi_avg_vals, 'C0', 
+             label=r'$\psi_\mathrm{avg}$=' 
+                   + fr'{psi_avg:.2f}$\degree$ (B-W)')  # Bohr-Williams
+    plt.plot(eps_vals, pmax_psi_avg_ZBL_vals, 'C0--', 
+             label=r'$\psi_\mathrm{avg}$=' + r'5.78$\degree$ (SRIM)')
+    plt.plot(eps_psi_min_vals, pmax_vals, 'C1',
+             label=r'$\psi_\mathrm{min}$=' + fr'{psi_min:.2f}$\degree$')
+    plt.plot(eps_de_min_vals, pmax_vals, 'C2',
+             label=r'$T_\mathrm{min}$=' + f'{t_min:.2f} eV')
+    plt.plot(eps_vals, pmax_de_ZBL_vals, 'C2--',
+             label=r'$T_\mathrm{min}$=' + f'{t_min:.2f} eV (SRIM)')
+    plt.xlim(1e-4, 1e2)
+    plt.xscale('log')
+    plt.xlabel(r'Reduced energy $\epsilon$')
+    plt.ylim(0, 4)
+    plt.ylabel(r'Maximum impact parameter $p_\mathrm{max}$ ($\rm\AA$)')
+    plt.title(rf'{screen_fun.name} potential, Z$_1$={Z1}, Z$_2$={Z2}')
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+    # plot over energy in eV
+    e_psi_min_vals = eps_psi_min_vals * enorm
+    e_de_min_vals = eps_de_min_vals * enorm
+    e_vals = eps_vals * enorm
+
+    # with and without considering t_min
+    for flag in (False, True):
+        # SRIM range calculations
+        pmaxmax_psi_avg_vals = np.full_like(e_vals, 0.5642*N**(-1/3))
+        plt.plot(e_vals, np.minimum(pmaxmax_psi_avg_vals, pmax_psi_avg_ZBL_vals), 
+                'C1', label=r'$\psi_{avg}$=' + r'5.78$\degree$ (B-W/SRIM)')
+        plt.plot(e_vals, pmaxmax_psi_avg_vals, 'C1:')
+        plt.plot(e_vals, pmax_psi_avg_ZBL_vals, 'C1:') 
+
+        if flag:
+            # SRIM defect calculations
+            pmaxmax_de_vals = np.full_like(e_vals, 1.2407*N**(-1/3))
+            plt.plot(e_vals, np.minimum(pmaxmax_de_vals, pmax_de_ZBL_vals), 
+                     'C0', label=r'$T_\mathrm{min}$=' + f'{t_min} eV (SRIM)')
+            plt.plot(e_vals, pmaxmax_de_vals, 'C0:')
+            plt.plot(e_vals, pmax_de_ZBL_vals, 'C0:')
+
+            # SRIM maximum
+            plt.plot(e_vals, np.maximum(
+                np.minimum(pmaxmax_psi_avg_vals, pmax_psi_avg_ZBL_vals), 
+                np.minimum(pmaxmax_de_vals, pmax_de_ZBL_vals)
+                ), 
+                'k--', lw=2, label='SRIM maximum') 
+
+        # OpenSRIM angle and energy criteria
+        plt.plot(e_psi_min_vals, pmax_vals, 'C3',
+                label=r'$\psi_\mathrm{min}$=' + fr'{psi_min}$\degree$ (OpenSRIM)')
+        if flag:
+            plt.plot(e_de_min_vals, pmax_vals, 'C2',
+                    label=r'$T_\mathrm{min}$=' + f'{t_min} eV (OpenSRIM)')
+            plt.plot(np.maximum(e_psi_min_vals, e_de_min_vals), pmax_vals, 'k', 
+                    lw=2, label='OpenSRIM maximum') 
+
+        plt.xlim(1e1, 1e7)
+        plt.xscale('log')
+        plt.xlabel(r'Energy $E$ (eV)')
+        plt.ylim(0, 3)
+        plt.ylabel(r'Maximum impact parameter $p_\mathrm{max}$ ($\rm\AA$)')
+        plt.title(rf'{screen_fun.name} potential, {atom[Z1]} in {atom[Z2]}',
+                fontsize='medium')
+        plt.legend(loc='upper right', fontsize='small')
+        plt.tight_layout()
+        plt.show()
+
+    # Same plot without ZBL results
+    # psi_avg
+    pmaxmax_psi_avg_vals = np.full_like(e_vals, 0.5642*N**(-1/3))
+    plt.plot(e_vals, np.minimum(pmaxmax_psi_avg_vals, pmax_psi_avg_vals), 
+            'C1', label=r'$\psi_{avg}$=' + r'5.78$\degree$ (+cutoff)')
+    plt.plot(e_vals, pmaxmax_psi_avg_vals, 'C1:')
+    plt.plot(e_vals, pmax_psi_avg_vals, 'C1:') 
+
+    # psi_min
+    plt.plot(e_psi_min_vals, pmax_vals, 'C3',
+            label=r'$\psi_\mathrm{min}$=' + fr'{psi_min}$\degree$')
+
+    # de_min
+    plt.plot(e_de_min_vals, pmax_vals, 'C2',
+            label=r'$T_\mathrm{min}$=' + f'{t_min} eV')
+
+    # psi_avg + de_min
+    pmaxmax_de_vals = np.full_like(e_vals, 1.2407*N**(-1/3))
+    pmax_de_min_vals_interp = np.interp(np.log(e_vals), 
+                                        np.log(e_de_min_vals[::-1]), 
+                                        pmax_vals[::-1])
+    plt.plot(e_vals, np.maximum(
+        np.minimum(pmaxmax_psi_avg_vals, pmax_psi_avg_vals), 
+        pmax_de_min_vals_interp), 
+        'k--', lw=2, 
+        label=r'combining $\psi_\mathrm{avg}$ and $T_\mathrm{min}$')
+
+    # psi_min + de_min
+    plt.plot(np.maximum(e_psi_min_vals, e_de_min_vals), pmax_vals, 'k', 
+            lw=2, label=r'combining $\psi_\mathrm{min}$ and $T_\mathrm{min}$') 
+
+    plt.xlim(1e1, 1e7)
+    plt.xscale('log')
+    plt.xlabel(r'Energy $E$ (eV)')
+    plt.ylim(0, 3)
+    plt.ylabel(r'Maximum impact parameter $p_\mathrm{max}$ ($\rm\AA$)')
+    plt.title(rf'{screen_fun.name} potential, {atom[Z1]} in {atom[Z2]}',
+            fontsize='medium')
+    plt.legend(loc='upper right', fontsize='small')
+    plt.tight_layout()
+    plt.show()
+
+
 def compare_theta_and_tau(screen_fun):
     """Compare scattering angle and time integral between MD and numerical."""
     
@@ -246,10 +504,16 @@ def compare_theta_and_tau(screen_fun):
 
 if __name__ == "__main__":
     setup(n_absc=4)
-    Z1 = 2
-    Z2 = 74
-    #screen_fun = ZBL_screen(Z1, Z2, rnorm=1.0)
-    screen_fun = NLHlin_screen(Z1, Z2, rnorm=1.0)
-    plot_psi_and_de(e=3000, Z1=Z1, Z2=Z2, screen_fun=screen_fun)
+    Z1 = 15
+    Z2 = 14
+    #screen_fun = ZBL_screen(Z1, Z2)
+    screen_fun = NLHlin_screen(Z1, Z2) #, rnorm=1.0)
+    
+    #plot_psi_and_de(e=3000, Z1=Z1, Z2=Z2, screen_fun=screen_fun)
+    #plot_avg_and_min_psi(psi_avg=5.0, Z1=Z1, Z2=Z2, screen_fun=screen_fun)
+    t_min = 15
+    psi_min = 1
+    psi_avg = 5.78
+    compare_pmax(t_min, psi_min, psi_avg, Z1, Z2, screen_fun)
 
     #compare_theta_and_tau(screen_fun)

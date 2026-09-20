@@ -443,7 +443,7 @@ def _get_cascade_params(input_params, nelem, elements_params, materials_params,
     CASCADE_PARAMS_DTYPE = np.dtype([
         ("follow_recoils", np.int64),  # stored as int for better compatibility with Numba
         ("replacement_collisions", np.int64),  # stored as int for better compatibility with Numba
-        ("emin", np.float64),
+        ("ecut", np.float64),
         ("ed", np.float64),  # unused, obsolescent
         ("pmax_max", np.float64),
         ("pmax", np.float64, (NMAT,)),  # unused, obsolescent
@@ -455,11 +455,10 @@ def _get_cascade_params(input_params, nelem, elements_params, materials_params,
 
     cascade_params = np.recarray(1, dtype=CASCADE_PARAMS_DTYPE)
     cascade_params[0].follow_recoils = (
-        input_params["simulation"]["follow_recoils"])
+        input_params["cascade"]["follow_recoils"])
     cascade_params[0].replacement_collisions = (
         input_params["cascade"]["replacement_collisions"])
-    # TODO: get emin from input_params ("cutoff_energy")
-    cascade_params[0].emin = 3.0
+    cascade_params[0].ecut = input_params["cascade"]["cutoff_energy"]
     cascade_params[0].ed = 15.0
 
     densities = np.array([layer["density"] for layer in input_params["layer"]])

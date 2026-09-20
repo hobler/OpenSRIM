@@ -94,7 +94,7 @@ def cascade(initial_proj, params, stats):
     if NUMBA_DISABLE_JIT:
         initial_proj = deepcopy(initial_proj)
 
-    emin = params.cascade.emin
+    ecut = params.cascade.ecut
     
     # Fully simulated projectiles
     final_proj_lst = typed.List.empty_list(PROJ_NUMBA_DTYPE)
@@ -148,7 +148,7 @@ def cascade(initial_proj, params, stats):
             continue
 
         # terminate trajectory if the projectile has no more energy
-        if proj["e"] <= emin:
+        if proj["e"] <= ecut:
             final_proj_lst.append(proj)
             score_stop(stats, proj)
             nin[proj["ielem"]] += 1
@@ -163,7 +163,7 @@ def cascade(initial_proj, params, stats):
                 _check_replacement_collision(proj, recoil, params)
 
             # terminate trajectory if the projectile has lost too much energy
-            if proj["e"] <= emin:
+            if proj["e"] <= ecut:
                 final_proj_lst.append(proj)
                 score_stop(stats, proj)
                 nin[proj["ielem"]] += 1

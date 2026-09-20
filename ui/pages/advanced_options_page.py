@@ -308,7 +308,7 @@ class AdvancedOptionsPage(QWidget):
         self.spin_cutoff_energy = _cascade_param_row("Cutoff energy (eV):", 0.0, 1.0e9, 3.0)
         self.spin_cutoff_energy.setToolTip(
             "Energy below which a projectile is considered stopped. Not yet "
-            "consumed by the simulation backend (hardcoded to 3 eV there)."
+            "written to the input file."
         )
 
         seed_row = QHBoxLayout()

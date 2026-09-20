@@ -656,12 +656,12 @@ class MCResultsPage(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
-        # Mirrors MC Setup's run status so users can tell whether the
-        # simulation that produced these results is still running without
-        # switching back to the MC Setup tab.
-        self._status_label = QLabel("")
-        self._status_label.setStyleSheet("color: palette(shadow);")
-        layout.addWidget(self._status_label)
+        ## Mirrors MC Setup's run status so users can tell whether the
+        ## simulation that produced these results is still running without
+        ## switching back to the MC Setup tab.
+        #self._status_label = QLabel("")
+        #self._status_label.setStyleSheet("color: palette(shadow);")
+        #layout.addWidget(self._status_label)
 
         self._results_widget = MCResultsWidget()
         self._results_widget.advanced_requested.connect(self.advanced_requested)
@@ -720,7 +720,7 @@ class MCResultsPage(QWidget):
             If *True*, suppress error/info dialogs (used for live updates
             during a running simulation).
         """
-        self._status_label.setText(self._read_run_status_text(results_dir))
+        #self._status_label.setText(self._read_run_status_text(results_dir))
 
         try:
             plots, numerical = _build_plots_from_directory(results_dir)

@@ -86,7 +86,7 @@ class Sn:
         else:
             fname = os.path.join(directory, f"nlhlin/sn_fit_params_nlhlin.txt")
             Z1_, Z2_, a, b, c, d, *_ = np.loadtxt(fname, unpack=True)
-            idx = np.where((Z1_ == self.Z1) & (Z2_ == self.Z2))[0]
+            idx = np.where((Z1_ == self.Z1) & (Z2_ == self.Z2))[0][0]
             self.a = a[idx]
             self.b = b[idx]
             self.c = c[idx]
@@ -109,7 +109,7 @@ class Sn:
         e_norm = e / self.enorm
         sn_norm = sn_fit_func(e_norm, self.a, self.b, self.c, self.d)
         sn = (4 * np.pi * self.M1 / (self.M1 + self.M2)
-              * self.Z1 * self.Z2 * 14.4  * self.rnorm) * sn_norm
+              * self.Z1 * self.Z2 * 14.4 * self.rnorm) * sn_norm
         return sn
 
 

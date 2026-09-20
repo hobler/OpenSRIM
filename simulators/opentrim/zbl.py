@@ -153,7 +153,7 @@ K3 = 7.2            # factor of the 1/R^3 part
 K1 = 1/(4*K2)
 R12sq = (2*K2)**2
 R23sq = K3 / K2
-NITER = 1           # number of Newton-Raphson iterations
+NITER = 4           # maximum number of Newton-Raphson iterations
 
 @jit(debug=config.DEBUG)
 def estimate_apsis(e, p, pot_coefs):

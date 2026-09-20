@@ -299,12 +299,12 @@ class AdvancedOptionsPage(QWidget):
             cascade_opts_l.addLayout(row)
             return spin
 
-        self.spin_pmax_max = _cascade_param_row("Maximum impact parameter (Å):", 0.0, 1.0e6, 4.0)
-        self.spin_pmax_min = _cascade_param_row("Minimum impact parameter (Å):", 0.0, 1.0e6, 0.0)
+        self.spin_pmax_max = _cascade_param_row("Maximum maximum impact parameter (Å):", 0.0, 1.0e6, 4.0)
+        self.spin_pmax_min = _cascade_param_row("Minimum maximum impact parameter (Å):", 0.0, 1.0e6, 0.0)
         self.spin_de_min = _cascade_param_row("Minimum energy transfer (eV):", 0.0, 1.0e9, 15.0)
         self.spin_de_min_surface = _cascade_param_row("Minimum energy transfer above surface (eV):", 0.0, 1.0e9, 15.0)
-        self.spin_psi_min = _cascade_param_row("Minimum scattering angle (°):", 0.0, 180.0, 5.0)
-        self.spin_psi_min_surface = _cascade_param_row("Minimum scattering angle above surface (°):", 0.0, 180.0, 5.0)
+        self.spin_psi_min = _cascade_param_row("Minimum scattering angle (°):", 0.0, 180.0, 1.0)
+        self.spin_psi_min_surface = _cascade_param_row("Minimum scattering angle above surface (°):", 0.0, 180.0, 0.1)
         self.spin_cutoff_energy = _cascade_param_row("Cutoff energy (eV):", 0.0, 1.0e9, 3.0)
         self.spin_cutoff_energy.setToolTip(
             "Energy below which a projectile is considered stopped. Not yet "

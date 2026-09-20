@@ -173,9 +173,9 @@ class MCSetupPage(QWidget):
         # them (pending backend work) -- see [cascade] in _build_input_toml.
         self._pmax_min = 0.0
         self._pmax_max = 4.0
-        self._psi_min = 5.0
+        self._psi_min = 1.0
         self._de_min = 15.0
-        self._psi_min_surface = 5.0
+        self._psi_min_surface = 0.1
         self._de_min_surface = 15.0
         self._cutoff_energy = 3.0
         self._replacement_collisions = True
@@ -1706,9 +1706,9 @@ class MCSetupPage(QWidget):
                 "nthreads": simulation.get("nthreads", self._nthreads),
                 "pmax_min": (params.get("cascade") or {}).get("pmax_min", 0.0),
                 "pmax_max": (params.get("cascade") or {}).get("pmax_max", 4.0),
-                "psi_min": (params.get("cascade") or {}).get("psi_min", 5.0),
+                "psi_min": (params.get("cascade") or {}).get("psi_min", 1.0),
                 "de_min": (params.get("cascade") or {}).get("de_min", 15.0),
-                "psi_min_surface": (params.get("cascade") or {}).get("psi_min_surface", 5.0),
+                "psi_min_surface": (params.get("cascade") or {}).get("psi_min_surface", 0.1),
                 "de_min_surface": (params.get("cascade") or {}).get("de_min_surface", 15.0),
                 "cutoff_energy": (params.get("cascade") or {}).get("cutoff_energy", 3.0),
                 "replacement_collisions": (params.get("cascade") or {}).get("replacement_collisions", True),
@@ -2196,7 +2196,7 @@ class MCSetupPage(QWidget):
         try:
             self._psi_min = float(value)
         except (TypeError, ValueError):
-            self._psi_min = 5.0
+            self._psi_min = 1.0
         self._emit_advanced_simulation_settings()
 
     def set_de_min(self, value: float) -> None:
@@ -2210,7 +2210,7 @@ class MCSetupPage(QWidget):
         try:
             self._psi_min_surface = float(value)
         except (TypeError, ValueError):
-            self._psi_min_surface = 5.0
+            self._psi_min_surface = 0.1
         self._emit_advanced_simulation_settings()
 
     def set_de_min_surface(self, value: float) -> None:

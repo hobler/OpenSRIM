@@ -1461,7 +1461,7 @@ class KoralPage(QWidget):
                 ax_right.set_yscale("log")
 
             plotted_any = False
-            for key, label, energies, vals in series:
+            for color_idx, (key, label, energies, vals) in enumerate(series):
                 if key in _LENGTH_KEYS and length_axis_unit is not None:
                     plot_vals = [self._length_from_m(float(v), length_axis_unit) for v in vals]
                     target_ax = ax_left
@@ -1478,7 +1478,12 @@ class KoralPage(QWidget):
                 else:
                     plot_vals = vals
                     target_ax = ax_left
-                target_ax.plot(energies, plot_vals, linewidth=1.0, label=label)
+                # Assign colors from a single shared cycle across both axes so
+                # traces on ax_left and ax_right never repeat the same color.
+                target_ax.plot(
+                    energies, plot_vals, linewidth=1.0, label=label,
+                    color=f"C{color_idx}",
+                )
                 plotted_any = True
 
             if length_axis_unit is not None:
@@ -2589,7 +2594,7 @@ class KoralPage(QWidget):
         grid.addWidget(QLabel("Energy min (keV)"), 0, 2, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self.energy_min = QDoubleSpinBox()
         self.energy_min.setRange(0.0, 1e6)
-        self.energy_min.setDecimals(1)
+        self.energy_min.setDecimals(3)
         self.energy_min.setValue(10.0)
         self.energy_min.setMaximumWidth(130)
         self.energy_min.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
@@ -2598,7 +2603,7 @@ class KoralPage(QWidget):
         grid.addWidget(QLabel("Energy max (keV)"), 0, 3, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self.energy_max = QDoubleSpinBox()
         self.energy_max.setRange(0.0, 1e6)
-        self.energy_max.setDecimals(1)
+        self.energy_max.setDecimals(3)
         self.energy_max.setValue(10000.0)
         self.energy_max.setMaximumWidth(130)
         self.energy_max.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)

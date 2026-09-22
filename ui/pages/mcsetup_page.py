@@ -173,11 +173,12 @@ class MCSetupPage(QWidget):
         # them (pending backend work) -- see [cascade] in _build_input_toml.
         self._pmax_min = 0.0
         self._pmax_max = 4.0
-        self._psi_min = 5.0
+        self._psi_min = 1.0
         self._de_min = 15.0
-        self._psi_min_surface = 5.0
+        self._psi_min_surface = 0.1
         self._de_min_surface = 15.0
-        self._replacement_collisions = False
+        self._cutoff_energy = 3.0
+        self._replacement_collisions = True
         self._top_layer_roughness = 0.0
         # Default to ~80% of logical cores so the UI stays responsive while a
         # simulation runs; remembered across restarts in mc_setup.toml.
@@ -210,6 +211,7 @@ class MCSetupPage(QWidget):
                 self._de_min = float(_cascade.get("de_min", self._de_min))
                 self._psi_min_surface = float(_cascade.get("psi_min_surface", self._psi_min_surface))
                 self._de_min_surface = float(_cascade.get("de_min_surface", self._de_min_surface))
+                self._cutoff_energy = float(_cascade.get("cutoff_energy", self._cutoff_energy))
                 self._replacement_collisions = bool(_cascade.get("replacement_collisions", self._replacement_collisions))
                 _layers = _defaults.get("layer") or []
                 if _layers and isinstance(_layers[0], dict):
@@ -498,6 +500,10 @@ class MCSetupPage(QWidget):
             self.set_de_min_surface(float(simulation_meta.get("de_min_surface", self._de_min_surface)))
         except Exception:
             self._de_min_surface = float(simulation_meta.get("de_min_surface", self._de_min_surface))
+        try:
+            self.set_cutoff_energy(float(simulation_meta.get("cutoff_energy", self._cutoff_energy)))
+        except Exception:
+            self._cutoff_energy = float(simulation_meta.get("cutoff_energy", self._cutoff_energy))
         try:
             self.set_replacement_collisions(bool(simulation_meta.get("replacement_collisions", self._replacement_collisions)))
         except Exception:
@@ -1700,11 +1706,12 @@ class MCSetupPage(QWidget):
                 "nthreads": simulation.get("nthreads", self._nthreads),
                 "pmax_min": (params.get("cascade") or {}).get("pmax_min", 0.0),
                 "pmax_max": (params.get("cascade") or {}).get("pmax_max", 4.0),
-                "psi_min": (params.get("cascade") or {}).get("psi_min", 5.0),
+                "psi_min": (params.get("cascade") or {}).get("psi_min", 1.0),
                 "de_min": (params.get("cascade") or {}).get("de_min", 15.0),
-                "psi_min_surface": (params.get("cascade") or {}).get("psi_min_surface", 5.0),
+                "psi_min_surface": (params.get("cascade") or {}).get("psi_min_surface", 0.1),
                 "de_min_surface": (params.get("cascade") or {}).get("de_min_surface", 15.0),
-                "replacement_collisions": (params.get("cascade") or {}).get("replacement_collisions", False),
+                "cutoff_energy": (params.get("cascade") or {}).get("cutoff_energy", 3.0),
+                "replacement_collisions": (params.get("cascade") or {}).get("replacement_collisions", True),
                 "target_roughness": payload_layers[0].get("roughness", 0.0) if payload_layers else 0.0,
             },
             "layers": payload_layers,
@@ -2085,6 +2092,7 @@ class MCSetupPage(QWidget):
             "de_min": float(self._de_min),
             "psi_min_surface": float(self._psi_min_surface),
             "de_min_surface": float(self._de_min_surface),
+            "cutoff_energy": float(self._cutoff_energy),
             "replacement_collisions": bool(self._replacement_collisions),
             "nthreads": int(self._nthreads),
             "target_roughness": float(self._top_layer_roughness),
@@ -2105,6 +2113,7 @@ class MCSetupPage(QWidget):
             "de_min": float(self._de_min),
             "psi_min_surface": float(self._psi_min_surface),
             "de_min_surface": float(self._de_min_surface),
+            "cutoff_energy": float(self._cutoff_energy),
             "replacement_collisions": bool(self._replacement_collisions),
             "nthreads": int(self._nthreads),
             "target_roughness": float(self._top_layer_roughness),
@@ -2187,7 +2196,7 @@ class MCSetupPage(QWidget):
         try:
             self._psi_min = float(value)
         except (TypeError, ValueError):
-            self._psi_min = 5.0
+            self._psi_min = 1.0
         self._emit_advanced_simulation_settings()
 
     def set_de_min(self, value: float) -> None:
@@ -2201,7 +2210,7 @@ class MCSetupPage(QWidget):
         try:
             self._psi_min_surface = float(value)
         except (TypeError, ValueError):
-            self._psi_min_surface = 5.0
+            self._psi_min_surface = 0.1
         self._emit_advanced_simulation_settings()
 
     def set_de_min_surface(self, value: float) -> None:
@@ -2209,6 +2218,13 @@ class MCSetupPage(QWidget):
             self._de_min_surface = float(value)
         except (TypeError, ValueError):
             self._de_min_surface = 15.0
+        self._emit_advanced_simulation_settings()
+
+    def set_cutoff_energy(self, value: float) -> None:
+        try:
+            self._cutoff_energy = float(value)
+        except (TypeError, ValueError):
+            self._cutoff_energy = 3.0
         self._emit_advanced_simulation_settings()
 
     def set_replacement_collisions(self, value: bool) -> None:
@@ -2371,15 +2387,23 @@ class MCSetupPage(QWidget):
                 lines.append(f'"{key}" = {value}')
             lines.append("")
 
-        # NOTE: not yet consumed by simulators/opentrim (pending backend work).
         lines += [
             "[cascade]",
+            # NOTE: simulators/opentrim currently reads follow_recoils from
+            # [simulation] (see read_params.py); it is duplicated here in
+            # [cascade], its intended long-term home, so nothing breaks once
+            # the backend switches over.
+            f"follow_recoils = {'true' if simulation.get('follow_recoils', True) else 'false'}",
             f"pmax_min = {float(self._pmax_min)}",
             f"pmax_max = {float(self._pmax_max)}",
             f"psi_min = {float(self._psi_min)}",
             f"de_min = {float(self._de_min)}",
             f"psi_min_surface = {float(self._psi_min_surface)}",
             f"de_min_surface = {float(self._de_min_surface)}",
+            # NOTE: not yet consumed by simulators/opentrim; cascade.py hardcodes
+            # emin = 3.0 (see the "TODO: get emin from input_params" in
+            # init_params.py, which names this same key).
+            f"cutoff_energy = {float(self._cutoff_energy)}",
             f"replacement_collisions = {'true' if self._replacement_collisions else 'false'}",
             "",
         ]

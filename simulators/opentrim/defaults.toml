@@ -72,8 +72,7 @@ electronic_stopping = "SRIM"  # "Lindhard" or "SRIM"; electronic stopping power
 electronic_straggling = false  # apply electronic energy-loss straggling
 
 [models.scattering_integrals]
-#algorithm = "magic"  # "magic" or "Legendre"
-algorithm = "Legendre"
+algorithm = "Legendre"  # "magic" or "Legendre"
 n_absc    = 4        # number of abscissas (Gauss-Legendre only)
 
 [models.lindhard_correction]
@@ -87,9 +86,9 @@ n_absc    = 4        # number of abscissas (Gauss-Legendre only)
 # -----------------------------------------------------------------------------
 pmax_min = 0.0
 pmax_max = 4.0
-psi_min = 5.0
+psi_min = 1.0
 de_min = 15.0
-psi_min_surface = 5.0
+psi_min_surface = 0.1
 de_min_surface = 15.0
 replacement_collisions = false
 

@@ -84,7 +84,8 @@ def cascade(initial_proj, params, stats):
         stats: (STATS_DTYPE) statistics data container
         
     Returns:
-        ndarray[Projectile]: list of final projectile states
+        ndarray[Projectile]: list of final projectile states (currently 
+            commented out)
     """
     #print("Entered cascade...")
     # In Python mode, we need to create a deep copy of the initial projectile 
@@ -97,7 +98,7 @@ def cascade(initial_proj, params, stats):
     ecut = params.cascade.ecut
     
     # Fully simulated projectiles
-    final_proj_lst = typed.List.empty_list(PROJ_NUMBA_DTYPE)
+    #final_proj_lst = typed.List.empty_list(PROJ_NUMBA_DTYPE)
     
     # Projectiles to be simulated
     proj_stack = typed.List.empty_list(PROJ_NUMBA_DTYPE)
@@ -138,7 +139,7 @@ def cascade(initial_proj, params, stats):
         # note that an exiting projectile cannot recoil a target atom
         exiting = check_exit_and_move(proj, free_path, params)
         if exiting:
-            final_proj_lst.append(proj)
+            #final_proj_lst.append(proj)
             score_exit(stats, proj, params.nelem_target)
             if proj["dir"][0] < 0:
                 nback[proj["ielem"]] += 1
@@ -149,7 +150,7 @@ def cascade(initial_proj, params, stats):
 
         # terminate trajectory if the projectile has no more energy
         if proj["e"] <= ecut:
-            final_proj_lst.append(proj)
+            #final_proj_lst.append(proj)
             score_stop(stats, proj)
             nin[proj["ielem"]] += 1
             proj_stack.pop()
@@ -164,7 +165,7 @@ def cascade(initial_proj, params, stats):
 
             # terminate trajectory if the projectile has lost too much energy
             if proj["e"] <= ecut:
-                final_proj_lst.append(proj)
+                #final_proj_lst.append(proj)
                 score_stop(stats, proj)
                 nin[proj["ielem"]] += 1
                 proj_stack.pop()
@@ -210,4 +211,4 @@ def cascade(initial_proj, params, stats):
 
 
     # Return fully simulated projectiles in the correct order
-    return final_proj_lst[::-1]
+    #return final_proj_lst[::-1]

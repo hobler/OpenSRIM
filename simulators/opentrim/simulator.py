@@ -80,19 +80,23 @@ def _simulate(nion, params, stats_per_thread, nion_processed):
 
     # Container for the returned projectile states
     proj_dummy_list = typed.List.empty_list(PROJ_NUMBA_DTYPE)
-    proj_sim = [proj_dummy_list for _ in range(nion)]
+    # proj_sim probably should be defined as a Numba typed.List
+    # For now, we comment it out because it is not yet used. It will be needed
+    # for trajectory output.
+    #proj_sim = [proj_dummy_list for _ in range(nion)]
     
     # Parallel loop over collision cascades
     for i in prange(nion):  # ty:ignore[not-iterable]
         np.random.seed(params[0].rng_seed + nion_processed + i)
         tid = get_thread_id()
-        proj_sim[i] = cascade.cascade(
+        #proj_sim[i] = cascade.cascade(
+        cascade.cascade(
             proj_init_array[0], params[0], stats_per_thread[tid])
 
     # TODO: Use returned projectile states
-    proj_count = 0
-    for proj_lst in proj_sim:
-        proj_count += len(proj_lst)
+    #proj_count = 0
+    #for proj_lst in proj_sim:
+    #    proj_count += len(proj_lst)
 
 
 def simulate_adaptive(avg_chunk_time, nion, params, stats, input_params=None, 

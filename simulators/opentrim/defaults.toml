@@ -72,8 +72,7 @@ electronic_stopping = "SRIM"  # "Lindhard" or "SRIM"; electronic stopping power
 electronic_straggling = false  # apply electronic energy-loss straggling
 
 [models.scattering_integrals]
-#algorithm = "magic"  # "magic" or "Legendre"
-algorithm = "Legendre"
+algorithm = "Legendre"  # "magic" or "Legendre"
 n_absc    = 4        # number of abscissas (Gauss-Legendre only)
 
 [models.lindhard_correction]
@@ -85,13 +84,15 @@ n_absc    = 4        # number of abscissas (Gauss-Legendre only)
 # -----------------------------------------------------------------------------
 [cascade]
 # -----------------------------------------------------------------------------
+follow_recoils = true       # duplicated from [simulation]; init_params.py reads it from here, stats.py/read_stats.py still read it from [simulation]
 pmax_min = 0.0
 pmax_max = 4.0
-psi_min = 5.0
+psi_min = 1.0
 de_min = 15.0
-psi_min_surface = 5.0
+psi_min_surface = 0.1
 de_min_surface = 15.0
 replacement_collisions = false
+cutoff_energy = 3.0         # energy (eV) below which a projectile is considered stopped
 
 # -----------------------------------------------------------------------------
 [output]

@@ -2605,7 +2605,7 @@ class SinglePlotPage(QWidget):
         cols = plot_info.get("columns")
         if x_vals is None or cols is None:
             return 0
-        x_arr = np.asarray(x_vals, dtype=float)
+        x_arr, cols = self._centers_from_histogram(x_vals, cols)
 
         labels = list(plot_info.get("series_labels", []) or [])
         src_colors = list(plot_info.get("colors", []) or [])
@@ -2832,7 +2832,7 @@ class SinglePlotPage(QWidget):
             cols = info.get("columns")
             if x_vals is None or cols is None:
                 continue
-            x_arr = np.asarray(x_vals, dtype=float)
+            x_arr, cols = self._centers_from_histogram(x_vals, cols)
             labels = list(info.get("series_labels", []) or [])
             x_label = str(info.get("x_label", "") or "")
             y_label = str(info.get("y_label", "") or "")
@@ -3270,8 +3270,9 @@ class SinglePlotPage(QWidget):
             QMessageBox.information(self, "Save Plot Config",
                                     "There are no curves to save.")
             return
+        default_path = os.path.join(get_last_used_directory(), "plot_config.spc.toml")
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save Single Plot Configuration", get_last_used_directory(),
+            self, "Save Single Plot Configuration", default_path,
             "Single Plot Config (*.spc.toml);;TOML Files (*.toml);;All Files (*)",
         )
         if not path:
@@ -3496,13 +3497,14 @@ class SinglePlotPage(QWidget):
         x_vals = info.get("x_values")
         if cols is None or x_vals is None or i < 0 or i >= len(cols):
             return None
+        x_arr, cols = self._centers_from_histogram(x_vals, cols)
         labels = list(info.get("series_labels", []) or [])
         series_label = labels[i] if i < len(labels) else f"Series {i}"
         return {
             "id": source_id,
             "name": f"{info.get('name', plot_id)} — {series_label}",
-            "x": np.asarray(x_vals, dtype=float),
-            "y": np.asarray(cols[i], dtype=float),
+            "x": x_arr,
+            "y": cols[i],
             "x_label": str(info.get("x_label", "")),
             "y_label": str(info.get("y_label", "")),
             "path": path,
@@ -4179,6 +4181,29 @@ class SinglePlotPage(QWidget):
     # =====================================================================
     # Render
     # =====================================================================
+
+    @staticmethod
+    def _centers_from_histogram(x_edges, cols) -> tuple:
+        """Convert raw ``.his`` data (bin edges plus a trailing ions-processed
+        entry per column) into bin centers and trimmed values.
+
+        ``x_values``/``columns`` in a plot dict are the raw file contents, as
+        read row-by-row: ``x_edges`` and each column have the same length,
+        with ``x_edges`` holding the bin edges and each column's last entry
+        holding the number of ions processed rather than histogram data (see
+        ``mcresults_page._rebin_step``, which drops that entry the same way
+        for the multi-plot view). The curve pipeline here (rebinning,
+        convolution, steps-mid drawing) expects x/y of equal length, so drop
+        the trailing entry from each column and collapse the edges to bin
+        centers to match.
+        """
+        x_arr = np.asarray(x_edges, dtype=float)
+        cols_arr = [np.asarray(c, dtype=float) for c in cols]
+        if x_arr.size < 2:
+            return x_arr, cols_arr
+        x_centers = 0.5 * (x_arr[:-1] + x_arr[1:])
+        cols_trimmed = [c[:-1] for c in cols_arr]
+        return x_centers, cols_trimmed
 
     @staticmethod
     def _rebin_curve(x: np.ndarray, y: np.ndarray, factor: int) -> tuple:
@@ -5381,12 +5406,12 @@ class MCResultsWidget(QWidget):
         self._on_mode_changed(True)
 
     def _on_sidebar_selection_changed(self, plot_ids: List[str]) -> None:
+        # Only update which tiles are visible here. Sending a plot to the
+        # Single Plot tab is an explicit action (double-click on a tile, see
+        # plot_double_clicked below) — auto-forwarding whenever exactly one
+        # checkbox happens to be checked fired unexpectedly while a user was
+        # still in the middle of checking/unchecking several plots.
         self.plot_area.set_visible_plots(plot_ids)
-        if len(plot_ids) == 1:
-            plot_id = str(plot_ids[0])
-            info = AVAILABLE_PLOTS.get(plot_id)
-            if info is not None:
-                self.plot_open_in_single.emit(plot_id, info)
 
     def _on_mode_changed(self, multiple_mode: bool) -> None:
         self._plot_stack.setCurrentIndex(0 if multiple_mode else 1)

@@ -2389,10 +2389,9 @@ class MCSetupPage(QWidget):
 
         lines += [
             "[cascade]",
-            # NOTE: simulators/opentrim currently reads follow_recoils from
-            # [simulation] (see read_params.py); it is duplicated here in
-            # [cascade], its intended long-term home, so nothing breaks once
-            # the backend switches over.
+            # NOTE: init_params.py reads follow_recoils from here now;
+            # stats.py/read_stats.py still read it from [simulation], so it
+            # is duplicated in both places.
             f"follow_recoils = {'true' if simulation.get('follow_recoils', True) else 'false'}",
             f"pmax_min = {float(self._pmax_min)}",
             f"pmax_max = {float(self._pmax_max)}",
@@ -2400,9 +2399,6 @@ class MCSetupPage(QWidget):
             f"de_min = {float(self._de_min)}",
             f"psi_min_surface = {float(self._psi_min_surface)}",
             f"de_min_surface = {float(self._de_min_surface)}",
-            # NOTE: not yet consumed by simulators/opentrim; cascade.py hardcodes
-            # emin = 3.0 (see the "TODO: get emin from input_params" in
-            # init_params.py, which names this same key).
             f"cutoff_energy = {float(self._cutoff_energy)}",
             f"replacement_collisions = {'true' if self._replacement_collisions else 'false'}",
             "",

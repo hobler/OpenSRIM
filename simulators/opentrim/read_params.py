@@ -12,19 +12,16 @@ def read_params(toml_path: str | Path = None) -> dict:
     Returns:
         dict: A dictionary containing the input parameters.
     """
-    if toml_path is None:
-        toml_path = "defaults.toml"
-    toml_path = Path(toml_path)
-    toml_path_fallback = Path(__file__).parent / Path(toml_path)
-    if not toml_path.is_file():
-        toml_path = toml_path_fallback
-    if not toml_path.is_file():
-        raise FileNotFoundError("The provided config is not a file or doesn't exist")
-    # Fallback workdir if not specified in the config TOML
-    if not str(toml_path).endswith("defaults.toml"):
-        workdir_fallback = toml_path.parent
+    script_dir = Path(__file__).parent
+    provided_path = Path(toml_path) if toml_path is not None else None
+
+    if provided_path is not None and provided_path.is_file():
+        toml_path = provided_path
+        workdir = toml_path.parent
     else:
-        workdir_fallback = "../../data/opentrim/results/default"
+        print("No configuration specified; using defaults")
+        toml_path = script_dir / "defaults.toml"
+        workdir = "../../data/opentrim/results/default"
 
     with open(toml_path, "rb") as f:
         params = tomllib.load(f)
@@ -45,12 +42,7 @@ def read_params(toml_path: str | Path = None) -> dict:
             section["nbins"] = tuple(section["nbins"])
         if "limits" in section:
             section["limits"] = tuple(tuple(axis_limits) for axis_limits in section["limits"])
-    if not params.get('simulation', {}).get('workdir', None):
-        params["simulation"]["workdir"] = workdir_fallback
-    # Convert relative (to TOML file) path to absolute
-    selected_dir = Path(params["simulation"]["workdir"])
-    if not selected_dir.is_absolute():
-        params["simulation"]["workdir"] = str(toml_path.parent / selected_dir)
-        print(params["simulation"]["workdir"])
+
+    params["simulation"]["workdir"] = str(Path(workdir).resolve())
 
     return params

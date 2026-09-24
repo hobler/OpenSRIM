@@ -135,7 +135,7 @@ def simulate_adaptive(avg_chunk_time, nion, params, stats, input_params=None,
         nion_chunksize = max(min_chunk_size, new_chunk)
 
 
-def simulate_chunked(nion_chunksize, nion, params, stats, input_params=None, 
+def simulate_chunked(nion_chunksize, nion, params, stats, input_params, 
                      upd_callback=None):
     """Chunked simulation for nion projectiles
     
@@ -146,6 +146,11 @@ def simulate_chunked(nion_chunksize, nion, params, stats, input_params=None,
         input_params (dict): Simulation configuration (for data saving)
         upd_callback (callable): A function to call on simulation data update
     """    
+    assert input_params is not None, "input_params must be set"
+
+    custom_nthreads = input_params["simulation"].get("nthreads", 0)
+    if 0 < custom_nthreads < nb.config.NUMBA_NUM_THREADS:  # ty: ignore[unresolved-attribute]
+        nb.set_num_threads(custom_nthreads)
     
     def _process_chunks(nion_chunk, nion_processed):
 

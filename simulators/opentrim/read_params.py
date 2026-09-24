@@ -19,7 +19,7 @@ def read_params(toml_path: str | Path = None) -> dict:
         toml_path = provided_path
         workdir = toml_path.parent
     else:
-        print("No configuration specified; using defaults")
+        print("Reading default parameters from 'defaults.toml'...")
         toml_path = script_dir / "defaults.toml"
         workdir = "../../data/opentrim/results/default"
 

@@ -20,9 +20,9 @@ publication-quality figures.
 > [open an issue](https://github.com/hobler/OpenSRIM/issues) — feedback at
 > this stage is genuinely useful and appreciated.
 
-## Installation
+## Installation (Linux)
 
-OpenSRIM targets Python 3.11+ and Linux (Ubuntu); other platforms may work
+OpenSRIM targets Python 3.11+ and Linux (Ubuntu); other distributions may work
 but are untested. This early on, installation is aimed at technically
 comfortable users (venv + pip), not a packaged one-click installer.
 
@@ -45,6 +45,13 @@ source venv/bin/activate
 pip install -r requirements.txt
 python3 main_window.py
 ```
+
+## Installation (Windows)
+
+OpenSRIM was confirmed to be working on Windows 11 25H2. Before using it, make 
+sure to have the latest version of [Microsoft Visual C++ Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170#latest-supported-redistributable-version)
+installed on your system. After cloning the repository, you may use the provided
+`start.bat` script by double-clicking or launching it from `cmd`.
 
 ### Notes on running OpenTRIM
 

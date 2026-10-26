@@ -21,6 +21,12 @@ ROOTS_LEGENDRE = LEGENDRE_RULES[0]
 
 @jit(debug=config.DEBUG)
 def _integrands(u, e, p, r0, pot_model, pot_coefs):
+    """Return angle, time and rationalized deflection integrands at mapped u.
+    
+    The NLHlin caller enforces its finite range before forming chi; the raw
+    screening kernel does not enforce this cutoff itself. Small u uses the
+    Taylor limit of chi. The third output avoids cancellation for weak scattering.
+    """
     if pot_model == "ZBL":
         phi0, dphi0 = zbl.screen_fun(r0, pot_coefs)
         phi, _ = zbl.screen_fun(r0 / (1 - u**2), pot_coefs)
@@ -59,26 +65,32 @@ def _integrands(u, e, p, r0, pot_model, pot_coefs):
 
 @jit(debug=config.DEBUG)
 def _integrand_arccos_half(u):
+    """Return the free-motion integrand used to normalize the selected angle rule.
+    """
     return 1 / np.sqrt(2 - u**2)
 
 
 @jit(debug=config.DEBUG)
 def scatter_integrals(e, p, pot_model, pot_coefs, n_absc=4):
     """Calculate scattering angle and time integral.
-
+    
     The calculation uses Gauss-Legendre quadrature with an explicit order.
     Omitting n_absc preserves the four-point configuration.
-
+    
     Parameters:
         e (float): Reduced energy.
         p (float): Reduced impact parameter.
         pot_model (str): The potential model to use ("ZBL" or "NLHlin").
         pot_coefs: Parameters for the potential model.
         n_absc (int): Quadrature order: 4, 16, 32, 64, 128 or 256 (default 4).
-
+    
     Returns:
         (float): Pi minus scattering angle (rad)
         (float): Time integral (RNORM).
+    
+    A finite-range trajectory with p >= rmax returns (pi, 0), representing
+    zero deflection in this API. The temporary arrays use an immutable selected
+    rule, so explicit higher-order calls do not change subsequent default calls.
     """
 
     rule_index = -1
@@ -153,19 +165,25 @@ def scatter_integrals(e, p, pot_model, pot_coefs, n_absc=4):
 @jit(debug=config.DEBUG)
 def get_apsis(e, p, pot_model, pot_coefs):
     """Calculate the distance of closest approach (apsis).
-
+    
     The initial condition for Newton's method is calculated from a
     piecewise approximation to the screening function.
-
+    
     Parameters:
         e (float): Reduced energy.
         p (float): Reduced impact parameter.
         pot_model (str): Repulsive potential model ("ZBL" or "NLHlin").
-        pot_coefs: Parameters returned by nlhlin.get_coefs().
-
+        pot_coefs: Native structured coefficient record for the selected model.
+    
     Returns:
         r0 (float): Estimated apsis of the collision (RNORM)
         count (int): Number of iterations used to converge the apsis
+    
+    Newton iterates stay at or above p and, for finite range, at or below rmax.
+    The stable residual avoids subtracting nearly equal r and p**2/r. Convergence
+    uses the actual constrained step with relative threshold 1e-3. Invalid
+    residuals/derivatives raise ValueError; 100 unsuccessful iterations raise
+    RuntimeError. At or beyond the cutoff return (p, 0) immediately.
     """
 
     psq = p**2
@@ -239,6 +257,8 @@ def get_apsis(e, p, pot_model, pot_coefs):
         r0 = min(r0, rmax)
 
     def fun(r):
+        """Return the stable turning-point residual and its analytic derivative.
+        """
         if pot_model == "ZBL":
             screen, dscreen = zbl.screen_fun(r, pot_coefs)
         else:

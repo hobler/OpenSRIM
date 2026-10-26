@@ -1,3 +1,7 @@
+! Generate native screening references for test_nlhlin.py.
+! Two models x three configurations x 92 pairs produce 552 files of 101 rows.
+! Each row stores the test coordinate, phi and dphi/d(test coordinate).
+! conftest.py provides the canonical coefficient table in a temporary cwd.
 program screen_reference
    use Const_mod, only: REAL8
    use Param_Setup_mod, only: nelem
@@ -17,6 +21,8 @@ program screen_reference
    do model = 1, 2
       if(model == 1) label = 'nlhlin'
       if(model == 2) label = 'zbl'
+      ! Configurations match test_nlhlin.CONFIGURATIONS. The first two use
+      ! equal-element pairs; the third fixes the second element to copper.
       do config = 1, 3
          if(config == 1) then
             p1 = 0; p2 = 0
@@ -56,11 +62,14 @@ program screen_reference
                   coordinate = (3._REAL8/rnorm)*real(i,REAL8)/100._REAL8
                   radius = coordinate*rnorm/native_norm
                   call screen(radius,1,2,phi,dphi)
+                  ! Chain rule: convert the native reduced-radius derivative
+                  ! to the normalization used by the requested test grid.
                   dphi = dphi*rnorm/native_norm
                else
                   coordinate = 3._REAL8*real(i,REAL8)/100._REAL8
                   radius = coordinate/native_norm
                   call screen(radius,1,2,phi,dphi)
+                  ! ZBL output coordinates are physical radii in Angstrom.
                   dphi = dphi/native_norm
                end if
                write(unit,'(3es25.16)') coordinate, phi, dphi

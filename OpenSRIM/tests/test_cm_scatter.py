@@ -38,9 +38,13 @@ from scattering_support import (
 @pytest.mark.usefixtures("build_and_run_f90")
 def test_chi_python_numba_fortran(model):
     """Compare the screening-derived chi diagnostic on the original plot grid.
-
+    
     All three backends supply native screening values. This does not test
-    three independent internal chi implementations of the scattering solvers."""
+    three independent internal chi implementations of the scattering solvers.
+    
+    Use four r0 values and 999 interior u points per model. The session fixture
+    prepares the classic Fortran files before the diagnostic helper reads them.
+    """
     # The shared helper reports all three pairwise differences.
     u = chi_u_values()
     compare_chi_reference(model, "", u, u)
@@ -50,9 +54,13 @@ def test_chi_python_numba_fortran(model):
 @pytest.mark.usefixtures("build_and_run_f90")
 def test_chi_near_zero_python_numba_fortran(model):
     """Compare screening-derived chi near u=0 across all three backends.
-
+    
     The logarithmic grid covers the transition to the Taylor approximation
-    used to avoid cancellation of nearly equal screening values."""
+    used to avoid cancellation of nearly equal screening values.
+    
+    Compare the same logarithmic input grid with saved Fortran coordinates;
+    the tolerance is the shared chi budget, independent of the observed error.
+    """
     # The grid helper excludes the singular endpoint u=1.
     u = chi_near_zero_u_values()
     compare_chi_reference(model, "_near_zero", u, u)
@@ -62,9 +70,13 @@ def test_chi_near_zero_python_numba_fortran(model):
 @pytest.mark.usefixtures("build_and_run_f90")
 def test_chi_near_one_python_numba_fortran(model):
     """Compare the screening-derived chi diagnostic near u=1.
-
+    
     Small values of 1-u correspond to large evaluation radii and therefore
-    also probe the screening tail."""
+    also probe the screening tail.
+    
+    Validate the 1-u file column before evaluating errors in chi; this avoids
+    comparing output rows corresponding to different physical radii.
+    """
     # Reference coordinates are 1-u, while the calculation receives u.
     u1, u = chi_near_one_values()
     compare_chi_reference(model, "_near_one", u1, u)
@@ -74,9 +86,13 @@ def test_chi_near_one_python_numba_fortran(model):
 @pytest.mark.usefixtures("build_and_run_f90")
 def test_head_on_scattering_angle_python_numba_fortran(model):
     """Check head-on scattering at p=0 for both potential models.
-
+    
     Besides pairwise agreement, each backend must return the physical
-    backscattering angle pi. This test does not check tau."""
+    backscattering angle pi. This test does not check tau.
+    
+    Run seven reduced energies. The exact-angle assertion supplements all
+    three pairwise comparisons and uses an absolute tolerance of 1e-14.
+    """
     # Pairwise agreement alone would not detect a common error in all backends.
     screen = get_python_screen_fun(model)
     pot_model, pot_coefs = build_numba_potential(model)
@@ -97,9 +113,13 @@ def test_head_on_scattering_angle_python_numba_fortran(model):
 @pytest.mark.usefixtures("build_and_run_f90")
 def test_scattering_at_and_beyond_cutoff_python_numba_fortran():
     """Check vanishing NLHlin scattering at and beyond the cutoff.
-
+    
     All backends must return theta=tau=0. Also check that the direct Numba
-    apsis call returns p without performing a Newton iteration."""
+    apsis call returns p without performing a Newton iteration.
+    
+    Also verify the native Numba apsis shortcut returns r0=p with no iterations.
+    The finite-range contract is checked independently of backend agreement.
+    """
     # nextafter selects the immediately adjacent representable value above rmax.
     screen = get_python_screen_fun("NLHlin")
     pot_model, pot_coefs = build_numba_potential("NLHlin")
@@ -128,9 +148,13 @@ def test_scattering_at_and_beyond_cutoff_python_numba_fortran():
 @pytest.mark.usefixtures("build_and_run_f90")
 def test_scatter_integrals_python_numba_fortran(model):
     """Compare theta and tau on three energy-dependent impact-parameter grids.
-
+    
     Python and Numba use four Legendre points. Fortran supplies the
-    four-point Legendre angle and tau from 512 Mehler points."""
+    four-point Legendre angle and tau from 512 Mehler points.
+    
+    Fortran input columns must match before theta and tau are compared
+    separately. Failure aggregation preserves diagnostics from the entire sweep.
+    """
     # Angle and time integral have separate, explicit error budgets.
     screen = get_python_screen_fun(model)
     pot_model, pot_coefs = build_numba_potential(model)
@@ -149,9 +173,13 @@ def test_scatter_integrals_python_numba_fortran(model):
 @pytest.mark.usefixtures("build_and_run_f90")
 def test_tau_error_data_python_numba_fortran(model):
     """Compare native time integrals and report a finer Python calculation.
-
+    
     Three-way comparisons are assertions. The additional comparison with
-    Python at 32 points only diagnoses quadrature errors."""
+    Python at 32 points only diagnoses quadrature errors.
+    
+    The 32-point Python result is a diagnostic baseline, not an asserted exact
+    solution. The three-way comparison still exercises the default-order outputs.
+    """
     # The separate accuracy test supplies the actual convergence assertions.
     screen = get_python_screen_fun(model)
     pot_model, pot_coefs = build_numba_potential(model)
@@ -174,9 +202,13 @@ def test_tau_error_data_python_numba_fortran(model):
 @pytest.mark.usefixtures("build_and_run_f90")
 def test_tau_over_theta_data_python_numba_fortran(model):
     """Compare tau as a function of theta on the original plotting grid.
-
+    
     Both coordinates are checked separately across all three backends.
-    Python and Numba use the four-point default configuration here."""
+    Python and Numba use the four-point default configuration here.
+    
+    Compare both coordinates on six energy grids with 201 impact parameters;
+    no division by theta is performed, including where the angle vanishes.
+    """
     # The plot uses theta as its axis; it does not divide tau by theta.
     screen = get_python_screen_fun(model)
     pot_model, pot_coefs = build_numba_potential(model)
@@ -197,9 +229,13 @@ def test_tau_over_theta_data_python_numba_fortran(model):
 @pytest.mark.usefixtures("build_and_run_f90")
 def test_sinhalftheta_over_p_data_python_numba_fortran(model):
     """Compare sin²(theta/2) as a function of impact parameter p.
-
+    
     Each native scattering angle is converted to the quantity displayed
-    by the original plotting function."""
+    by the original plotting function.
+    
+    Use seven energies and 201 impact parameters. The sin2 tolerance applies
+    to the transformed physical quantity, not directly to the angle.
+    """
     # This conversion defines the tested quantity; it does not correct results.
     screen = get_python_screen_fun(model)
     pot_model, pot_coefs = build_numba_potential(model)
@@ -218,9 +254,13 @@ def test_sinhalftheta_over_p_data_python_numba_fortran(model):
 @pytest.mark.usefixtures("build_and_run_f90")
 def test_theta_error_data_python_numba_fortran(model, energy_index):
     """Compare four-point scattering angles at one parametrized energy.
-
+    
     Each potential uses identical impact parameters for Python, Numba
-    and the native Fortran LegendreChiCorr method."""
+    and the native Fortran LegendreChiCorr method.
+    
+    Use n=4 reference data and the energy-specific input grid. Additional
+    orders generated by the Fortran driver are not assertions of this test.
+    """
     # The energy selects the corresponding impact-parameter and reference grid.
     e = E_VALUES_ERROR[energy_index]
     p_values = P_VALUES_ERROR[energy_index]
@@ -237,9 +277,13 @@ def test_theta_error_data_python_numba_fortran(model, energy_index):
 @pytest.mark.usefixtures("build_and_run_f90")
 def test_scatter_tau_python_numba_fortran():
     """Compare ZBL tau with the Fortran table routines cmangl and timeint.
-
+    
     Each Fortran routine is compared separately with Python and Numba.
-    Table interpolation has its own absolute error budget."""
+    Table interpolation has its own absolute error budget.
+    
+    Keep the legacy table absolute error budget separate from the stricter
+    quadrature-convergence test and compare each table routine explicitly.
+    """
     # These legacy tables are evaluated independently of Mehler quadrature.
     screen = get_python_screen_fun("ZBL")
     pot_model, pot_coefs = build_numba_potential("ZBL")
@@ -260,9 +304,13 @@ def test_scatter_tau_python_numba_fortran():
 @pytest.mark.parametrize('pair', EXTENDED_PAIRS, ids=lambda pair: f'Z{pair[0]}-Z{pair[1]}')
 def test_additional_element_pairs_python_numba_fortran(model, pair, extended_fortran):
     """Compare theta and tau for H–H, Au–Au, H–Au and B–Si across all backends.
-
+    
     Three energies and seven impact parameters cover light, heavy and
-    strongly asymmetric element pairs for both potential models."""
+    strongly asymmetric element pairs for both potential models.
+    
+    Each case covers three energies and seven impact parameters, with the
+    Fortran extended driver using Mehler order 512 for tau.
+    """
     # Each backend reads its own coefficients from the shared input dataset.
     screen, coefs = pair_inputs(model, *pair)
     energies, points = extended_grid('pairs', model, screen.rmax)
@@ -281,9 +329,13 @@ def test_additional_element_pairs_python_numba_fortran(model, pair, extended_for
 @pytest.mark.parametrize('model', all_models())
 def test_small_impact_and_inside_cutoff_python_numba_fortran(model, extended_fortran):
     """Check small positive impact parameters and the approach to the NLHlin cutoff.
-
+    
     Besides three-way comparisons, check the Numba apsis bounds and
-    the physical angle range of every backend."""
+    the physical angle range of every backend.
+    
+    In addition to three-way output comparisons, require finite Numba apsides
+    inside the allowed interval and a bounded number of Newton iterations.
+    """
     # Cutoff inputs must be bitwise identical; extended_outputs enforces this.
     screen, coefs = pair_inputs(model, 5, 14)
     energies, points = extended_grid('boundary', model, screen.rmax)
@@ -313,10 +365,15 @@ TAU_ACCURACY = {'tau': {'numba': (1e-3, 1e-6), 'fortran': (1e-3, 1e-6)}}
 @pytest.mark.parametrize('model', all_models())
 def test_tau_accuracy_and_convergence_python_numba_fortran(model, extended_fortran):
     """Check tau accuracy and quadrature convergence across all three backends.
-
+    
     Python and Numba use 128 points for the accuracy comparison; Fortran
     uses its highest tested order. Adjacent high orders must agree, and
-    the Numba default must remain equivalent to an explicit four-point call."""
+    the Numba default must remain equivalent to an explicit four-point call.
+    
+    Lower-order errors are reported for diagnosis; adjacent high-order pairs
+    and the final cross-backend values have explicit assertions. Unsupported
+    Numba order 7 must raise instead of silently selecting another rule.
+    """
     # A high order alone does not prove convergence; convergence is asserted separately.
     screen, coefs = pair_inputs(model, 5, 14)
     with pytest.raises(ValueError, match="Unsupported Legendre order"):
@@ -346,6 +403,8 @@ def test_tau_accuracy_and_convergence_python_numba_fortran(model, extended_fortr
                 assert_arrays_equal(high, low, rtol=1e-3, atol=1e-6)
             except AssertionError as exc:
                 failures.append(f'{label}, e={e}: convergence target not reached: {exc}')
+        # These lower-order summaries describe accuracy; only the high-order
+        # convergence assertions above determine whether convergence was reached.
         for n in (4, 32):
             record_max_error(summaries, f'Python {n} vs 128', python[n], python[128], points,
                              context=f'e={e}', labels=(f'Python {n}', 'Python 128'))

@@ -54,7 +54,7 @@ P_VALUES_TAU_THETA = np.linspace(0.02, 30.0, 201)
 E_VALUES_SIN = np.logspace(-4, 2, 7)
 P_VALUES_SIN = np.linspace(0.01, 30.0, 201)
 
-# The current Numba implementation has ROOTS_LEGENDRE = roots_legendre(4).
+# The production default selects the four-point rule from immutable cached rules.
 NUMBA_N_ABSC = 4
 
 # ---------------------------------------------------------------------------
@@ -88,13 +88,22 @@ F90_DIR = Path(__file__).resolve().parent / "data" / "f90"
 # ---------------------------------------------------------------------------
 
 def get_python_screen_fun(model):
-    """Return the Python screening function."""
+    """Create the B/Si Python screening descriptor in the model's native units.
+    
+    The descriptor uses tools/pytrim when available and matching saved outputs
+    otherwise; it never imports the Numba module as a Python replacement.
+    """
     rnorm = RNORM_ZBL if model == "ZBL" else RNORM_NLHlin
     return PythonScreen(model, Z1, Z2, rnorm)
 
 
 def build_numba_potential(model):
-    """Build the OpenTRIM/Numba potential coefficients."""
+    """Build B/Si coefficients through the production OpenTRIM parameter loader.
+    
+    Read defaults.toml, select the requested potential, and extract the native
+    structured record. Check that JIT is enabled and the default rule has four
+    points before returning (model, coefficients).
+    """
     assert hasattr(cm_scatter_nb.scatter_integrals, "py_func"), "Numba JIT is disabled"
     assert len(cm_scatter_nb.ROOTS_LEGENDRE[0]) == NUMBA_N_ABSC
     input_params = read_params(Path(cm_scatter_nb.__file__).with_name("defaults.toml"))
@@ -122,24 +131,32 @@ def build_numba_potential(model):
 # ---------------------------------------------------------------------------
 
 def all_models():
-    """Return the potential models used by the tests."""
+    """Return the two supported model names used by pytest parametrization.
+    """
     return ("ZBL", "NLHlin")
 
 
 def chi_u_values():
-    """u values used by plot_chi()."""
+    """Return the 999 interior u samples from the regular Python chi plot.
+    """
     return np.linspace(0.001, 0.999, 999)
 
 
 def chi_near_zero_u_values():
-    """u values used by plot_chi_near_zero()."""
+    """Return 101 logarithmic u samples probing cancellation near zero.
+    
+    Replace exactly one by its predecessor to keep r0/(1-u**2) finite.
+    """
     u = np.logspace(-10, 0, 101)
     u[-1] = np.nextafter(1.0, 0.0)
     return u
 
 
 def chi_near_one_values():
-    """Return (1-u, u) values used by plot_chi_near_one()."""
+    """Return (1-u, u) arrays for the logarithmic large-radius diagnostic.
+    
+    Coordinates stored in the reference files are 1-u, not the integration u.
+    """
     u1 = np.logspace(-10, 0, 101)
     u1[-1] = np.nextafter(1.0, 0.0)
 
@@ -149,14 +166,22 @@ def chi_near_one_values():
 
 
 def calculate_scatter(e, p_values, screen, pot_model, pot_coefs):
-    """Call both production APIs on one grid, returning (theta, tau) arrays."""
+    """Evaluate both production APIs on one reduced-energy/impact grid.
+    
+    Return (python, numba), each shaped (2, len(p_values)) with rows theta, tau.
+    """
     python = calculate_scatter_python(e, p_values, screen)
     numba = calculate_scatter_numba(e, p_values, pot_model, pot_coefs)
     return python, numba
 
 
 def calculate_scatter_numba(e, p_values, pot_model, pot_coefs, n_absc=None):
-    """Call the native JIT API; None exercises the unchanged default call shape."""
+    """Evaluate the native JIT kernel and return rows theta and tau.
+    
+    None exercises the four-argument production call; an explicit n_absc selects
+    a supported rule. Only the public complementary-angle convention is converted
+    by theta = pi - returned_angle. No numerical error correction is applied.
+    """
     if n_absc is None:
         values = [cm_scatter_nb.scatter_integrals(e, p, pot_model, pot_coefs) for p in p_values]
     else:
@@ -168,12 +193,19 @@ def calculate_scatter_numba(e, p_values, pot_model, pot_coefs, n_absc=None):
 
 
 def calculate_scatter_python(e, p_values, screen, n_absc=NUMBA_N_ABSC):
-    """Evaluate Python with an explicit quadrature order on every call."""
+    """Evaluate live-or-cached Python at an explicit quadrature order.
+    
+    The default is four points, matching the production Numba default.
+    """
     return python_scatter(e, p_values, screen, n_absc)
 
 
 def assert_arrays_equal(reference, result, *, rtol=RTOL, atol=ATOL):
-    """Compare finite outputs; the second allclose argument sets relative scale."""
+    """Assert finite arrays within atol + rtol * abs(reference).
+    
+    Despite the helper name, equality is approximate unless both tolerances are
+    zero. NaN/Inf fail even when both implementations produce them.
+    """
     assert np.all(np.isfinite(reference)), "Non-finite reference output"
     assert np.all(np.isfinite(result)), "Non-finite result output"
     np.testing.assert_allclose(
@@ -182,7 +214,11 @@ def assert_arrays_equal(reference, result, *, rtol=RTOL, atol=ATOL):
 
 
 def load_fortran_data(filename, grid, columns=2):
-    """Read reference outputs and verify their full shape and input grid."""
+    """Read a classic reference and validate shape and input coordinates.
+    
+    Expect len(grid) rows and columns columns, with the grid in column zero.
+    Output finiteness is checked later, after comparison diagnostics are recorded.
+    """
     path = F90_DIR / filename
     if not path.is_file():
         pytest.fail(f"Missing result file: {path}")
@@ -199,7 +235,13 @@ def load_fortran_data(filename, grid, columns=2):
 def record_max_error(summaries, name, left, right, coordinates, *,
                      context="", coordinate_name="p", labels=("Python", "Numba"),
                      details=None):
-    """Record absolute/relative maxima separately; non-finite outputs stay visible."""
+    """Accumulate separate absolute/relative maxima over repeated grid comparisons.
+    
+    Relative error uses abs(right) as denominator and excludes zero references
+    only from that statistic. Absolute checks still include zeros. Record values,
+    coordinates and optional details at the absolute maximum; the relative
+    maximum may occur elsewhere. Count nonfinite pairs for the final report.
+    """
     left, right = np.asarray(left), np.asarray(right)
     finite = np.isfinite(left) & np.isfinite(right)
     entry = summaries.setdefault(name, {
@@ -210,6 +252,8 @@ def record_max_error(summaries, name, left, right, coordinates, *,
     entry["nonfinite"] += int(np.count_nonzero(~finite))
     entry["zero_reference"] += int(np.count_nonzero(finite & (right == 0)))
     def location(index):
+        """Combine the selected grid coordinate with its model/energy context.
+        """
         point = f"{coordinate_name}={coordinates[index]}"
         return f"{context}, {point}" if context else point
     indices = np.flatnonzero(finite)
@@ -230,7 +274,10 @@ def record_max_error(summaries, name, left, right, coordinates, *,
 
 
 def print_results(title, summaries, *, counts=None, note=None):
-    """Central output routine for all numerical test summaries."""
+    """Print accumulated backend errors, locations, values and optional counters.
+    
+    This is the shared presentation layer; it does not decide whether a test passes.
+    """
     lines = [f"\n--- {title} ---"]
     for name, summary in summaries.items():
         lines.extend([
@@ -260,7 +307,13 @@ def print_results(title, summaries, *, counts=None, note=None):
 
 def compare_three_way(summaries, failures, values, coordinates, context, quantity,
                       *, tolerances, prefix="", coordinate_name="p", fortran_tolerance=None):
-    """Check all three pairs and retain diagnostics even when a pair fails."""
+    """Compare all backend pairs and collect failures without aborting the grid.
+    
+    values maps Python, Numba and Fortran to aligned arrays. Each pair uses its
+    right-hand array as the relative reference. A pair containing Numba uses
+    the Numba budget, except Tau against Fortran uses the Fortran budget or the
+    explicit override. Statistics are recorded before assertions are attempted.
+    """
     for left_label, right_label in (("Python", "Numba"), ("Python", "Fortran"),
                                     ("Numba", "Fortran")):
         left, right = values[left_label], values[right_label]
@@ -277,6 +330,11 @@ def compare_three_way(summaries, failures, values, coordinates, context, quantit
 
 
 def finish_comparison(title, summaries, failures, **kwargs):
+    """Emit all collected statistics, then fail if any comparison failed.
+    
+    Report the total failure count and first three detailed errors to keep the
+    pytest failure message manageable while preserving the full summary.
+    """
     print_results(title, summaries, **kwargs)
     if failures:
         pytest.fail(f"{len(failures)} comparison(s) failed:\n" + "\n".join(failures[:3]))
@@ -314,6 +372,8 @@ def compare_chi_reference(model, suffix, coordinates, u):
     pot_model, pot_coefs = build_numba_potential(model)
 
     def screen_nb(radius):
+        """Preserve scalar/array shape while calling the vector Numba screen adapter.
+        """
         radii = np.asarray(radius, dtype=float)
         phi, derivative = evaluate_numba_screen(radii.reshape(-1), pot_model, pot_coefs)
         return phi.reshape(radii.shape), derivative.reshape(radii.shape)
@@ -345,11 +405,19 @@ MEHLER_ORDERS = (512, 2048, 8192, 32768, 131072, 524288)
 
 @lru_cache(maxsize=1)
 def coefficient_template():
+    """Cache a native B/Si record as a dtype/layout template for other pairs.
+    
+    Callers must copy it before replacing coefficients.
+    """
     return build_numba_potential("NLHlin")[1]
 
 
 def numba_coefficients(model, z1, z2):
-    """Populate a native record using only the backend's own coefficient loader."""
+    """Return native normalization and a fresh structured record for an element pair.
+    
+    Use each model's own get_coefs loader. Zero unused array slots so the shorter
+    ZBL coefficient arrays do not retain NLHlin template values.
+    """
     coefs = coefficient_template().copy()
     coefs.a[:] = 0
     coefs.b[:] = 0
@@ -368,12 +436,19 @@ def numba_coefficients(model, z1, z2):
 
 
 def pair_inputs(model, z1, z2):
+    """Prepare Python and Numba inputs for the same pair and reduced length unit.
+    """
     norm, coefs = numba_coefficients(model, z1, z2)
     return PythonScreen(model, z1, z2, norm), coefs
 
 
 def extended_grid(kind, model, rmax):
-    """Fixed input grids, independent of measured errors or output values."""
+    """Return fixed (energies, impact_parameters) for an extended test group.
+    
+    Match scatter_extended.f90: pairs covers diverse elements, boundary probes
+    small p and the immediate interior of rmax, and convergence spans the range.
+    The grids depend on inputs only, never on measured comparison errors.
+    """
     if kind == 'pairs':
         energies = (1e-4, .1, 100.)
         points = np.array([.02, .1, .5, 1., 2., 3., 4.])
@@ -391,7 +466,12 @@ def extended_grid(kind, model, rmax):
 
 
 def extended_outputs(directory, kind, model, pair, order, energies, points):
-    """Validate both input columns before exposing the native outputs."""
+    """Validate extended Fortran input columns and return theta/tau arrays.
+    
+    The file has columns e, p, theta, tau in energy-major order. Return shape
+    (len(energies), 2, len(points)). Boundary impact parameters must match exactly
+    so a one-ULP shift across the cutoff cannot be mistaken for a solver error.
+    """
     z1, z2 = pair
     path = directory / f'{kind}_{model}_{z1}_{z2}_n{order}.txt'
     if not path.is_file():

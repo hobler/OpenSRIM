@@ -15,7 +15,14 @@ SCREEN_TOLERANCES = {'screen': {'numba': (1e-10, 1e-11), 'fortran': (1e-10, 1e-1
 
 
 def compare_screening(model, config_index, directory):
-    """Evaluate native screening APIs and report all pairwise maximum errors."""
+    """Compare native phi and dphi for 92 element pairs at 101 radii each.
+    
+    NLHlin uses the selected normalization; ZBL is compared in Angstrom. Apply
+    the chain rule to derivatives when converting radius units. Validate Fortran
+    input columns before comparing all three pairs. Omit only the NLHlin
+    derivative at the cutoff jump, and independently require zero screening
+    outside the cutoff. Report all failures after completing the configuration.
+    """
     p1, p2, fixed_z2 = CONFIGURATIONS[config_index]
     summaries, failures = {}, []
     derivative_cutoff_points = 0
@@ -36,6 +43,7 @@ def compare_screening(model, config_index, directory):
             python[1] /= native_norm  # derivative with respect to Angstrom
             factor = 1./native_norm
         numba = np.asarray(cm.evaluate_numba_screen(grid*factor, model, coefs))
+        # Chain rule: dphi/d(grid) = dphi/d(native_radius) * d(native_radius)/d(grid).
         numba[1] *= factor
         path = directory / f'screen_{model.lower()}_c{config_index+1}_z{z1}.txt'
         if not path.is_file():
@@ -70,9 +78,13 @@ def compare_screening(model, config_index, directory):
 @pytest.mark.parametrize('config_index', range(3))
 def test_plot_screen_data_python_numba_fortran(config_index, screening_fortran):
     """Compare NLHlin screening and its derivative across all three backends.
-
+    
     Each normalization covers 92 element pairs and 101 radii per pair.
-    Both outputs must vanish exactly beyond the cutoff."""
+    Both outputs must vanish exactly beyond the cutoff.
+    
+    The session fixture supplies live-generated or validated saved Fortran data.
+    The local screening tolerance table does not alter scattering tolerances.
+    """
     # Only the discontinuous derivative is omitted at the cutoff; phi is checked everywhere.
     compare_screening('NLHlin', config_index, screening_fortran)
 
@@ -80,8 +92,12 @@ def test_plot_screen_data_python_numba_fortran(config_index, screening_fortran):
 @pytest.mark.parametrize('config_index', range(3))
 def test_plot_zblscreen_data_python_numba_fortran(config_index, screening_fortran):
     """Compare ZBL screening and its derivative across all three backends.
-
+    
     Each configuration covers 92 element pairs, including Z=92. Radii
-    and derivatives are converted to common physical units."""
+    and derivatives are converted to common physical units.
+    
+    Configurations 0 and 1 intentionally revisit the same physical ZBL grid;
+    configuration 2 changes the partner element to copper (Z2=29).
+    """
     # ZBL has no finite cutoff, so no derivative points are excluded.
     compare_screening('ZBL', config_index, screening_fortran)

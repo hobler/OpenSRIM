@@ -1,5 +1,9 @@
 ! Black-box driver: each invocation initializes one native model/order/pair.
 ! Separate processes avoid changing the allocation lifecycle of native modules.
+! Usage: scatter_extended MODEL Z1 Z2 MEHLER_ORDER
+! Writes energy-major rows: reduced energy, reduced impact parameter, theta, tau.
+! Theta uses native LegendreChiCorr(4); tau uses native cmangm at MEHLER_ORDER.
+! conftest.py stages input tables and collects these files after successful runs.
 program scatter_extended
    use Const_mod, only: REAL8
    use Param_Setup_mod, only: nelem
@@ -16,6 +20,8 @@ program scatter_extended
    real(REAL8) :: energies(3), points(7)
    character(32) :: model, arg, label
    character(256) :: filename
+   ! One invocation owns one initialized model/pair/order; initCmangm allocates
+   ! module storage and is not a general reset operation for a new rule.
    call get_command_argument(1, model)
    call get_command_argument(2, arg); read(arg,*) z1
    call get_command_argument(3, arg); read(arg,*) z2
@@ -40,6 +46,8 @@ program scatter_extended
    sn%nmehl=order
    call initCmangm()
    rmax=get_rmax(1,2)
+   ! Keep these input grids synchronized with scattering_support.extended_grid.
+   ! Boundary points include the immediate representable predecessor of rmax.
    do group=1,3
       ! Higher orders are needed only by the dedicated convergence test.
       if(order /= 512 .and. group /= 3) cycle

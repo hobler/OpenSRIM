@@ -9,9 +9,12 @@ from scipy.special import roots_legendre
 
 def setup(n_absc):
     """Setup Gauss-Legendre abscissae and weights.
-
+    
     Parameters:
         n_absc (int): Number of abscissae.
+    
+    This changes module-level quadrature state. Call it again when switching
+    orders; test adapters do so explicitly before every live scattering batch.
     """
     global ROOTS_LEGENDRE
 
@@ -19,19 +22,16 @@ def setup(n_absc):
 
 
 def calc_phi_chi(u, r0, screen_fun):
-    """Calculate the screening function and chi at the given u values.
-
-    phi is evaluated at r0/(1-u**2).
-    chi is the difference of phi and phi0 (=phi(r0)) divided by u^2, with a 
-    Taylor expansion used for small u to avoid numerical issues.
-
-    Parameters:
-        u (array-like): Integration variable.
-        r0 (float): Distance of closest approach (RNORM).
-        screen_fun (callable): Function to calculate the screening function
-            for given distance r (RNORM).
-    Returns:
-        (float): Value of chi function.
+    """Return (phi, chi) at radii r0/(1-u**2).
+    
+    Args:
+        u: Scalar or array of integration coordinates below one.
+        r0: Closest-approach distance in reduced length units.
+        screen_fun: Callable returning phi and dphi/dr in the same units.
+    
+    Chi equals [phi(r0)-(1-u**2)*phi(r0/(1-u**2))]/u**2. For u < 3e-4
+    use its Taylor limit phi(r0)-r0*phi'(r0) to avoid cancellation.
+    Both returned values follow the shape of u.
     """
     u = np.asarray(u)
     phi0, dphi0 = screen_fun(r0)
@@ -42,11 +42,11 @@ def calc_phi_chi(u, r0, screen_fun):
 
 def scatter_integrals(e, p, screen_fun):
     """Calculate scattering angle and time integral.
-
+    
     The calculation uses Gauss-Legendre quadrature with a fixed number of
     abscissae given by ROOTS_LEGENDRE. The abscrissae and weights must have 
     been set up before calling this function using setup().
-
+    
     Parameters:
         e (float): Reduced energy.
         p (float): Reduced impact parameter.
@@ -56,6 +56,10 @@ def scatter_integrals(e, p, screen_fun):
     Returns:
         (float): Scattering angle (rad)
         (float): Time integral (RNORM).
+    
+    For a finite range, the angle uses a rationalized geometric difference and
+    deflection integral to avoid subtracting nearly equal angles. A collapsed
+    integration interval is evaluated geometrically before normalization.
     """
     if p >= screen_fun.rmax:
         return 0.0, 0.0
@@ -65,6 +69,11 @@ def scatter_integrals(e, p, screen_fun):
     r0, _ = screen_fun.apsis(e, p)
 
     def integrands(u):
+        """Return angle, time and rationalized deflection integrands on mapped u.
+        
+        The third output evaluates the small difference from free motion without
+        subtracting two nearly equal floating-point values.
+        """
         phi, chi = calc_phi_chi(u, r0, screen_fun)
         rho = r0 / (e*p**2)
         g = np.sqrt(rho*chi + (2-u**2))
@@ -77,6 +86,8 @@ def scatter_integrals(e, p, screen_fun):
         return integrand_theta, integrand_tau, correction
     
     def integrand_two_arccos(u):
+        """Return the free-motion integrand used to normalize the angle quadrature.
+        """
         return 4 / np.sqrt(2 - u**2)
 
     rmax = screen_fun.rmax

@@ -1,11 +1,9 @@
-"""Define the NLHlin screening function.
+"""Load NLHlin coefficients and evaluate native OpenTRIM screening.
 
-Available functions:
-    NLHlin_screen: Callable object for the NLHlin screening function.
-    
-Moreover, there are plotting functions for testing and visualization:
-    plot_screen: plot NLHlin screening function for various atomic numbers.
-    plot_ZBLscreen: plot ZBL screening function for various atomic numbers.
+get_coefs reads NLHlin_3eV.dat and derives the reduced coefficients and the
+piecewise apsis approximation. The parameter loader stores these values in
+structured records consumed by screen_fun and impulse_integral. The raw
+screening kernel leaves finite-range cutoff enforcement to its caller.
 """
 import os
 import sys
@@ -30,6 +28,7 @@ def get_coefs(Z1, Z2):
         b (ndarray): Screening lengths (1/RNORM)
         c (float): Constant term
         d (float): Coefficient for the linear term
+        r34 (float): Transition radius of the piecewise apsis approximation
         rmax (float): Maximum distance for the screening function
         k (ndarray): Array of coefficients for the piecewise approximation
     """
@@ -144,18 +143,19 @@ def impulse_integral(p, pot_coefs):
 
 @register_jitable(debug=config.DEBUG)
 def screen_fun(r, pot_coefs):
-    """Calculate the NLHlin screening function and its derivative.
-
-    Parameters:
-        r (float): Distance (RNORM)
-        pot_coefs: Tuple returned by get_coefs()
-
-    Returns:
-        (float): NLHlin screening function at distance r
-        (float): derivative of NLHlin screening function at distance r
+    """Evaluate the raw finite-range screening formula and its analytic derivative.
+    
+    Args:
+        r: Distance in reduced length units.
+        pot_coefs: Native structured record with a, b, c, d and rmax fields;
+            the parameter loader populates it from get_coefs(), not a raw tuple.
+    
+    Return (phi, dphi/dr). This kernel extrapolates the formula outside rmax;
+    the scattering caller must enforce the finite-range domain. The linear
+    term -d*r/rmax contributes -d/rmax to the derivative.
     """
 
-    # get_coefs() returns:
+    # Read fields from the production parameter record, not the loader return tuple.
     a = pot_coefs.a
     b = pot_coefs.b
     c = pot_coefs.c

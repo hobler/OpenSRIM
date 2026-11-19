@@ -1,9 +1,0 @@
-P amorphous and channeling implantations
-P in #text#-Si, 25 keV, 0 tilt, dose=1e13
- &setup    natom=3 nr=2 nion=10000 nionchunk=800 nionhis=800 / 
- &ions     name='P' energy=25 dose=1e13 tilt=0. diverg=0.3 /
- &material region=1 name='SiO2' xtal='no' density=7e22 /
- &material region=2 name='Si' xtal=#xtal# wafer=#wafer# vsurf=#vsurf# /
- &snpar    lstffp=f /
- &geometry posif=0,10,10000000 /
- &output   lmom=t lhis=t /

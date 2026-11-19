@@ -1,7 +1,0 @@
-FILE: btrench1
-text=a
-xtal='no'
-
-FILE: btrench2
-text=<100>
-xtal='yes'

@@ -1,0 +1,16 @@
+*~
+*.pyc
+*.pyo
+/releases
+
+/build*
+!/build_scripts
+
+/install
+
+/.cache
+
+/.gitmodules
+CMakeLists.txt
+Jenkinsfile
+.vscode

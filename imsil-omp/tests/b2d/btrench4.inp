@@ -1,0 +1,22 @@
+Boron implantation into a rectangular silicon trench, no reentering
+e=25keV tilt=7 ions=100000
+ &setup    ndim=2 natom=2 nr=1 nion=10000 nionhis=80 /
+ &ions     name='B' energy=25 dose=1e15 tilt=7 diverg=0
+           xwin=-10000,10000 reenter=f /
+ &material region=1 name='Si' xtal='no' /
+
+ &geometry point=1 pos=-15000,0 /
+ &geometry point=2 pos=-15000,30000 /
+ &geometry point=3 pos=15000,30000 /
+ &geometry point=4 pos=15000,0 /
+ &geometry point=5 pos=5000,0 /
+ &geometry point=6 pos=5000,20000 /
+ &geometry point=7 pos=-5000,20000 /
+ &geometry point=8 pos=-5000,0 /
+ &nogeometry region=0 points=1,2,3,4,5,6,7,8 /
+ &geometry region=1 points=1,2,3,4,5,6,7,8 /
+
+ &snpar	   ef=4.7 denffp=4.7 etime=0 /
+ &damage   lrcoil=t ed=4.7 reenter=f /
+ &output   lmom=t lhis=t lhis2=t nbox2=64,64 wboxi=100 itra=4,5 /
+

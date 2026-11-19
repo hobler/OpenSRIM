@@ -1,0 +1,11 @@
+B implantation in multilayer structure
+B 30 keV, 7 tilt, #text#
+ &setup    natom=3 nr=4 nion=50000 nionhis=800 /
+ &ions     name='B' energy=30 dose=5.E13 tilt=7. rotate=15.
+           diverg=0.3 /
+ &material region=1 name='SiO2' xtal='no' /
+ &material region=2 name='Si' xtal='#xtal1#' wafer=0.,0.,1. vsurf=1.,1.,0. /
+ &material region=3 name='SiO2' xtal='no' /
+ &material region=4 name='Si' xtal='#xtal2#' wafer=0.,0.,1. vsurf=1.,1.,0. /
+ &geometry posif=0,80,380,480,3000 /
+ &output   lmom=t lhis=t lhis2=t /

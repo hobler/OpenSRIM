@@ -1,0 +1,71 @@
+#!/bin/bash
+##############################################################################
+# run specified python script, python scripts in specified directory, or 
+# python scripts in all subdirectories of current directory, and compare the 
+# results with those in OLD_PATH. The environment variable OLD_PATH is set by 
+# the script (see code) and so it can be used by the python scripts.
+##############################################################################
+if test -z $1; then
+    echo "USAGE: compare fname.py|dir|all [compare_branch]"
+    exit
+fi
+
+# first assume $1 is a Python file
+files=`realpath ${1%.py}.py`
+echo $files
+
+# if $1 is not a file, it is a directory or "all" directories
+# determine all Python files in this/these directories
+if test ! -f $files; then
+    files=
+
+    if test $1 == "all"; then
+        directories=`ls -p | grep /$`
+    else
+        directories=$1
+    fi
+
+	for directory in $directories; do
+		cd $directory
+		files_tmp=`ls *.py`
+		for file_tmp in $files_tmp; do
+			path=`realpath $file_tmp`
+			files="${files} ${path}"
+		done
+		cd ..
+	done
+fi
+
+old_dir=
+this_dir=`dirname $0`
+this_dir=`realpath $this_dir`
+
+for file in $files; do
+	directory=`dirname $file`
+	cd $directory
+
+	# display logfile
+	if test "$directory" != "$old_dir"; then
+		old_dir=$directory
+        for logfile in `ls *.log`; do
+            echo ""
+            echo "Logfile:"
+            cat $logfile
+            read -p "Press any key to continue... " -n1 -s
+        done
+	fi
+	
+	# set OLD_PATH
+	if test "$2" == "eclipse"; then
+		export OLD_PATH=${HOME}/hdd/eclipse/imsil_bc/trunk/bench/
+	elif test -z $2; then
+		export OLD_PATH=$this_dir/../tests_ref/`basename $directory`/
+	else
+		export OLD_PATH=$this_dir/../../$2/tests/`basename $directory`/
+	fi
+	
+	# run Python script
+    echo "Running $file ..."
+    python3 $file
+    cd ..
+done

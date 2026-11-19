@@ -1,0 +1,48 @@
+These are brief instructions for installing IMSIL 2025-04 on a Linux system. 
+Additional instructions are found in the README file.
+
+1. If you are going to use gfortran, make sure gfortran is installed and
+   callable through the command `gfortran`, as well as OpenMP if you are
+   going to use the parallel version.
+   
+   If you are going to use the Intel Fortran compiler, you have to source the
+   `setvars.sh` script before calling make. This will define the `ifort`
+   command and set some paths needed for compilation and execution.
+   
+2. In the `dirs.mk` file of the `code` directory, adjust the paths of SRCDIR
+   (= path to the `code` directory) and `EXEDIR` (= where you want to have
+   the executable). Make sure, the `EXEDIR` ends with `.../code`.
+   
+3. Go to the `code` directory (SRCDIR) and run `make` (to use the gfortran 
+   compiler) or `make FC=ifort` (to use the Intel Fortran compiler).
+   
+4. In the `imsil.py` script of the `scripts` directory, set `installdir` to
+   `EXEDIR` without `/code`.
+   
+5. In the `makefile` of the `tests` directory, adapt the lines defining IMSIL 
+   and MIMSIL (close to the top of the file) by
+
+      IMSIL=python <path-to-imsil.py>
+      MIMSIL=python <path-to-mimsil.py>
+
+   Replace "python" by the name of your Python interpreter, if it is called
+   differently. Note that you must use a Python 3 interpreter.
+
+6. Test your installation by going to the tests directory and running
+
+      make rrobin
+      ./compare rrobin
+      
+   These are short tests on transmission and backscattering from a thin
+   membrane. If successful, run all tests with
+   
+      make all
+      ./compare all
+   
+   You can also say `make -j <n> all` or `nohup make -j <n> all &` to have
+   <n> tests run in parallel (replace <n> with the number of processors you 
+   want to use). Another option is to say `make t=<n> all` or 
+   `nohup make t=<n> all &` to use the parallel version with <n> threads.
+   Note that if you test several of these options, you must touch the .exe
+   file in EXEDIR (or all .inp and .tem files in the subdirectories) due to 
+   the way make works.

@@ -1,0 +1,49 @@
+#!/bin/bash
+##########################################################################
+# Collect all directories and files necessary in a release and generate a 
+# tarball. The temporary directory is deleted after the tarball has been 
+# generated.
+#
+# Commercial distributions must not contain the SRIM tables. Toggle the
+# commercial flag between "comm" and empty.
+##########################################################################
+
+commercial=comm
+version=2024-03.2$commercial
+workdir=/home/hobler/work/imsil
+
+installdir=releases/IMSIL_$version
+branch=`git symbolic-ref --short HEAD`
+workdir=$workdir/$branch
+
+mkdir $installdir
+cp -a code $installdir
+rm $installdir/code/TODO
+cp -a manual $installdir
+cp -a scripts $installdir
+cp -a tables $installdir
+cp -a tests $installdir
+cp -a README.md $installdir
+cp -a LICENSE $installdir
+cp -a INSTALL $installdir
+
+cp -a $workdir/manual/manual.pdf $installdir/manual
+cp -a $workdir/tests $installdir/tests_ref
+
+rm $installdir/tests_ref/makefile
+rm $installdir/tests_ref/compare
+rm $installdir/tests_ref/nohup.out
+for subdir in `ls  -p $installdir/tests_ref | grep "/$"`; do
+    rm $installdir/tests_ref/$subdir/*.py
+    rm $installdir/tests_ref/$subdir/*.pyc
+    rm $installdir/tests_ref/$subdir/*.bck
+    rm $installdir/tests_ref/$subdir/*.tra
+done
+if [ -n "$commercial" ]; then
+    rm -r $installdir/tables/srimtab
+fi
+
+cd `dirname $installdir`
+installdir=`basename $installdir`
+tar cvzf $installdir.tar.gz $installdir
+rm -r $installdir

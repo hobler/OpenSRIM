@@ -1,0 +1,13 @@
+FILE: bdiverg1
+text=diverg=2,0.5
+diverg_x=2
+diverg_y=0.5
+rotate=0
+
+FILE: bdiverg2
+text=diverg=0.5,2
+diverg_x=0.5
+diverg_y=2
+rotate=90
+
+

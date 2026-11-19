@@ -1,0 +1,15 @@
+Round Robin Simulation for COSIRES'94 (Comparison with Hautala)
+Pmax=2.715A, 6x6x2 unit cells, <100>-Si, 0 tilt, general cubic unit cell
+ &setup    natom=2 nr=1 nion=100000 /
+ &ions     name='B' energy=0.2 tilt=0.0 /
+ &material region=1 name='Si' xtal='yes' vsurf=1,0,0 density=4.997e22 
+           vib=0 /
+ &snpar    ef=20.0 scatfile='ZBLuniv' /
+ &crystal  name='diamond2' pmax=0.5 nloldm=6 psoldm=30.0 ffoldm=0.5  
+           ffpmax=0.25 / ! was: nrad2=4 pmax=2.0 ffpmax=0.95 ffpmin=0.05  ffpsim=0.295
+ &damage   ldam=f esurf=1e-30 /
+ &separ    semodel='none' /
+ &geometry posif=-0.1,11.0 lrobin=t /
+ &output   lmomet=t lmomaat=t lhiset=t lhisaat=t 
+           lmomeb=t lmomaab=t lhiseb=t lhisaab=t 
+           nboxa=0 nboxe=0 epower=1 wboxe=2 /

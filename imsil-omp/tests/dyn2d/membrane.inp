@@ -1,0 +1,34 @@
+Gallium implantation into an amorphous silicon membrane
+originally: ~/eclipse/imsil_bc/dyn2d_curvi/data/Si/membrane/ga5_nionupd2500_thick_22.inp
+This test goes beyond the current capabilites of IMSIL
+ &setup    ndim=2 natom=2 nr=1 ldyn=T lsput=T nion=100000 niongeom=2500 /
+ &ions     name='Ga' energy=5 dose=1e16 tilt=0 diverg=0
+           xwin=-60,60 /
+ &damage   lrcoil=t relaxmodel='full' / relaxmodel='viscoelastic' /
+ &material region=1 name='Si' xtal='no' /
+ &snpar    etime=0 /
+
+ &geometry freez=t,t grid='curvilinear' /  dsurf=6.
+ &geometry point=1 pos=-200,0 /
+ &geometry point=2 pos=-200,100 /
+ &geometry point=3 pos=200,100 /
+ &geometry point=4 pos=200,0 /
+ &nogeometry point=1 pos=-200,-10 /
+ &nogeometry point=2 pos=-200,110 /
+ &nogeometry point=3 pos=-190,110 /
+ &nogeometry point=4 pos=-190,100 /
+ &nogeometry point=5 pos=+190,100 /
+ &nogeometry point=6 pos=+190,110 /
+ &nogeometry point=7 pos=+200,110 /
+ &nogeometry point=8 pos=+200,-10 /
+ &nogeometry point=9 pos=+190,-10 /
+ &nogeometry point=10 pos=+190,0 /
+ &nogeometry point=11 pos=-190,0 /
+ &nogeometry point=12 pos=-200,-10 /
+ &nogeometry region=0 points=1,2,3,4,5,6,7,8,9,10,11,12 /
+ &nogeometry region=1 points=1,2,3,4,5,6,7,8,9,10,11,12 /
+ &geometry region=0 points=1,2,3,4 /
+ &geometry region=1 points=1,2,3,4 /
+
+ &output   lmom=t lhis=t lhis2=t lcell=t lsurf=t wbox2i=10,10 /
+

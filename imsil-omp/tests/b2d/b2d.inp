@@ -1,0 +1,14 @@
+Boron implantation into <100> silicon with a SiO2 layer
+e=20keV tilt=7 rotate=15 T=300 ions=1000000 tsio2=10A   
+ &setup    natom=3 nr=2 nion=1000000 /
+ &ions     name='B' energy=20 dose=1e16 tilt=7 rotate=15 diverg=0
+           xwin=-2000,0 /
+ &material region=1 name='SiO2' xtal='no' /
+ &material region=2 name='Si' xtal='yes' /
+ &snpar    lstffp=f /
+ &snpar    atom1=1 atom2=2 scatfile='BSI' /
+ &snpar    atom1=1 atom2=3 scatfile='BO' /
+ &geometry posif=0,10,100000000 /
+ &output   lmom=t lhis=t 
+           lhis2=t /
+

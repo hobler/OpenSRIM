@@ -1,0 +1,345 @@
+TODOs:
+=====
+
+NOTE: Some items may already be fixed
+
+(POSSIBLE) BUGS:
+
+- mass of ion atom specified on &ATOMS is currently ignored
+
+- In case of ldyn=t: nr=0, and getRestFFP always returns zero. Is this a problem?
+
+USER INTERFACE and MANUAL:
+
+- NUPDOUT is not documented and taken into account only in 2d simulations
+
+- Redefine default value of FFPMAX in the &CRYSTAL record; use A as units for FFPMAX and PMAX
+
+- Consider removing duplicate information from 1-D histograms (can be added when plotting)
+  and unifying format with 2-D and 3-D histograms. For a histogram, we need one more x value
+  than y values. To fill the table, the last y value can be 0 or, more generally, a value 
+  applying to x values outside the histogram. 
+  
+- Manual: Describe intricacies of free flight path calculation
+
+- Write simulation progress (IION, maybe together with NION) every second or so to PROGRESS file
+
+- To produce a Windows version, the path separator must be determined. Possibilities are
+
+  call get_command_argument(0, length=arg0_length, status=istat)
+  allocate(character(len=arg0_length) :: arg0)
+  call get_command_argument(0, arg0, status=istat)
+  ! check argument name
+  if( index(arg0, '\').ne.0 ) then
+    sep='\'
+  else if( index(arg0, '/' ).ne.0 ) then
+    sep='/'
+  end if
+  (see https://fpm.fortran-lang.org/proc/separator.html, but this may not work if the
+  executable was in the search path)
+  
+  or
+  
+  function unix() result(is_unix)
+    logical :: is_unix
+    character (len=100) :: path
+    call get_environment_variable("PATH", path)
+    is_unix = path(1:1) == "/"
+  end function unix 
+
+  or
+  
+  #ifdef _WIN32
+    os = 'Windows'
+  #else
+    os = 'Linux'
+  #endif
+  
+  or
+  
+  (maybe more robust:) Introduce a constant and change it before compilation!
+  
+- Documentation in Sphinx: reStructuredText -> HTML, PDF ... probably not worth 
+  the hassle
+
+EFFICIENCY:
+
+- Alternative implementation using coarrays
+
+  Workers (images 2 to n) simulate the trajectories and deliver the 
+  projectiles with tasks (put_eval_task). Image 1 scores the projectiles
+  in moments, histograms, and cells (eval**). Workers get current state of 
+  histograms and cells after each collision cascade as needed.
+  
+  put_eval_task puts the tasks into a queue. Implementation of a queue see,
+  e.g. [Rei09] Ch.12.4, or [Bra15] Ch.12.4.
+
+- Alternative implementation using OpenMP
+
+  Using tasks, avoiding breakup of work into equal number of collision cascades.  
+
+- In order to avoid application of the rotation matrix to each atom of the
+  search cell, the search cubes should store the atom positions in the
+  target coordinate system. Then only the origin of the coordinate system 
+  needs to be rotated and the atom coordinates just be added.
+
+  This requires to know about the lattice vectors (defined in mat) in the
+  xtal modules. Thus, the search cube must be defined for each region 
+  separately. (-> probably this change is reasonable only when multiple
+  crystal structures are implemented)
+
+- In order to eliminate the extra time spent with the larger search cells
+  (diamond search cell has now alat instead of alat/4 as edge length), one
+  could define search cells as subcells of the lattice unit cell, e.g.
+  by specifying the number of subdivisions for each edge of the unit cell.
+  (-> probably this change should be done together with the implementation 
+  of multiple crstalline regions, such search cells could possibly go beyond 
+  the current region)
+
+- Initialization of distance function according to Mau00. In a second step, 
+  use quadtree where larger distances use smaller resolution. This will be 
+  essential for 3D.
+
+- Cascade evaluation using quadtree. (?)
+
+- Optimize NRAD2 as a function of energy
+
+CODE CLEANUP:
+
+- sn%lmehl and sn%nmehl seem to be obsolete. Is there any difference to
+  quad='Mehler'?
+
+- Dissect chkLeave into chkLeave and chkReenter (and treatLeave and 
+  treatReenter?). 
+  Dissect chkRepl into chkRepl and treatRepl.
+  Dissect branch into branch and treatEvent; rename check to checkEvent.
+  Dissect treatStop into treatStop and treatTurnVirtual.
+  Introduce STATE%UNKNOWN? 
+
+- Merge eval_flow and eval_casc?
+
+- findZeroLevelSetCartGrid2d should return array of polygons; 
+  writeSurface2dPolygon should be implemented in Geom_Polygon_mod with a 
+  polygon as an input argument. getOvlpAreasCartGrid2d should use polygon 
+  as input.
+
+- Eliminate Geom_Polygon_Old_mod (maybe rename to Geom_SimplePolygon_mod)
+
+- Move code from region.f90 and cell.f90 to target.f90 and move common code 
+  of region*.f90 and cell*.f90 to target.f90. Rename target.f90 to domain.f90?
+
+- Reduce size of BCK file (only what is needed to continue simulation, not to 
+  get the same results for all statistics).
+
+- Eliminate Element_mod (replaced by Param_Elem_mod)
+
+- save statements for module variables can be deleted (save by default in 
+  Fortran 2008) (?)
+
+FEATURES:
+
+- Allow atom properties to be defined on either &IONS/&MATERIAL or &ATOMS record.
+  Allow to specify all atom properties on &MATERIAL record. Define separate
+  atom species if any property differs. Would allow, e.g., the simultaneous
+  use of different isotopes.
+
+- The backup file should be a tool for debugging only. This means that it only 
+  needs to include
+  * the state of the random number generator
+  * if( ldam ) the histogram files HIS, HIS2, HIS3 depending on dam%ndim
+  * if( ldyn ) the surface, the cell boundary positions, and the cell contents
+  The first item means to define a new seed for the Knuth random number 
+  generator.
+  The second item means to remove many of the statistics from the backup file. 
+  The last item means to include additional content.
+
+- USEHIS2, USEHIS3, HIS2FILE, HIS3FILE. Test USEHIS, HISFILE in bchannel test 
+
+- Read SRIM output for the electronic stopping power directly
+
+- multiple crystalline regions (introduce REGION index variable on &XTAL record)
+
+- Replacement collisions in compounds
+
+- miscible compounds (e.g. SiGe can have Si and Ge atoms at any lattice site)
+
+- implant energy distributions
+
+MISC:
+
+- Compare impact parameter dependent H and He stopping in Si with Loh20.
+
+DONE (2023-10):
+==============
+
+IMPLEMENTED FEATURES:
+
+- (2024-01-22) Parallel version using OpenMP. 
+               Advantages: Serial version in the same code, also working with gfortran.
+
+- (2023-08-21) Parallel version using coarrays.
+
+- (2023-06-09) SRIM-2013 electronic stopping powers as an option.
+
+- (2023-02-28) Second tilt angle (TILTY).
+
+USER INTERFACE:
+
+- (2022-06-15) Rename input parameters FIL*** and ***FIL to ***FILE.
+ 
+- (2022-06-07) Replace character arrays with simple arrays. As a consequence, quotation marks
+  have to be omitted when specifying former character arrays. Character arrays were introduced,
+  since before Fortran 2003 allocatable arrays were not allowed to be part of namelists.
+  However, this could have been circumvented by allowing multiple records for the same
+  namelist and joining the values of the same parameter specified on different records. This 
+  has now been realized (even though allocatable arrays are now allowed to be part of 
+  namelists).
+  
+- (2022-05-27) 2-D geometry definition with region 0 definition optional.
+
+- (2022-05-20) Make background execution the default in imsil.py script.
+
+- (2022-05-20) Avoid writing '../' in file paths specified in the input file. This is done by 
+  introducing another path variable inppath in the PATH file. Now input files are searched for 
+  first in the working directory, then in the original directory of the input file, and finally
+  in the tables directory.
+
+- (2022-05-19) Allow z<-1mm and z>10mm in HIS file. This may happen for MeV H implants.
+
+- (2022-05-18) In statistics output (OUT file), make precision at least good enough to resolve 
+  10 times the uncertainty.
+
+MAJOR BUG FIXES (those that were a TODO previously):
+
+- (BUGFIX: 2023-08-16) FFPMIN was not reset after a free flight path without collision. This
+  could lead to increased ion ranges in dynamic simulations. 
+
+- (BUGFIX: 2023-02-14) Parents of virtual recoils were considered to be created in
+  subthreshold collision when they have stopped. This can lead to stopping of the program in 
+  static simulations for parents that are ions because damage is tried to be calculated for 
+  subthreshold atoms. Ions are now excluded from conversion to subthreshold.
+
+- (BUGFIX: 2022-09-01) Histograms were incorrectly read using USEHIS when the boxes were 
+  non-matching with the grid specified in the input file.
+
+- (BUGFIX: 2022-08-18) The statistical error in interstitial and vacancy characteristics was 
+  largely underestimated, since all I and V were treated as being generated independently of 
+  each other. Moreover, the error of skewness and kurtosis have been estimated under the
+  assumption that the standard deviation is without error. Both assumptions are not correct.
+  These bugs were fixed by new theory. 
+
+- (BUGFIX: 2022-05-12) Seed of random number generator was ineffective for Knuth. After
+  fixing this bug, all simulations now run with different statistics.
+
+- (BUGFIX: 2022-03-25) The average local electronic stopping for impact parameters > pmax was 
+  calculated incorrectly in an amorphous region if the ffp cylinder intersects a neighboring 
+  region because the pmax of the neighboring region was considered if the ffp in the neighboring 
+  region is smaller than the ffp in the current region. This was particularly severe if the 
+  neighboring region is crystalline (thus the pmax=pmaxc being large) and the pmax in the 
+  current region is small (i.e., at high energies).
+  
+  The critical part of the code is in selncp.f90:139 (in the if(ffp2<ffp) block). This sets the
+  pmax which is later used in the evaluation of the electronic energy loss. See
+  ~/work/imsil/stable/projects/smit/H.
+
+
+Below is old TODO file (more likely to be solved already or obsolete)
+=====================================================================
+
+BUGS:
+
+- Yield moments: Stopped atoms and vacancies; Nuclear energy deposition ... all zero
+  (see: ~/eclipse/imsil_bc/merge_dyn2d/data/trench/ga50_500_5000000_1000_50_ml.out)
+  (only in dyn2d?) 
+
+- virtual recoils cause unrealistic results in moments and concentration histograms
+  (see ~/eclipse/imsil_bc/trunk/data/sputter/stat1d/si/ga5)
+
+- Correct angular statistics (lmomb, lmomt, lhisb, lhist) only with mcoord=1  
+
+- Probably there is a bug in the initialization of the electronic stopping power parameters
+  of xnlmodel='e' in case enl=0: Calculation of qnl is not reasonable. But the 
+  default xnl values have been determined with this bug which is older than 2003.
+
+TOP PRIORITY:
+
+- correct density value stored in param_elem_mod if a different density is
+  specified for a material. Maybe requires new concept of specifying 
+  densities.
+
+  Currently we don't have the right dens(O)=8e22 to get the right density of SiO2 !!!
+
+- Eliminate inconsistency in statistics (output but not calculated) in dynamic mode.
+  What exactly does ldam control?
+
+FOR THE PUBLIC DOMAIN PROJECT:
+
+- decide how to write and read binary data
+  . use HDF5 instead of sequential binary output, or
+  . convert traditional format to ascii or hdf5
+
+
+CODE DESIGN:
+
+- (this has at least partially been realized) We presently have eval_stat_mod 
+  which has defined (among others) histogram objects of the changes to the 
+  target. The histogram classes are defined in stat_his*d_mod. 
+
+  Similarly, we should have eval_det_mod which has defined a DefectColumn 
+  object. eval_det_mod should contain several of the xtal_lsatoms_det_mod
+  subroutines:
+	det10 (in order to initialize from a histogram, a temporary 
+               histogram object has to be created)
+	getLSAtomsDet (-> det60)
+	det23 (atom/vacancy added to Column)
+	det30
+	his30 (calling det2his ?)
+	createGrid ?
+	createLattice ?
+	strain
+	strainDef
+  In addition a	det21 subroutine should be written that takes into account
+  that atoms/vacancies may be taken away from Column
+
+  his10 (-> det2his) should go into eval_stat_mod (generate a temporary
+  DefectColumn object?)
+
+  The DefectColumn class should be defined in a new module det_column_mod 
+  which is an extension of the present def_readwrite_mod. Some of the 
+  procedures of xtal_lsatoms_det_mod would go into det_column_mod:
+	dethis10 (-> det2his)
+	getCol (-> getColBnd)
+	balanceDef
+	getIndices
+
+BUGS:
+
+- rrobin stops with rrobin (?) if array bounds are checked (i.e. with the 
+  debug version).
+
+- usegeom=t of &setup leads to attempting writing out geom%posif before it
+  is allocated. usegeom has been deactivated sometimes between 2003 and 2007.
+  It was used to read the regions' geometry definition from the BCK file. It
+  probably makes sense only when the region geometry is changed during the
+  simulation, i.e., when mat(:)%syield /= 0.
+
+MISC:
+
+- cell1d, eval30: out%his -> dam%ldam
+  edam in cell1d
+
+- introduction of Ipos_type has slowed down the code by 20% (rbs2) to 100% 
+  (rrobin) => should be eliminated again, requires deterministic defects
+  in arbitrary crystal structures.
+
+- in selncc, the region is checked with the atom positions which may include 
+  lattice vibrations. This will lead to 50% of the first atom layer to be lost
+  if posif is exactly at that layer. Can be avoided by the user by slightly 
+  moving posif. Can be avoided by the programmer by introducing site%pos and 
+  doing the region check with site instead of atom.
+
+- Deterministic Si defects will probably never be used. When eliminating them, they could 
+  be replaced by external big unit cells of a crystal, if one doesn't like to loose the 
+  functionality.
+
+

@@ -1,0 +1,9 @@
+High energy B stopping 
+B in #text#-Si, 3 MeV, 0 Tilt
+ &setup    natom=2 nr=1 nion=1000 /
+ &ions     name='B' energy=3000 dose=1 tilt=0 /
+ &material region=1 name='Si' xtal=#xtal#
+           wafer=#wafer# vsurf=#vsurf# /
+ &damage   ldam=f /
+ &geometry posif=0,1000000 /
+ &output   lmom=t lhis=t /

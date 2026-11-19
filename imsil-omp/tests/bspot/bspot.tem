@@ -1,0 +1,17 @@
+B spot burn in 100-Si, 2 keV, 7 tilt, dose=1 or 1/A^2
+xtal=#xtal#, ndamdim=#ndamdim#
+ &setup    natom=3 nr=2 nion=1000000 nionhis=800 / 
+ &ions     name='B' energy=2 dose=1 doseunits='1'
+           tilt=7 diverg=0.3 /
+ &material region=1 name='SiO2' xtal='no' /
+ &material region=2 name='Si' xtal=#xtal# wafer=0,0,1 vsurf=1,0,0 /
+ &snpar    lstffp=f /
+ &damage   ldam=t lrcoil=t frec=0.3 ndamdim=#ndamdim# /
+ &geometry posif=0,10,10000 /
+ &output   lmom=t lhis=t lhis2=t lhis3=t 
+           nbox=200 wboxi=10
+           nbox2=100,50 wbox2i=20,20 
+           nbox3=0,0,0 wbox3=20,20,20 
+           lhisee=#lhisee# lhisee2=#lhisee2# lhisee3=#lhisee3#
+           lhisne=#lhisne# lhisne2=#lhisne2# lhisne3=#lhisne3# /
+           

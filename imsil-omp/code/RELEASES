@@ -1,0 +1,56 @@
+Release History
+
+
+2024-03 (22-Mar-2024)
+=====================
+
+PERFORMANCE:
+- Parallelization using OpenMP
+
+ENVIRONMENT:
+- Adaptations for compilation with gfortran (often a factor of 2 faster than ifort)
+
+
+2023-10 (16-Nov-2023)
+=====================
+FEATURES:
+- New default random Se for He and N in Si
+- SRIM-2013 electronic stopping powers as an option
+- Second tilt angle
+- Option to suppress recoils of reentered projectiles in 2D geometries
+
+USER INTERFACE:
+- Rename several input parameters to more intuitive names. When the old name
+     is used, an error message informs about the new name of the parameter
+- Eliminate character arrays from INP file - Use simple arrays instead
+- Region 0 need not be specified any more in 2D geometry definitions
+- Change (m)imsil.py script to make background execution the default
+- Add directory of input (.inp) file to search path of files specified in the 
+     INP file
+- Adaptive format of x values in HIS file
+- Adaptive precision in statistics output to OUT file
+- Added times.py script collecting execution times of tests
+
+PERFORMANCE:
+- Parallelization using coarrays
+
+ENVIRONMENT:
+- Currently, only the Intel compiler is supported
+- Build scripts now require Python 3
+
+BUG FIXES:
+- Reset ffpmin after ffp without collision. This could have produced artifacts
+     near amorphous region boundaries and, in particular when there are many 
+     such boundaries like in dynamic simulations
+- Avoid ions to be considered subthreshold
+- Correct reading of histogram files
+- Correct statistical errors of moments in OUT file
+- Fix bug in the initialization of Knuth's random number generator
+
+
+2021-09.2 (25-Oct-2023)
+=======================
+BUG FIXES:
+- Avoid overwriting all masses when specifying ion mass
+- Write trajectories of all elements of molecular ions
+- Avoid occasional crash when NBOX=0 is specified 

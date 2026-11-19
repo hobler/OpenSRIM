@@ -1,0 +1,12 @@
+B tilted implantations with various doses
+B in #text#-Si, 20 keV, #tilt# tilt, dose=#dose#
+ &setup    natom=3 nr=2 usebk=#usebk# bkfile=#bkfile# nion=#nion# 
+           nionbk=1000 nionhis=800 /
+ &ions     name='B' energy=20 dose=#dose# tilt=#tilt# rotate=#rotate# 
+           diverg=0.3 / 
+ &material region=1 name='SiO2' xtal='no' /
+ &material region=2 name='Si' xtal='yes' wafer=#wafer# vsurf=#vsurf# /
+ &snpar    lstffp=f /
+ &damage   frec=0.125 damsat=4e21 /
+ &geometry posif=0,10,10000000 /
+ &output   lmom=t lhis=t /

@@ -1,0 +1,9 @@
+FILE: asneti1
+sub=sub-
+dose=1
+
+FILE: asneti2
+sub=
+dose=1e15
+
+END

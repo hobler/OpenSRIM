@@ -1,0 +1,9 @@
+B channeling implantation
+B in <100>-Si, 100 keV, 7 Tilt, dose=1e13, #text#
+ &setup    natom=2 nr=1 nion=10000 nionhis=8 /
+ &ions     name='B' energy=100 dose=1e13 tilt=7 rotate=#rotate#
+           moddiv=2 diverg=#diverg_x#,#diverg_y# /
+ &material region=1 name='Si' xtal='yes'
+           wafer=0.,0.,1. vsurf=1.,1.,0. /
+ &geometry posif=0,1000000 /
+ &output   lmom=t lhis=t wbox=200 nbox=0 /

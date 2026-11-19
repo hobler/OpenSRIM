@@ -1,0 +1,11 @@
+B channeling implantations with various electronic stopping models
+B in (100)-Si, 20 keV, 0 tilt, dose=1e13, semodel=#semodel#
+ &setup    natom=3 nr=2 nion=10000 / 
+ &ions     name='B' energy=20 dose=0.913e13 tilt=0 diverg=0.3 /
+ &material region=1 name='SiO2' xtal='no' /
+ &material region=2 name='Si' xtal='yes' wafer=0,0,1 vsurf=1,1,0 /
+ &separ    atom1=1 atom2=2 semodel=#semodel# sefile='BSi.se' /
+ &snpar    lstffp=f /
+ &damage   fracrg=0.5 frec=0.125 damsat=4e21 /
+ &geometry posif=0,10,10000000 /
+ &output   lmom=t lhis=t /

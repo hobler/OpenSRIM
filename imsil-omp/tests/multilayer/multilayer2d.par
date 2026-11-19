@@ -1,0 +1,10 @@
+FILE: multilayer2d1
+text=a/a/a/a
+xtal=no
+
+FILE: multilayer2d2
+text=a/c/a/c
+xtal=yes
+
+end
+

@@ -1,0 +1,29 @@
+FILE: bspot1
+xtal='no'
+ndamdim=1
+lhisee=t
+lhisee2=t
+lhisee3=t
+lhisne=t
+lhisne2=t
+lhisne3=t
+
+FILE: bspot2
+xtal='yes'
+ndamdim=1
+lhisee=f
+lhisee2=f
+lhisee3=f
+lhisne=f
+lhisne2=f
+lhisne3=f
+
+FILE: bspot3
+xtal='yes'
+ndamdim=3
+lhisee=f
+lhisee2=f
+lhisee3=f
+lhisne=f
+lhisne2=f
+lhisne3=f

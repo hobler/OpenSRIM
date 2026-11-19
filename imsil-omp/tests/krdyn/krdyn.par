@@ -1,0 +1,44 @@
+fname = 'krdyn_1e15'
+param[fname] = {}
+param[fname]['usecell'] = 'f'
+param[fname]['cellfile'] = ''
+param[fname]['grid'] = 'rectilinear'
+param[fname]['ldyn'] = 't'
+param[fname]['natom'] = '2'
+param[fname]['nion'] = '1000'
+param[fname]['atom1'] = '1'
+
+for dose in range(2,10):
+    fname = 'krdyn_' + str(dose) + 'e15'
+    param[fname] = {}
+    param[fname]['usecell'] = 't'
+    param[fname]['cellfile'] = 'krdyn_' + str(dose-1) + 'e15.cell'
+    if dose < 6:
+        param[fname]['grid'] = 'rectilinear'
+    else:
+        param[fname]['grid'] = 'regular'
+    param[fname]['ldyn'] = 't'
+    param[fname]['natom'] = '2'
+    param[fname]['nion'] = '1000'
+    param[fname]['atom1'] = '1'
+
+fname = 'krdyn_10e15'
+param[fname] = {}
+param[fname]['usecell'] = 't'
+param[fname]['cellfile'] = 'krdyn_9e15.cell'
+param[fname]['grid'] = 'rectilinear'
+param[fname]['ldyn'] = 't'
+param[fname]['natom'] = '2'
+param[fname]['nion'] = '10000'
+param[fname]['atom1'] = '1'
+
+fname = 'krdyn_10e15_stat'
+param[fname] = {}
+param[fname]['usecell'] = 't'
+param[fname]['cellfile'] = 'krdyn_10e15.cell'
+param[fname]['grid'] = 'rectilinear'
+param[fname]['ldyn'] = 'f'
+param[fname]['natom'] = '3'
+param[fname]['nion'] = '10000'
+param[fname]['atom1'] = '2'
+

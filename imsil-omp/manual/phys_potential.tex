@@ -1,0 +1,127 @@
+Interatomic potentials for binary collision simulations are usually written
+as screened Coulomb potentials
+%
+\begin{equation}
+   V(r) = \frac{1}{4 \pi \varepsilon_0} \frac{Z_1 Z_2 e^2}{r} 
+          \cdot \Phi(\frac{r}{a_{12}}).
+   \label{eq:screenedCoulomb}
+\end{equation}
+%
+$Z_1$ and $Z_2$ denote the atomic numbers of the ion and the target atom, 
+respectively, $r$ the interatomic separation, and 
+$e^2/(4 \pi \varepsilon_0) = 14.4~\mbox{eV\AA}$. The asymptotes of the
+trajectories, i.e., the scattering angles and the time integrals, are 
+calculated from the interatomic potential or, equivalently, from the
+screening function.
+
+In IMSIL, there are three options for calculating the scattering angle
+$\theta$ in the center-of-mass system: First, by bicubic interpolation in 
+precalculated tables of $\cot(\theta/2)$ \cite{I8730} with the energy and 
+impact parameter as independent variables. Such tables 
+may be set up, in principle, for any interatomic potential. The scattering 
+table file corresponding to the universal ZBL potential \cite{I8512} is 
+called \texttt{ZBLuniv}, which is used by default. Tables for some of the 
+pair-specific potentials are also provided with the program.
+ 
+Alternatively, the scattering angles may be calculated numerically from
+the screening function $\Phi(R)$. The second method is to use screening 
+functions read from a file and to interpolate them between the tabulated 
+values. Tabulated screening functions, calculated according to ZBL \cite{I8512}
+or using the DMol DFT program \cite{I9757}, are provided for (almost) all 
+atom pairs. The ZBL data are referred to as \texttt{ZBLspec}, as they provide
+atom-pair specific screening functions, to distinguish them from the universal
+ZBL potential described below.
+
+The third method of calculating scattering angles is to use 
+sum-of-exponentials approximations to the screening function together with
+numerical integration. The screening function optionally can have a 
+linear term
+%
+\begin{equation}
+   \Phi(R) = \sum_{i=1}^n a_i \cdot \exp(-b_i R) 
+             \left[ + c + d \, \frac{R}{R_\mathrm{max}} \right] .
+    \label{eq:Phi}
+\end{equation}
+%
+The screening length $a_{12}$ is chosen as
+%
+\begin{equation}
+   a_{12} = \frac{0.468~\mbox{\AA}}{\left(Z_1^p + Z_2^p\right)^q}
+   \label{eq:ascr}
+\end{equation}
+%
+The predefined values of the parameters $a_i$, $b_i$, $p$, and $q$ for
+three commonly used screening functions are listed in Tab.~\ref{tab:screen}. 
+These screening functions can be used for any combination of atoms due to
+the screening lengths which depend on $Z_1$ and $Z_2$.
+%
+\begin{table}
+    \caption{Predefined parameters for the screening functions and screening 
+             lengths \label{tab:screen}}
+    \begin{center}
+    \begin{tabular}{cccc}
+        ~\\
+        \multicolumn{4}{c}{Screening functions (Eq.~\ref{eq:Phi})} \\
+        \hline
+        & ZBLuniv \cite{I8512} & KrC \cite{I7702} & Moliere \cite{I4701} \\
+        \hline
+        $a_1$ & 0.18175 & 0.190945 & 0.35 \\
+        $a_2$ & 0.50986 & 0.473674 & 0.55 \\
+        $a_3$ & 0.28022 & 0.335381 & 0.10 \\
+        $a_4$ & 0.02817 &  &  \\
+        $b_1$ & 3.19980 & 0.278544 & 0.3 \\
+        $b_2$ & 0.94229 & 0.637174 & 1.2 \\
+        $b_3$ & 0.40290 & 1.919249 & 6.0 \\
+        $b_4$ & 0.20162 &  &  \\
+        $a_{12}$ (default) & ZBL & Firsov & Firsov \\
+        \hline
+    \end{tabular}
+    \hfill
+    \begin{tabular}{cccc}
+        ~\\
+        \multicolumn{4}{c}{Screening lengths (Eq.~\ref{eq:ascr})}\\
+        \hline
+        & ZBL \cite{I8512} & Firsov \cite{I5801} & Lindhard \cite{I6301} \\
+        \hline
+        p & 0.23 & 1/2 & 2/3 \\
+        q & 1    & 2/3 & 1/2 \\
+        \hline
+    \end{tabular}
+    \end{center}
+\end{table}
+
+Atom-pair specific screening functions using Eq.~(\ref{eq:Phi}) can be
+constructed using tables listing the parameters $a_i$, $b_i$ for (almost)
+all $Z_1$-$Z_2$ combinations. They are fits to pair-specific ZBL screening
+functions (ZBLspec) or to DMol screening functions (NLH, NLHlin), where
+NLHlin uses the linear term and needs $R_\mathrm{max}$ as an input. From
+$R_\mathrm{max}$ the parameters $c$ and $d$ are calculated so that 
+$\Phi(0)=1$ and $\Phi(R_\mathrm{max})=0$. Such tables may also be provided
+by the user.
+%
+\begin{center}
+\begin{tabular}{lll}
+   parameter \quad & IMSIL name \qquad\qquad    & in record \\
+   \hline
+   $Z_1$           & derived from ion name      & -- \\
+   $M_1$           & derived from ion name or 
+                     \texttt{MASS}              & \texttt{\&ATOMS} \\
+   $Z_2$           & derived from material name & -- \\
+   $M_2$           & derived from material name or
+                     \texttt{MASS}              & \texttt{\&ATOMS} \\
+   scattering 
+   table file      & \texttt{SCATFILE}          & \texttt{\&SNPAR} \\
+   quadrature 
+   method          & \texttt{QUAD}              & \texttt{\&SNPAR} \\
+   screening function
+   coefficients    & \texttt{SCRCOEFFILE}       & \texttt{\&SNPAR} \\
+   screening 
+   function table  & \texttt{SCRFILE}           & \texttt{\&SNPAR} \\
+   screening
+   length model    & \texttt{SCRLEN}            & \texttt{\&SNPAR} \\
+\end{tabular}
+\end{center}
+
+The formats of the \texttt{SCATFILE}, \texttt{SCRCOEFFILE}, and 
+\texttt{SCRFILE} files are described in Section~\ref{s:input}. 
+

@@ -1,0 +1,48 @@
+FILE: rbs1
+text=Virgin sample
+usehis=F
+hisfile=''
+xtal='on'
+lamo2=F
+ldet=F
+fracspl=0.0
+
+FILE: rbs3
+text=2D interstitial 
+usehis=T
+hisfile='dam2percent.his'
+xtal='on'
+lamo2=T
+ldet=F
+fracspl=0.0
+
+FILE: rbs4
+text=3D random interstitial
+usehis=T
+hisfile='dam2percent.his'
+xtal='on'
+lamo2=F
+ldet=F
+fracspl=0.0
+
+FILE: rbs5
+text=amorphous target
+usehis=F
+hisfile='off'
+xtal='off'
+lamo2=F
+ldet=F
+fracspl=0.0
+
+end
+
+# This hisfile cannot be read:
+#FILE: rbs2
+#text=spl-<110> interstitial
+#usehis=T
+#hisfile='../dam2percent.his'
+#xtal=T
+#lamo2=F
+#ldet=T
+#fracspl=1.0
+

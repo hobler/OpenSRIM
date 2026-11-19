@@ -1,0 +1,16 @@
+2 keV Kr in Si, tilt=60
+
+ &setup    ndim=1 natom=#natom# nr=1 ldyn=#ldyn# lsput=t
+           usecell=#usecell# cellfile='#cellfile#'
+           mrand=6103 iarand=15678 ibrand=67638 irand=5421 
+           nion=#nion# nionhis=100 niongeom=8 nionout=#nion# /
+ &ions     name='Kr' energy=2 dose=1e15 tilt=60 diverg=0 /
+ &material region=1 name='Si' xtal='no' /
+ &snpar    ef=4.7 denffp=4.7 /
+ &damage   lrcoil=t ldam=f ed=15. frec=1 /
+ &damage   atom1=1 esurf=0.1 /
+ &damage   atom1=#atom1# esurf=0.1 /
+ &separ    xnl=0. corlin=1. facscr=1. /
+ &geometry posif=0,200 wrough=2 posfix=190 fracupd=0. grid='#grid#' /
+ &output   lhis=t lmomne=t lmomb=t lmomt=f lcell=#ldyn# wboxi=1 nbox=0 /
+

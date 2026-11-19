@@ -1,0 +1,11 @@
+B implantations with two equivalent tilts
+B in (100)-Si, 20 keV, #tiltx# tiltx, #tilty# tilty, dose=1e13
+ &setup    natom=3 nr=2 nion=10000 /
+ &ions     name='B' energy=20 dose=1e13 tiltx=#tiltx# tilty=#tilty# 
+           rotate=0. diverg=0.3 / 
+ &material region=1 name='SiO2' xtal='no' /
+ &material region=2 name='Si' xtal='yes' wafer=0,0,1 vsurf=1,0,0 /
+ &snpar    lstffp=f /
+ &damage   frec=0.125 damsat=4e21 /
+ &geometry posif=0,10,10000000 /
+ &output   lmom=t lhis=t /

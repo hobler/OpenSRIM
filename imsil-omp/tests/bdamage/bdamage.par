@@ -1,0 +1,19 @@
+FILE: bdamage1
+text=Kinchin-Pease
+frec=0.125
+lrcoil=f
+lcap=f
+
+FILE: bdamage2
+text=recoil-cascades
+frec=0.125
+lrcoil=t
+lcap=f
+
+FILE: bdamage3
+text=capture-radius
+frec=1.
+lrcoil=t
+lcap=t
+
+end

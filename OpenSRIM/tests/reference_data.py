@@ -1,23 +1,24 @@
 """Isolate standalone Python imports and persist input-matched reference arrays.
 
-Live Python code comes exclusively from tools/pytrim. A temporary installation
-supplies its expected coefficient filename without editing production sources.
+Live Python code is loaded directly from tools/pytrim, whose NLHlin loader
+reads the coefficient table relative to its source file.
 Missing code requires a saved result for the exact model, parameters and grid;
 Numba is never used as a replacement for an unavailable Python implementation.
 """
+
 import hashlib
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
-import shutil
 import sys
-import tempfile
 from functools import lru_cache
 
 import numpy as np
 import pytest
 
+# sets paths where python source and reference data are expected to be found
 TESTS = Path(__file__).resolve().parent
 ROOT = TESTS.parents[1]
 COEFFICIENTS = TESTS.parent / 'data/NLHlin/NLHlin_3eV.dat'
@@ -27,47 +28,41 @@ PYTHON_SOURCE_DIRECTORY = TESTS.parent / 'tools/pytrim'
 # always come from the canonical standalone Python source directory.
 PY_SOURCE = Path(os.environ.get('OPEN_SRIM_PYTHON_SOURCE', PYTHON_SOURCE_DIRECTORY))
 PY_CACHE = TESTS / 'data/py/reference_v1'
-# Copy code byte-for-byte into an isolated test installation, selecting the
-# canonical input under the filename that the standalone loader expects.
-# Keep this object alive while cached modules refer to files in the installation.
-# TemporaryDirectory removes the directory when cleaned up, normally at shutdown.
-_installation = tempfile.TemporaryDirectory(prefix='opensrim-python-reference-')
 
 
 @lru_cache(maxsize=1)
 def python_modules():
-    """Load an isolated, byte-for-byte copy of the standalone Python modules.
-    
-    Return a name-to-module mapping, or None if any required source is missing.
-    A complete live implementation must resolve to tools/pytrim; another tree
-    is rejected. The temporary copy lets NLHlin find the canonical coefficient
-    table next to its own __file__ as dmol_coeffs_rmax.dat, without changing the
-    original source tree or rewriting its file-loading code.
-    
-    Modules are loaded in dependency order. Temporary sys.modules aliases
-    resolve their unqualified imports to these Python copies and are restored
-    after loading. The returned module objects retain their imported references.
-    The cached mapping and temporary installation are reused within the process;
-    import errors in a complete source tree propagate rather than using old data.
+    """ Load the standalone Python implementation from tools/pytrim, if available, and return a dict of modules.
+        if any of the expected source files are missing, return None to indicate that the implementation is unavailable.
+
+    Returns:
+        dict or None: A dictionary mapping module names to loaded modules, or None if the implementation is unavailable.
+
+    Raises:
+        pytest.fail: If the source directory is not the expected one, to prevent using an alternative implementation.
     """
+
+    # module names must match the source files in tools/pytrim, and the order matters for dependencies
     names = ('table1d', 'apsis', 'zbl', 'nlhlin', 'cm_scatter')
+
+    # Check that all expected source files are present in the specified source directory
     if not all((PY_SOURCE / f'{name}.py').is_file() for name in names):
         print(f'Python source unavailable: {PY_SOURCE}; reading saved Python results')
         return None
+
+    # Ensure that the source directory is the expected one, to avoid using an alternative implementation
     if PY_SOURCE.resolve() != PYTHON_SOURCE_DIRECTORY.resolve():
         pytest.fail(f'Python implementation must come from {PYTHON_SOURCE_DIRECTORY}; '
                     f'refusing alternative source directory: {PY_SOURCE}')
-    directory = Path(_installation.name)
-    for name in names:
-        shutil.copy2(PY_SOURCE / f'{name}.py', directory / f'{name}.py')
-    # NLHlin resolves this filename relative to its module's __file__, not cwd.
-    shutil.copy2(COEFFICIENTS, directory / 'dmol_coeffs_rmax.dat')
     modules = {}
-    # Dependency order matters: apsis imports table1d; screening imports apsis.
-    # Restore previous aliases afterwards so other imports are not redirected.
+
+    # Use pytest.MonkeyPatch to temporarily alias the loaded modules into sys.modules, so that dependencies can be imported by name while loading the modules.
+    # This resolves imports such as from apsis import Apsis to the intended Python modules without permanently changing sys.modules.
+    # The context manager restores the previous sys.modules entries when module loading finishes; imported references remain available in the loaded modules.
+    # The loaded modules are stored in a dictionary and returned to the caller, so that they can be used directly without relying on the global import system.
     with pytest.MonkeyPatch.context() as aliases:
         for name in names:
-            spec = importlib.util.spec_from_file_location(f'_comparison_{name}', directory / f'{name}.py')
+            spec = importlib.util.spec_from_file_location(f'_comparison_{name}', PY_SOURCE / f'{name}.py')
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
             modules[name] = module
@@ -75,36 +70,156 @@ def python_modules():
     return modules
 
 
-def python_result(kind, parameters, grid, compute):
-    """Compute a live result or load one with exactly matching input metadata.
-    
-    The cache key includes kind, parameters, the complete float64 grid and the
-    coefficient digest. Live code is always executed, even if a cache file exists;
-    compute is never called when the implementation is unavailable. Source hashes
-    are saved as provenance, not enforced as part of the fallback cache key.
-    
-    Results are written through a temporary NPZ file. NaN/Inf are retained for
-    the numerical assertions to diagnose rather than silently repaired.
+def reference_filename(kind, parameters, *, norm, grid_name, extension='npz'):
+    """Build a shared readable reference name; exact inputs remain in metadata.
+
+    Numeric labels use 12 decimal places in scientific notation. Metadata checks
+    reject collisions, including inputs too close to distinguish in the label.
     """
+    def label(value):
+        value = str(value).lower()
+        if not re.fullmatch(r'[a-z0-9_]+', value):
+            raise ValueError(f'Invalid reference label: {value!r}')
+        return value
+
+    def number(value):
+        value = float(value)
+        if not np.isfinite(value):
+            raise ValueError('Reference parameters must be finite')
+        mantissa, exponent = f'{value:.12e}'.split('e')
+        return mantissa.rstrip('0').rstrip('.') + 'e' + exponent
+
+    name = (f'{label(kind)}_{label(parameters["model"])}'
+            f'_z{int(parameters["z1"])}_z{int(parameters["z2"])}_norm_{label(norm)}')
+    if 'e' in parameters:
+        name += f'_e{number(parameters["e"])}'
+    if 'r0' in parameters:
+        name += f'_r0_{number(parameters["r0"])}'
+    if 'n_absc' in parameters:
+        name += f'_n{int(parameters["n_absc"])}'
+    return f'{name}_grid_{label(grid_name)}.{label(extension)}'
+
+
+def python_manifest(*, allow_missing=False):
+    """ Return the manifest of cached Python reference outputs, validating its schema and hashes.
+
+    Args:
+        allow_missing (bool): If True, return an empty manifest if the manifest file is missing. 
+                              If False, raise pytest.fail if the manifest file is missing or invalid.
+
+    Returns:
+        dict: A dictionary containing the manifest of cached Python reference outputs, including the schema version and the SHA256 hashes of the outputs.
+
+    Raises:
+        pytest.fail: If the manifest file is missing or invalid, unless allow_missing is True.
+    """
+
+    # The manifest file is expected to be located in the PY_CACHE directory and named 'python_manifest.json'.
+    path = PY_CACHE / 'python_manifest.json'
+
+    # If allow_missing is True and the manifest file does not exist, return an empty manifest with schema version 1 and an empty outputs dictionary.
+    if allow_missing and not path.exists():
+        return {'schema': 1, 'outputs': {}}
+
+    # If the manifest file exists, attempt to read and parse it as JSON. Validate that the schema version is 1, that the 
+    # outputs field is a dictionary, and that each output name has a valid SHA256 hash. If any of these checks fail, raise 
+    # pytest.fail with an appropriate error message.
+    try:
+        manifest = json.loads(path.read_text())
+        if (manifest.get('schema') != 1 or not isinstance(manifest.get('outputs'), dict)
+                or not all(isinstance(name, str) and isinstance(digest, str)
+                           and re.fullmatch(r'[0-9a-f]{64}', digest)
+                           for name, digest in manifest['outputs'].items())):
+            raise ValueError('invalid schema or output hashes')
+    except (OSError, ValueError, AttributeError) as exc:
+        pytest.fail(f'Missing or invalid Python reference manifest: {path}: {exc}')
+    return manifest
+
+
+def python_result(kind, parameters, grid, compute, *, norm, grid_name):
+    """ Return a live or cached result for the given kind, parameters and grid.
+    If the Python implementation is available, compute the result and cache it.
+    If the implementation is unavailable, load a cached result if it exists.
+
+    Args:
+        kind (str): The kind of result, e.g., 'screen', 'scatter', 'chi'.
+        parameters (dict): The parameters that define the calculation.
+        grid (array-like): The grid of input values for the calculation.
+        compute (callable): A function that computes the result if the implementation is available.
+        norm (str): Stable normalization/configuration label.
+        grid_name (str): Stable test-grid label; distinct inputs require distinct labels.
+
+    Returns:
+        np.ndarray: The computed or cached result.
+
+    Raises:
+        pytest.fail: If the Python implementation is unavailable and no matching cached result exists, or if
+        the cached result's metadata does not match the inputs.
+    """
+
+    # Convert the input grid into a NumPy array with 64-bit floating-point precision.
+    # This ensures consistent numerical precision and data representation.
     grid = np.asarray(grid, dtype=np.float64)
+
+    # Create metadata describing the exact inputs used for the calculation.
+    # The metadata includes the calculation type, parameters, coefficient hash and grid.
     metadata = {'schema': 1, 'kind': kind, 'parameters': parameters,
-                'coefficient_sha256': COEFFICIENT_HASH, 'grid': grid.tolist()}
-    # Hash inputs, not filenames/timestamps: a changed grid must select a new cache.
+                'coefficient_sha256': COEFFICIENT_HASH, 'grid': grid.tolist(),
+                'norm': norm, 'grid_name': grid_name}
+    
+    # Convert the metadata dictionary into a sorted JSON string.
+    # Sorting ensures that identical metadata always produces the same string.
     encoded = json.dumps(metadata, sort_keys=True)
-    key = hashlib.sha256(encoded.encode()).hexdigest()
-    path = PY_CACHE / f'{kind}_{key}.npz'
+
+    path = PY_CACHE / reference_filename(kind, parameters, norm=norm, grid_name=grid_name)
+
+    # A readable name must never silently overwrite a different input grid or
+    # parameter set. Coefficient changes may regenerate the same named case.
+    if path.is_file() and python_modules() is not None:
+        with np.load(path, allow_pickle=False) as saved:
+            previous = json.loads(saved['metadata'].item())
+        previous['coefficient_sha256'] = COEFFICIENT_HASH
+        if previous != metadata:
+            pytest.fail(f'Python reference name collision: {path}; use a distinct grid/norm label')
+
+    # If the Python implementation is available, compute the result and cache it.
     if python_modules() is not None:
+        manifest = python_manifest(allow_missing=True)
         result = np.asarray(compute(), dtype=float)
-        # Preserve non-finite production outputs for diagnostics, never repair them.
+        # Ensure that the cache directory exists, creating it if necessary.
         PY_CACHE.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix('.tmp.npz')
+
+        # Calculate and store the SHA256 hashes of all Python source files.
+        # These hashes document which source versions produced the results.
         provenance = {name: hashlib.sha256((PY_SOURCE / f'{name}.py').read_bytes()).hexdigest()
                       for name in ('table1d', 'apsis', 'zbl', 'nlhlin', 'cm_scatter')}
+
+        # Save the metadata, numerical result and source hashes in an uncompressed NPZ archive.
+        # All three pieces of information are stored together.
         np.savez(tmp, metadata=encoded, result=result, source_hashes=json.dumps(provenance))
+
+        # Replace the previous cache file with the newly generated result.
+        # This prevents an incomplete temporary file from becoming the final cache.
         tmp.replace(path)
+
+        # Hash the complete archive, including results, metadata and provenance.
+        # Update only the freshly computed file; never endorse other old files.
+        manifest['outputs'][path.name] = hashlib.sha256(path.read_bytes()).hexdigest()
+        manifest_path = PY_CACHE / 'python_manifest.json'
+        manifest_tmp = manifest_path.with_suffix('.tmp')
+        manifest_tmp.write_text(json.dumps(manifest, indent=2, sort_keys=True) + '\n')
+        manifest_tmp.replace(manifest_path)
+
         return result
+
+    # If the Python implementation is unavailable, attempt to load a cached result.
     if not path.is_file():
         pytest.fail(f'Python implementation missing and no matching saved result: {path}')
+    manifest = python_manifest()
+    expected = manifest['outputs'].get(path.name)
+    if expected != hashlib.sha256(path.read_bytes()).hexdigest():
+        pytest.fail(f'Missing or modified cached Python result: {path}')
     with np.load(path, allow_pickle=False) as saved:
         if saved['metadata'].item() != encoded:
             pytest.fail(f'Python reference metadata does not match inputs: {path}')
@@ -113,76 +228,115 @@ def python_result(kind, parameters, grid, compute):
 
 @lru_cache(maxsize=1)
 def coefficient_rows():
-    """Cache canonical coefficient rows indexed by their stored atomic-number pair.
-    
-    Callers sort a requested pair before lookup; column 8 supplies physical rmax.
+    """ Return a dictionary mapping (Z1, Z2) pairs to their corresponding coefficient rows from the NLHlin coefficient table.
     """
+
+    # Load the NLHlin coefficient table from the specified file and create a dictionary where each key is a tuple of (Z1, Z2) and the value is the corresponding row of coefficients.
     return {(int(row[0]), int(row[1])): row for row in np.loadtxt(COEFFICIENTS)}
 
 
 class PythonScreen:
-    """Describe screening inputs and expose a live-or-cached callable.
-    
-    Keeping model, pair, normalization and rmax separate from the implementation
-    allows test grids to be constructed even when the Python sources are absent.
+    """ A wrapper class for the native Python screening implementation, which can be either ZBL or NLHlin.
+
+        allows test grids to be evaluated with the same interface, regardless of which screening model is used.
     """
-    def __init__(self, model, z1, z2, rnorm):
-        """Select the native screening class if available and retain cache parameters.
-        
-        NLHlin rmax is converted from the coefficient-table length to reduced units
-        using rnorm; ZBL has infinite range. No Numba substitute is loaded.
+    def __init__(self, model, z1, z2, rnorm, *, norm="native"):
+        """ Initialize the PythonScreen object with the specified model, element pair, and normalization factor.
+
+        Args:
+            model (str): The screening model to use, either 'ZBL' or 'NLHlin'.
+            z1 (int): The atomic number of the first element.
+            z2 (int): The atomic number of the second element.
+            rnorm (float): The normalization length in Angstrom used to express radii in reduced units.
+            norm (str): Name of the normalization or screening configuration.
+
+        Returns:
+            None
         """
+        self.norm = norm
         self.parameters = {'model': model, 'z1': z1, 'z2': z2, 'rnorm': rnorm}
+
+        # If the Python implementation is available for the specified model, create an instance of the corresponding screening class (ZBL_screen or NLHlin_screen) and store it in self.implementation.
         modules = python_modules()
         self.implementation = None
+
         if modules is not None:
+
+            # Select the appropriate screening class based on the requested model.
+            # ZBL uses ZBL_screen; other models use NLHlin_screen.
             cls = modules['zbl'].ZBL_screen if model == 'ZBL' else modules['nlhlin'].NLHlin_screen
             self.implementation = cls(z1, z2, rnorm)
+
+        # Determine the maximum screening radius.
+        # ZBL has an infinite range, while NLHlin obtains rmax from the coefficient table.
+        # The NLHlin value is converted into reduced length units by dividing by rnorm.
         self.rmax = (np.inf if model == 'ZBL' else
                      coefficient_rows()[tuple(sorted((z1, z2)))][8] / rnorm)
 
-    def __call__(self, radii):
-        """Return phi and dphi/dr for radii in this object's reduced length units.
-        
-        The complete radius grid participates in cache matching.
+    def __call__(self, radii, *, grid_name):
+        """ Calculate the screening potential and its derivative for the given radius using the selected screening model.
+
+        Args:
+            radii (array-like): The input radius values for which to calculate the screening potential and its derivative.
+            grid_name (str): Name of this radius grid in the reference filename.
+
+        Returns:
+            np.ndarray: An array containing the screening potential and its derivative for each input radius.
         """
+
+        # Calculate or load the screening results for the supplied radius values.
+        # The lambda function executes the live implementation when available.
+        # The result contains the screening potential phi and its radial derivative.
         return python_result('screen', self.parameters, radii,
-                             lambda: self.implementation(radii))
+                             lambda: self.implementation(radii), norm=self.norm, grid_name=grid_name)
 
 
-def python_scatter(e, p_values, screen, n_absc):
-    """Return theta and tau as an array of shape (2, len(p_values)).
-    
-    Energy, model, element pair, normalization and quadrature order identify the
-    calculation. Setting the Python rule on each live call prevents a preceding
-    high-order diagnostic from changing the next default-order comparison.
+def python_scatter(e, p_values, screen, n_absc, *, grid_name):
+    """ Return native scattering integrals for the given energy, impact parameters, screening model, and number of abscissas.
+
+    This calls cm_scatter.scatter_integrals and does not reconstruct its output.
+
+    Args:
+        e (float): The energy value for which to compute the scattering integrals.
+        p_values (array-like): The impact parameter values for which to compute the scattering integrals.
+        screen (PythonScreen): An instance of the PythonScreen class representing the screening model to use.
+        n_absc (int): The number of abscissas to use in the numerical integration of the scattering integrals.
+        grid_name (str): Name of the impact-parameter grid.
+
+    Returns:
+        np.ndarray: Shape (2, len(p_values)), with scattering angle theta in the first row and time integral tau in the second.
     """
     def compute():
-        """Set the requested native rule, then evaluate each impact parameter.
+        """ Compute the scattering integrals using the native Python implementation.
         """
+
+        # Load the cm_scatter module from the Python implementation and set up the number of abscissas for the integration.
         module = python_modules()['cm_scatter']
         module.setup(n_absc)
+
+        # Compute the scattering integrals for each impact parameter using the native implementation and return the results as a transposed NumPy array.
         return np.asarray([module.scatter_integrals(e, p, screen.implementation)
                            for p in p_values]).T
-    return python_result('scatter', dict(screen.parameters, e=float(e), n_absc=n_absc), p_values, compute)
+
+    # Return the computed or cached scattering integrals for the given energy, impact parameters, screening model, and number of abscissas.
+    return python_result('scatter', dict(screen.parameters, e=float(e), n_absc=n_absc), p_values, compute,
+                         norm=screen.norm, grid_name=grid_name)
 
 
-def python_chi(u, r0, screen):
-    """Return native (phi, chi) diagnostics on u, with r0 included in the cache key.
-    
-    This calls tools/pytrim.calc_phi_chi and does not reconstruct its output.
+def python_chi(u, r0, screen, *, grid_name):
+    """ Return the native Python evaluation of (phi, chi) for integration coordinates u, reference radius r0, and screening model.
+
+    Args:
+        u (array-like): The dimensionless integration coordinates for which to compute (phi, chi).
+        grid_name (str): Name of the integration-coordinate grid.
+        r0 (float): The reference radius used in the chi(u) calculation.
+        screen (PythonScreen): An instance of the PythonScreen class representing the screening model to use
+
+    Returns:
+        np.ndarray: An array containing phi and chi for each input u; shape (2, len(u)) for a one-dimensional grid.
     """
+
+    # Return the computed or cached (phi, chi) values for the integration coordinates, reference radius, and screening model.
     return python_result('chi', dict(screen.parameters, r0=r0), u,
-                         lambda: python_modules()['cm_scatter'].calc_phi_chi(u, r0, screen.implementation))
-
-
-def diagnostic_chi(u, r0, screening):
-    """Evaluate the plot diagnostic using a supplied native screening callable.
-    
-    For u < 3e-4 use the Taylor limit phi(r0)-r0*phi'(r0); elsewhere use
-    [phi(r0)-(1-u**2)*phi(r0/(1-u**2))]/u**2. Return (phi, chi).
-    This adapts Numba screening for diagnostics, not its internal scattering API.
-    """
-    phi0, derivative = screening(r0)
-    phi, _ = screening(r0/(1-u**2))
-    return phi, np.where(u < 3e-4, phi0-r0*derivative, (phi0-phi*(1-u**2))/u**2)
+                         lambda: python_modules()['cm_scatter'].calc_phi_chi(u, r0, screen.implementation),
+                         norm=screen.norm, grid_name=grid_name)

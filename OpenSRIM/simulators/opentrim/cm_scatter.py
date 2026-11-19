@@ -20,33 +20,39 @@ ROOTS_LEGENDRE = LEGENDRE_RULES[0]
 
 
 @jit(debug=config.DEBUG)
-def _integrands(u, e, p, r0, pot_model, pot_coefs):
-    """Return angle, time and rationalized deflection integrands at mapped u.
-    
-    The NLHlin caller enforces its finite range before forming chi; the raw
-    screening kernel does not enforce this cutoff itself. Small u uses the
-    Taylor limit of chi. The third output avoids cancellation for weak scattering.
-    """
+def screen_with_cutoff(r, pot_model, pot_coefs):
+    """Return native screening and derivative within the potential's range."""
+    if r >= pot_coefs.rmax:
+        return 0.0, 0.0
     if pot_model == "ZBL":
-        phi0, dphi0 = zbl.screen_fun(r0, pot_coefs)
-        phi, _ = zbl.screen_fun(r0 / (1 - u**2), pot_coefs)
-    else:
-        phi0, dphi0 = nlhlin.screen_fun(r0, pot_coefs)
-        phi, _ = nlhlin.screen_fun(r0 / (1 - u**2), pot_coefs)
+        return zbl.screen_fun(r, pot_coefs)
+    return nlhlin.screen_fun(r, pot_coefs)
 
-        r = r0 / (1 - u**2)
-        phi = np.empty_like(r)
-        for i in range(r.size):
-            if r[i] >= pot_coefs.rmax:
-                phi[i] = 0.0
-            else:
-                phi[i], _ = nlhlin.screen_fun(r[i], pot_coefs)
 
-    chi = np.where(
-        u < 3e-4,
-        phi0 - r0 * dphi0,
-        (phi0 - phi * (1 - u**2)) / u**2
-    )
+@jit(debug=config.DEBUG)
+def calc_phi_chi(u, r0, pot_model, pot_coefs):
+    """Return screening and chi on a vector of integration coordinates.
+
+    Shared by scattering quadrature and direct diagnostics. The small-u branch
+    uses the analytic screening derivative; finite-range screening is zero
+    outside the cutoff, including when r0 itself is outside the potential.
+    """
+    phi0, dphi0 = screen_with_cutoff(r0, pot_model, pot_coefs)
+    phi = np.empty_like(u)
+    chi = np.empty_like(u)
+    for i in range(u.size):
+        phi[i], _ = screen_with_cutoff(r0 / (1-u[i]**2), pot_model, pot_coefs)
+        if u[i] < 3e-4:
+            chi[i] = phi0-r0*dphi0
+        else:
+            chi[i] = (phi0-phi[i]*(1-u[i]**2))/u[i]**2
+    return phi, chi
+
+
+@jit(debug=config.DEBUG)
+def _integrands(u, e, p, r0, pot_model, pot_coefs):
+    """Return angle, time and rationalized deflection integrands at mapped u."""
+    phi, chi = calc_phi_chi(u, r0, pot_model, pot_coefs)
 
     h = np.sqrt(r0 / e * chi + p**2 * (2 - u**2))
 
@@ -58,6 +64,8 @@ def _integrands(u, e, p, r0, pot_model, pot_coefs):
     )
 
     # Rationalized difference between the free and interacting integrands.
+
+    #new
     base = np.sqrt(2-u**2)
     correction = (r0/e*chi) / (base*h*(h+p*base))
     return integrand_theta, integrand_tau, correction
@@ -93,6 +101,8 @@ def scatter_integrals(e, p, pot_model, pot_coefs, n_absc=4):
     rule, so explicit higher-order calls do not change subsequent default calls.
     """
 
+
+    #new
     rule_index = -1
     for i in range(len(LEGENDRE_ORDERS)):
         if n_absc == LEGENDRE_ORDERS[i]:
@@ -108,10 +118,14 @@ def scatter_integrals(e, p, pot_model, pot_coefs, n_absc=4):
 
     r0, _ = get_apsis(e, p, pot_model, pot_coefs)
 
+
+    #new
     if rmax == np.inf:
         umax = 1.0
     else:
         umax = np.sqrt((rmax-r0)/rmax)
+
+        #new
         sp = np.sqrt((rmax-p)*(rmax+p))
         s0 = np.sqrt((rmax-r0)*(rmax+r0))
         if umax == 0.0:
@@ -193,6 +207,7 @@ def get_apsis(e, p, pot_model, pot_coefs):
     r34 = pot_coefs.r34
     rmax = pot_coefs.rmax
 
+    #new
     if p >= rmax:
         return p, 0
 
@@ -265,6 +280,7 @@ def get_apsis(e, p, pot_model, pot_coefs):
             screen, dscreen = nlhlin.screen_fun(r, pot_coefs)
         return (r - p) * (1 + p/r) - screen/e, 1 - dscreen/e + p**2/r**2
 
+    #new
     for count in range(1, 101):
         f, df = fun(r0)
         if not np.isfinite(f) or not np.isfinite(df) or df <= 0:

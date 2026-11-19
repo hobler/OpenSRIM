@@ -8,6 +8,7 @@ Moreover, there are plotting functions for testing and visualization:
     plot_ZBLscreen: plot ZBL screening function for various atomic numbers.
 """
 import os, sys
+from pathlib import Path
 import numpy as np
 from apsis import Apsis
 
@@ -27,7 +28,7 @@ class NLHlin_screen:
         self.Z1 = Z1
         self.Z2 = Z2
         
-        fname = os.path.join(os.path.dirname(__file__), 'dmol_coeffs_rmax.dat')
+        fname = Path(__file__).resolve().parents[2] / 'data/NLHlin/NLHlin_3eV.dat'
         if not os.path.exists(fname):
             print(f'NLHlin_screen: Coefficients file {fname} not found')
             sys.exit()

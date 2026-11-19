@@ -81,6 +81,8 @@ def scatter_integrals(e, p, screen_fun):
         integrand_tau = (1 + rho * phi/(1-u**2)) / (g * (1 + u*p/r0*g))
         # Rationalized difference 1/sqrt(2-u**2) - 1/g. Avoid subtracting
         # nearly equal terms for weak deflections.
+
+        #new
         base = np.sqrt(2-u**2)
         correction = rho*chi / (base*g*(g+base))
         return integrand_theta, integrand_tau, correction
@@ -98,6 +100,7 @@ def scatter_integrals(e, p, screen_fun):
         umax = np.sqrt((rmax-r0)/rmax)
         sp = np.sqrt((rmax-p)*(rmax+p))
         s0 = np.sqrt((rmax-r0)*(rmax+r0))
+
         if umax == 0.0:
             return 2*np.arctan2(sp, p), r0-p**2/(rmax+sp)
     u_vals, weights = ROOTS_LEGENDRE
